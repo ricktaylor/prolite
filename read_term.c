@@ -18,6 +18,7 @@ uint32_t char_conversion(uint32_t in_char);
 enum eTokenType
 {
 	tokMore = 0,
+	tokNoMem,
 	tokEOF,
 	tokInvalidSeq,
 	tokInvalidEscape,
@@ -76,46 +77,37 @@ enum eOpSpec
 
 struct Operator
 {
-	const unsigned char* m_name;
-	enum eOpSpec m_spec;
+	enum eOpSpec m_specifier;
 	unsigned int m_precedence;
 };
 
-enum eTermType
-{
-	termInt,
-	termFloat,
-	termString,
-	termVar,
-	termCompound,
+#define TAG_VAR        (0xE << 28)
 
-	/* Specials */
-	termDot,
-	termEndList
-};
+#define TAG_COMPOUND   (0xC << 28)
 
-#define TAG_VAR 0x80000000
-#define TAG_VAR_MASK TAG_VAR
+#define TAG_NUMBER     (0xA << 28)
+#define TAG_INT_28     TAG_NUMBER
+#define TAG_INT_60     (0xB << 28)
+#define TAG_INT_64     (TAG_INT_60 | 1)
+#define TAG_FLOAT_64   (TAG_INT_60 | 2)
 
-#define TAG_INT_EMBED 0x40000000
-#define TAG_INT_EMBED_MASK 0xC0000000
+#define TAG_ATOM       (0x8 << 28)
+#define TAG_ATOM_PTR   TAG_ATOM
+#define TAG_ATOM_EMBED (0x9 << 28)
 
-#define TAG_STRING_PTR 0x20000000
-#define TAG_STRING_PTR_MASK 0xE0000000
+#define TAG_DQL        (0x6 << 28)
+#define TAG_DQL_PTR    TAG_DQL
+#define TAG_DQL_EMBED  (0x7 << 28)
 
-#define TAG_COMPOUND 0x10000000
-#define TAG_COMPOUND_MASK 0xF0000000
+#define TAG_BQ         (0x4 << 28)
+#define TAG_BQ_PTR     TAG_BQ
+#define TAG_BQ_EMBED   (0x5 << 28)
 
-#define TAG_STRING_EMBED 0x08000000
-#define TAG_STRING_EMBED_MASK 0xF8000000
+#define TAG_CUSTOM     (0x2 << 28)
 
-#define TAG_STRING_EMBED_2 0x0C000000
-#define TAG_STRING_EMBED_2_MASK 0xFC000000
+//#define TAG_UNUSED   (0x0 << 28)
 
-#define TAG_INT 0x07000000
-#define TAG_INT_2 0x06000000
-#define TAG_FLOAT 0x05000000
-#define TAG_NUMBER_MASK 0xFF000000
+#define TAG_MASK       (0xE << 28)
 
 
 struct ASTNode
@@ -123,7 +115,7 @@ struct ASTNode
 	uint32_t m_tag;
 };
 
-struct ASTStringNode
+struct ASTAtomNode
 {
 	struct ASTNode m_base;
 	uint32_t m_offset;
@@ -132,14 +124,19 @@ struct ASTStringNode
 struct ASTNumericNode
 {
 	struct ASTNode m_base;
-	int32_t m_p1;
-	uint32_t m_p2;
+
+	union ASTNumericVal
+	{
+		uint32_t m_u32;
+		int64_t m_i64;
+		double m_f64;
+	} m_val;
 };
 
 struct ASTCompoundNode
 {
 	struct ASTNode m_base;
-	struct ASTStringNode m_functor;
+	struct ASTAtomNode m_functor;
 
 	struct ASTNode* m_params[1];
 };
@@ -161,14 +158,14 @@ struct ASTError
 #define char_eof  (char_max+2)
 #define char_ilseq (char_max+3)
 
-static int tokenAppend(struct Token* token, char c)
+static int tokenAppend(struct Token* token, unsigned char c)
 {
 	if (token->m_alloc == token->m_len)
 	{
 		size_t new_size = (token->m_alloc == 0 ? 32 : token->m_alloc * 2);
 		unsigned char* new_str = realloc(token->m_str,new_size);
 		if (!new_str)
-			return errno;
+			return -1;
 
 		token->m_alloc = new_size;
 		token->m_str = new_str;
@@ -182,40 +179,42 @@ static int tokenAppendUnicode(struct Token* token, uint32_t unicode_char)
 {
 	if (unicode_char <= 0x7F)
 	{
-		return tokenAppend(token,(char)unicode_char);
+		return tokenAppend(token,(unsigned char)unicode_char);
 	}
 	else
 	{
-		int err = 0;
-		char chars[4] = {0};
+		unsigned char chars[4] = {0};
 		unsigned int i,count;
 
 		if (unicode_char <= 0x7FF)
 		{
-			chars[0] = (char)(0xC0 | ((unicode_char & 0x7C0) >> 6));
-			chars[1] = (char)(0x80 | (unicode_char & 0x3F));
+			chars[0] = (unsigned char)(0xC0 | ((unicode_char & 0x7C0) >> 6));
+			chars[1] = (unsigned char)(0x80 | (unicode_char & 0x3F));
 			count = 2;
 		}
 		else if (unicode_char <= 0xFFFF)
 		{
-			chars[0] = (char)(0xE0 | ((unicode_char & 0xF000) >> 12));
-			chars[1] = (char)(0x80 | ((unicode_char & 0xFC0) >> 6));
-			chars[2] = (char)(0x80 | (unicode_char & 0x3F));
+			chars[0] = (unsigned char)(0xE0 | ((unicode_char & 0xF000) >> 12));
+			chars[1] = (unsigned char)(0x80 | ((unicode_char & 0xFC0) >> 6));
+			chars[2] = (unsigned char)(0x80 | (unicode_char & 0x3F));
 			count = 3;
 		}
 		else
 		{
-			chars[0] = (char)(0xF0 | ((unicode_char & 0x1C0000) >> 18));
-			chars[1] = (char)(0x80 | ((unicode_char & 0x3F000) >> 12));
-			chars[2] = (char)(0x80 | ((unicode_char & 0xFC0) >> 6));
-			chars[3] = (char)(0x80 | (unicode_char & 0x3F));
+			chars[0] = (unsigned char)(0xF0 | ((unicode_char & 0x1C0000) >> 18));
+			chars[1] = (unsigned char)(0x80 | ((unicode_char & 0x3F000) >> 12));
+			chars[2] = (unsigned char)(0x80 | ((unicode_char & 0xFC0) >> 6));
+			chars[3] = (unsigned char)(0x80 | (unicode_char & 0x3F));
 			count = 3;
 		}
 
-		for (i=0; !err && i<count; ++i)
-			err = tokenAppend(token,chars[i]);
+		for (i=0; i<count; ++i)
+		{
+			if (tokenAppend(token,chars[i]) == -1)
+				return -1;
+		}
 
-		return err;
+		return 0;
 	}
 }
 
@@ -448,14 +447,14 @@ static const enum eAction actions[128] =
 
 static int meta_char(uint32_t meta, struct Token* token)
 {
-	char c = 0;
+	unsigned char c = 0;
 	switch (meta)
 	{
 	case '\'':
 	case '"':
 	case '\\':
 	case '`':
-		c = (char)meta;
+		c = (unsigned char)meta;
 		break;
 		
 	case 'a':
@@ -490,7 +489,9 @@ static int meta_char(uint32_t meta, struct Token* token)
 		return 0;
 	}
 
-	tokenAppend(token,c);
+	if (tokenAppend(token,c) == -1)
+		return -1;
+
 	return 1;
 }
 
@@ -562,8 +563,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 					break;
 
 				case eaShortName:
-					tokenAppend(token,(char)c);
 					*state = eStart;
+					if (tokenAppend(token,(unsigned char)c) != 0)
+						return tokNoMem;
 					return tokName;
 
 				case eaSingleComment:
@@ -698,7 +700,11 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 		if (c != '*')
 		{
-			tokenAppend(token,'/');
+			if (tokenAppend(token,'/') != 0)
+			{
+				*state = eStart;
+				return tokNoMem;
+			}
 			*state = eGraphicName;
 			goto graphic_name;
 		}
@@ -737,7 +743,11 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 			return tokEnd;
 		}
 
-		tokenAppend(token,'.');
+		if (tokenAppend(token,'.') != 0)
+		{
+			*state = eStart;
+			return tokNoMem;
+		}
 		*state = eGraphicName;
 		goto graphic_name;
 
@@ -850,7 +860,11 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 					peek_col = peek_col2;
 					peek = peek2;
 				}
-				tokenAppend(token,(char)c);
+				if (tokenAppend(token,(unsigned char)c) != 0)
+				{
+					*state = eStart;
+					return tokNoMem;
+				}
 				break;
 
 			case '"':
@@ -875,7 +889,11 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 					peek_col = peek_col2;
 					peek = peek2;
 				}
-				tokenAppend(token,(char)c);
+				if (tokenAppend(token,(unsigned char)c) != 0)
+				{
+					*state = eStart;
+					return tokNoMem;
+				}
 				break;
 
 			case '`':
@@ -900,7 +918,11 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 					peek_col = peek_col2;
 					peek = peek2;
 				}
-				tokenAppend(token,(char)c);
+				if (tokenAppend(token,(unsigned char)c) != 0)
+				{
+					*state = eStart;
+					return tokNoMem;
+				}
 				break;
 
 			default:
@@ -912,7 +934,11 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 					*state = eStart;
 					return tokInvalidChar;
 				}
-				tokenAppendUnicode(token,c);
+				if (tokenAppendUnicode(token,c) != 0)
+				{
+					*state = eStart;
+					return tokNoMem;
+				}
 				break;
 			}
 
@@ -942,8 +968,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 				if (c == '\\')
 				{
-					tokenAppendUnicode(token,meta);
-					if (*state == eSingleQuoteOct)
+					if (tokenAppendUnicode(token,meta) != 0)
+					{
+						*state = eStart;
+						return tokNoMem;
+					}
+					else if (*state == eSingleQuoteOct)
 						*state = eSingleQuote;
 					else if (*state == eDoubleQuoteOct)
 						*state = eDoubleQuote;
@@ -992,8 +1022,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 				if (c == '\\')
 				{
-					tokenAppendUnicode(token,meta);
-					if (*state == eSingleQuoteHex)
+					if (tokenAppendUnicode(token,meta) != 0)
+					{
+						*state = eStart;
+						return tokNoMem;
+					}
+					else if (*state == eSingleQuoteHex)
 						*state = eSingleQuote;
 					else if (*state == eDoubleQuoteHex)
 						*state = eDoubleQuote;
@@ -1052,7 +1086,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 				if (c == '\'')
 				{
-					tokenAppend(token,'\'');
+					if (tokenAppend(token,'\'') != 0)
+					{
+						*state = eStart;
+						return tokNoMem;
+					}
+
 					*line = peek_line;
 					*col = peek_col;
 					*p = peek;
@@ -1101,7 +1140,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 			}
 			else if (c >= 32 && c <= char_max)
 			{
-				tokenAppendUnicode(token,c);
+				if (tokenAppendUnicode(token,c) != 0)
+				{
+					*state = eStart;
+					return tokNoMem;
+				}
+
 				*line = peek_line;
 				*col = peek_col;
 				*p = peek;
@@ -1182,7 +1226,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 			if (c == '\\')
 			{
-				tokenAppendUnicode(token,meta);
+				if (tokenAppendUnicode(token,meta) != 0)
+				{
+					*state = eStart;
+					return tokNoMem;
+				}
+
 				*line = peek_line;
 				*col = peek_col;
 				*p = peek;
@@ -1233,7 +1282,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 			if (c == '\\')
 			{
-				tokenAppendUnicode(token,meta);
+				if (tokenAppendUnicode(token,meta) != 0)
+				{
+					*state = eStart;
+					return tokNoMem;
+				}
+
 				*line = peek_line;
 				*col = peek_col;
 				*p = peek;
@@ -1289,7 +1343,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 			return tokInt;
 		}
 
-		tokenAppend(token,'.');
+		if (tokenAppend(token,'.') != 0)
+		{
+			*state = eStart;
+			return tokNoMem;
+		}
+
 		*state = eFraction;
 		goto next_char;
 
@@ -1307,7 +1366,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 		if (c >= '0' && c <= '9')
 		{
-			tokenAppend(token,'e');
+			if (tokenAppend(token,'e') != 0)
+			{
+				*state = eStart;
+				return tokNoMem;
+			}
+
 			*state = eMantissa;
 			goto next_char;
 		}
@@ -1324,8 +1388,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 			if (c2 >= '0' && c2 <= '9')
 			{
-				tokenAppend(token,'e');
-				tokenAppend(token,(char)c);
+				if (tokenAppend(token,'e') != 0 || tokenAppend(token,(unsigned char)c) != 0)
+				{
+					*state = eStart;
+					return tokNoMem;
+				}
+
 				*state = eMantissa;
 				c = c2;
 				goto next_char;
@@ -1434,7 +1502,12 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 			}
 
 		next_char:
-			tokenAppendUnicode(token,c);
+			if (tokenAppendUnicode(token,c) != 0)
+			{
+				*state = eStart;
+				return tokNoMem;
+			}
+
 			*line = peek_line;
 			*col = peek_col;
 			*p = peek;
@@ -1462,8 +1535,8 @@ static enum eTokenType next_token(struct Tokenizer* t, struct Token* token)
 			ssize_t i = read(t->m_s,&c,1);
 			if (i == 0)
 				t->m_eof = 1;
-			else
-				tokenAppend(&t->m_buffer,c);
+			else if (tokenAppend(&t->m_buffer,c) != 0)
+				return tokNoMem;
 		}
 
 		p = start = t->m_buffer.m_str;
@@ -1514,107 +1587,121 @@ static struct ASTError* syntax_error(const char* message, size_t line, size_t co
 	return (struct ASTError*)1;
 }
 
-static uint32_t alloc_string(struct TermBuilder* b, struct Token* token)
+static int alloc_ast_atom(struct TermBuilder* b, struct Token* token, struct ASTAtomNode* atom, struct ASTError** err_node)
 {
+	atom->m_base.m_tag = TAG_ATOM_PTR | token->m_len;
+	atom->m_offset = alloc_atom(b,token);
+	if (atom->m_offset == (uint32_t)-1)
+		return 0;
 
+	return 1;
 }
 
-static struct ASTNode* alloc_ast_string_node(struct TermBuilder* b, struct Token* token)
+static struct ASTNode* alloc_ast_atom_node(struct TermBuilder* b, struct Tokenizer* t, struct Token* token, struct ASTError** err_node)
 {
 	struct ASTNode* node = NULL;
 	if (token->m_len <= 3)
 	{
 		node = malloc(sizeof(struct ASTNode));
-		if (node)
+		if (!node)
+			*err_node = oom_error();
+		else
 		{
 			if (token->m_len == 1)
-				node->m_tag = TAG_STRING_EMBED | (1 << 24) | (token->m_str[0]);
+				node->m_tag = TAG_ATOM_EMBED | (1 << 24) | (token->m_str[0]);
 			else if (token->m_len == 2)
-				node->m_tag = TAG_STRING_EMBED | (2 << 24) | (token->m_str[0] << 8) | (token->m_str[1]);
+				node->m_tag = TAG_ATOM_EMBED | (2 << 24) | (token->m_str[0] << 8) | (token->m_str[1]);
 			else
-				node->m_tag = TAG_STRING_EMBED | (3 << 24) | (token->m_str[0] << 16) | (token->m_str[1] << 8) | (token->m_str[2]);
+				node->m_tag = TAG_ATOM_EMBED | (3 << 24) | (token->m_str[0] << 16) | (token->m_str[1] << 8) | (token->m_str[2]);
 		}
 	}
 	else
 	{
-		struct ASTStringNode* string_node = malloc(sizeof(struct ASTStringNode));
-		if (string_node)
+		struct ASTAtomNode* atom_node = malloc(sizeof(struct ASTAtomNode));
+		if (!atom_node)
+			*err_node = oom_error();
+		else if (token->m_len <= 7)
 		{
-			if (token->m_len <= 7)
-			{
-				node->m_tag = TAG_STRING_EMBED | (token->m_len << 24);
-				memcpy(((unsigned char*)string_node) + (8 - token->m_len),token->m_str,token->m_len);
-			}
-			else
-			{
-				string_node->m_base.m_tag = TAG_STRING_PTR | token->m_len;
-				string_node->m_offset = alloc_string(b,token);
-				if (string_node->m_offset == (uint32_t)-1)
-					free(string_node);
-				else
-					node = &string_node->m_base;
-			}
+			atom_node->m_tag = TAG_ATOM_EMBED | (token->m_len << 24);
+			memcpy(((unsigned char*)atom_node) + (8 - token->m_len),token->m_str,token->m_len);
+			node = &atom_node->m_base;
 		}
+		else if (token->m_len > 0x0FFFFFFF)
+		{
+			*err_node = syntax_error("Atom name too long",t->m_start_line,t->m_start_col);
+			free(atom_node);
+		}
+		else if (!alloc_ast_atom(b,token,atom_node,err_node))
+		{
+			free(atom_node);
+		}
+		node = &atom_node->m_base;
 	}
 	return node;
 }
 
-static struct ASTNode* alloc_ast_compound_node(struct TermBuilder* b, struct Token* token, uint32_t arity)
+static struct ASTCompoundNode* alloc_ast_compound_node(struct TermBuilder* b, struct Tokenizer* t, struct Token* token, uint32_t arity, struct ASTError** err_node)
 {
-	struct ASTCompoundNode* node = malloc(sizeof(struct ASTCompoundNode) - sizeof(struct ASTNode*) + (arity * sizeof(struct ASTNode*)));
+	struct ASTCompoundNode* node = malloc(sizeof(struct ASTCompoundNode) + ((arity-1) * sizeof(struct ASTNode*)));
 	if (!node)
-		return NULL;
-
-	node->m_base.m_tag = TAG_COMPOUND | arity;
-	if (token->m_len <= 7)
-	{
-		node->m_functor.m_base.m_tag = TAG_STRING_EMBED | (token->m_len << 24);
-		memcpy(((unsigned char*)node) + (8 - token->m_len),token->m_str,token->m_len);
-	}
+		*err_node = oom_error();
 	else
 	{
-		node->m_functor.m_base.m_tag = TAG_STRING_PTR | token->m_len;
-		node->m_functor.m_offset = alloc_string(b,token);
-		if (node->m_functor.m_offset == (uint32_t)-1)
+		node->m_base.m_tag = TAG_COMPOUND | arity;
+		if (token->m_len <= 7)
+		{
+			node->m_functor.m_base.m_tag = TAG_ATOM_EMBED | (token->m_len << 24);
+			memcpy(((unsigned char*)node) + (8 - token->m_len),token->m_str,token->m_len);
+		}
+		else if (token->m_len > 0x0FFFFFFF)
+		{
+			*err_node = syntax_error("Functor too long",t->m_start_line,t->m_start_col);
+			free(node);
+			return NULL;
+		}
+		else if (!alloc_ast_atom(b,token,&node->m_functor,err_node))
 		{
 			free(node);
 			return NULL;
 		}
+		memset(node->m_params,0,arity * sizeof(struct ASTNode*));
 	}
-
-	memset(node->m_params,0,arity * sizeof(struct ASTNode*));
-	return &node->m_base;
+	return node;
 }
 
 static struct ASTNode* free_ast_node(struct ASTNode* node)
 {
 	if (node)
 	{
-		if ((node->m_tag & TAG_COMPOUND_MASK) == TAG_COMPOUND)
+		if ((node->m_tag & TAG_MASK) == TAG_COMPOUND)
 		{
-			struct ASTCompoundNode* compound_node = (struct ASTCompoundNode*)node;
-			uint32_t arity = (node->m_tag & ~TAG_COMPOUND_MASK);
+			uint32_t arity = (node->m_tag & ~TAG_MASK);
 
 			while (arity--)
-				free_ast_node(compound_node->m_params[arity]);
+				free_ast_node(((struct ASTCompoundNode*)node)->m_params[arity]);
 		}
+
 		free(node);
 	}
 	return NULL;
 }
 
-static struct ASTCompoundNode* convert_ast_string_to_compound(struct ASTNode* node)
+static struct ASTCompoundNode* convert_ast_atom_to_compound(struct ASTNode* node)
 {
 	struct ASTCompoundNode* compound_node; 
 	uint32_t prev_tag = node->m_tag;
 	uint32_t prev_offset = 0;
 		
-	if ((prev_tag & TAG_STRING_EMBED_2_MASK) != TAG_STRING_EMBED)
-		prev_offset = ((struct ASTStringNode*)node)->m_offset;
+	if ((prev_tag & TAG_ATOM_EMBED) == TAG_ATOM_PTR)
+		prev_offset = ((struct ASTAtomNode*)node)->m_offset;
 	
 	compound_node = realloc(node,sizeof(struct ASTCompoundNode));
 	if (!compound_node)
-		return (struct ASTCompoundNode*)free_ast_node(node);
+	{
+		free_ast_node(node);
+		*err_node = oom_error();
+		return NULL;
+	}
 
 	compound_node->m_base.m_tag = TAG_COMPOUND | 1;
 	compound_node->m_functor.m_base.m_tag = prev_tag;
@@ -1631,34 +1718,57 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 	{
 		numeric_node = realloc(node,sizeof(struct ASTNumericNode));
 		if (!numeric_node)
-			return free_ast_node(node);
+		{
+			free_ast_node(node);
+			*err_node = oom_error();
+			return NULL;
+		}
 	}
 	else
 	{
 		numeric_node = malloc(sizeof(struct ASTNumericNode));
 		if (!numeric_node)
+		{
+			free_ast_node(node);
+			*err_node = oom_error();
 			return NULL;
+		}
 	}
 	
 	if (*next_type == tokFloat)
 	{
-		double v;
-
 		errno = 0;
-		v = strtod((const char*)next->m_str,NULL);
-		if (v == HUGE_VAL)
+		numeric_node->m_val.m_f64 = strtod((const char*)next->m_str,NULL);
+		if (numeric_node->m_val.m_f64 == HUGE_VAL)
 		{
 			*err_node = syntax_error("Floating point number overflow",t->m_start_line,t->m_start_col);
 			return free_ast_node(node);
 		}
-		else if (v == 0.0 && errno == ERANGE)
+		else if (numeric_node->m_val.m_f64 == 0.0 && errno == ERANGE)
 		{
 			*err_node = syntax_error("Floating point number underflow",t->m_start_line,t->m_start_col);
 			return free_ast_node(node); 
 		}
 
-		numeric_node->m_base.m_tag = TAG_FLOAT;
-		memcpy(&numeric_node->m_p1,&v,8);
+		numeric_node->m_base.m_tag = TAG_FLOAT_64;
+	}
+	else if (*next_type == tokCharCode)
+	{
+		uint32_t v = token->m_str[0];
+
+		if ((token->m_str[0] & 0xE0) == 0xC0)
+			val = (token->m_str[0] & 0x1F);
+		else if ((token->m_str[0] & 0xF0) == 0xE0)
+			val = (token->m_str[0] & 0x0F);
+		else
+			val = (token->m_str[0] & 0x7);
+
+		for (i=1;i<(unsigned int)token->m_len;++i)
+		{
+			val = (val << 6) | (token->m_str[i] & 0x3F);
+		}
+
+		numeric_node->m_base.m_tag = TAG_INT_28 | v;
 	}
 	else
 	{
@@ -1701,7 +1811,7 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 				v = (v << 3) | (next->m_str[i] - '0');
 			}
 		}
-		if (*next_type == tokHexInt)
+		else /* tokHexInt */
 		{
 			for (i=0;i<next->m_len;++i)
 			{
@@ -1720,24 +1830,19 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 					v |= (next->m_str[i] - '0');
 			}
 		}
-		else
-		{
-			void* TODO;
-			/* *next_type == tokCharCode */
-		}
 
-		if (v > INT32_MAX)
+		if (v > 0x07FFFFFFFFFFFFFFULL)
 		{
-			numeric_node->m_base.m_tag = TAG_INT_2;
-			memcpy(&numeric_node->m_p1,&v,8);
+			numeric_node->m_base.m_tag = TAG_INT_64;
+			numeric_node->m_val.m_i64 = v;
 		}
-		else if (v > 0x1FFFFFFF)
+		else if (v > 0x07FFFFFF)
 		{
-			numeric_node->m_base.m_tag = TAG_INT;
-			numeric_node->m_p1 = (int32_t)v;
+			numeric_node->m_base.m_tag = TAG_INT_60 | (uint32_t)(v >> 32);
+			numeric_node->m_val.m_u32 = (uint32_t)(v & 0xFFFFFFFF);
 		}
 		else
-			numeric_node->m_base.m_tag = TAG_INT_EMBED | (uint32_t)v;
+			numeric_node->m_base.m_tag = TAG_INT_28 | (uint32_t)v;
 	}
 
 	*next_type = next_token(t,next);
@@ -1749,24 +1854,15 @@ static struct ASTNode* read_ast_negative(struct Tokenizer* t, struct ASTNode* no
 	node = read_ast_number(t,node,next_type,next,err_node);
 	if (node)
 	{
-		if ((node->m_tag & TAG_INT_EMBED_MASK) == TAG_INT_EMBED)
-		{
-			int32_t v = node->m_tag & ~TAG_INT_EMBED_MASK;
-			v = -v;
-			node->m_tag = TAG_INT_EMBED | ((uint32_t)v & ~TAG_INT_EMBED_MASK);
-		}
+		if (node->m_tag == TAG_FLOAT)
+			((struct ASTNumericNode*)node)->m_val.m_f64 = -((struct ASTNumericNode*)node)->m_val.m_f64;
+		else if (node->m_tag == TAG_INT_64)
+			((struct ASTNumericNode*)node)->m_val.m_i64 = -((struct ASTNumericNode*)node)->m_val.m_i64;
 		else
 		{
-			struct ASTNumericNode* numeric_node = (struct ASTNumericNode*)node;
-			if ((numeric_node->m_base.m_tag & TAG_NUMBER_MASK) == TAG_FLOAT)
-			{
-				double v;
-				memcpy(&v,&numeric_node->m_p1,8);
-				v = -v;
-				memcpy(&numeric_node->m_p1,&v,8);
-			}
-			else
-				numeric_node->m_p1 = -numeric_node->m_p1;
+			int32_t v = node->m_tag & ~TAG_INT_60;
+			v = -v;
+			node->m_tag = TAG_INT_28 | ((uint32_t)v & ~TAG_INT_60);
 		}
 	}
 	return node;
@@ -1780,7 +1876,7 @@ static struct ASTNode* read_ast_arg(struct TermBuilder* b, struct Tokenizer* t, 
 	if (*next_type == tokName)
 	{
 		struct Operator* op;
-		struct ASTNode* node = alloc_ast_string_node(b,next);
+		struct ASTNode* node = alloc_ast_atom_node(b,t,next,err_node);
 		if (!node)
 			return node;
 
@@ -1789,20 +1885,20 @@ static struct ASTNode* read_ast_arg(struct TermBuilder* b, struct Tokenizer* t, 
 		if (*next_type == tokOpenCt)
 			return read_ast_compound_term(b,t,node,next_type,next,err_node);
 
-		if (node->m_tag == (TAG_STRING_EMBED | (1 << 24) | '-'))
+		if (node->m_tag == (TAG_ATOM_EMBED | (1 << 24) | '-'))
 		{
 			if (*next_type >= tokInt && *next_type <= tokFloat)
 				return read_ast_negative(t,node,next_type,next,err_node);
 		}
 
 		op = lookup_prefix_op(node);
-		if (op && op->m_precedence <= 999 && (op->m_spec == eFX || op->m_spec == eFY))
+		if (op && op->m_precedence <= 999 && (op->m_specifier == eFX || op->m_specifier == eFY))
 		{
-			struct ASTCompoundNode* compound_node = convert_ast_string_to_compound(node);
+			struct ASTCompoundNode* compound_node = convert_ast_atom_to_compound(node);
 			if (compound_node)
 			{
 				node = &compound_node->m_base;
-				compound_node->m_params[0] = read_ast_term(t,op->m_spec == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,err_node);
+				compound_node->m_params[0] = read_ast_term(t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,err_node);
 				if (!compound_node->m_params[0])
 					node = free_ast_node(node);
 			}
@@ -1818,7 +1914,7 @@ static struct ASTNode* read_ast_compound_term(struct TermBuilder* b, struct Toke
 {
 	uint32_t arity = 0;
 	uint32_t alloc_arity = 1;
-	struct ASTCompoundNode* compound_node = convert_ast_string_to_compound(node);
+	struct ASTCompoundNode* compound_node = convert_ast_atom_to_compound(node);
 	if (!compound_node)
 		return NULL;
 
@@ -1826,7 +1922,7 @@ static struct ASTNode* read_ast_compound_term(struct TermBuilder* b, struct Toke
 	{
 		*next_type = next_token(t,next);
 
-		if ((compound_node->m_base.m_tag & ~TAG_COMPOUND_MASK) == alloc_arity)
+		if ((compound_node->m_base.m_tag & ~TAG_MASK) == alloc_arity)
 		{
 			struct ASTCompoundNode* new_node;
 			uint32_t new_arity = 4;
@@ -1835,15 +1931,19 @@ static struct ASTNode* read_ast_compound_term(struct TermBuilder* b, struct Toke
 							
 			new_node = realloc(compound_node,sizeof(struct ASTCompoundNode) + ((new_arity-1) * sizeof(struct ASTNode*)));
 			if (!new_node)
-				return free_ast_node(&compound_node->m_base);
+			{
+				free_ast_node(&compound_node->m_base);
+				*err_node = oom_error();
+				return NULL;
+			}
 
 			alloc_arity = new_arity;
 			compound_node = new_node;
 		}
 
-		if (arity == ~TAG_COMPOUND_MASK)
+		if (arity == ~TAG_MASK)
 		{
-			*err_node = syntax_error("Too many arguments",t->m_start_line,t->m_start_col);
+			*err_node = syntax_error("Too many arguments/ max_arity",t->m_start_line,t->m_start_col);
 			return free_ast_node(&compound_node->m_base); 
 		}
 
@@ -1860,8 +1960,12 @@ static struct ASTNode* read_ast_compound_term(struct TermBuilder* b, struct Toke
 
 	if (*next_type != tokClose)
 	{
-		*err_node = syntax_error("Missing )",t->m_start_line,t->m_start_col);
 		node = free_ast_node(node);
+
+		if (*next_type == tokNoMem)
+			*err_node = oom_error();
+		else
+			*err_node = syntax_error("Missing )",t->m_start_line,t->m_start_col);
 	}
 	else
 		*next_type = next_token(t,next);
@@ -1878,10 +1982,14 @@ static struct ASTNode* read_ast_list_term(struct TermBuilder* b, struct Tokenize
 	{
 		struct ASTCompoundNode* compound_node = malloc(sizeof(struct ASTCompoundNode) + sizeof(struct ASTNode*));
 		if (!compound_node)
-			return free_ast_node(node);
+		{
+			free_ast_node(node);
+			*err_node = oom_error();
+			return NULL;
+		}
 		
 		compound_node->m_base.m_tag = TAG_COMPOUND | 2;
-		compound_node->m_functor.m_base.m_tag = TAG_STRING_EMBED | (1 << 24) | '.';
+		compound_node->m_functor.m_base.m_tag = TAG_ATOM_EMBED | (1 << 24) | '.';
 		*tail = &compound_node->m_base;
 
 		*next_type = next_token(t,next);
@@ -1901,31 +2009,39 @@ static struct ASTNode* read_ast_list_term(struct TermBuilder* b, struct Tokenize
 		*tail = read_ast_arg(b,t,next_type,next,err_node);
 		if (!(*tail))
 			return free_ast_node(node);
+
+		*next_type = next_token(t,next);
 	}
 	else if (*next_type == tokClose)
 	{
 		/* Append [] */
 		*tail = malloc(sizeof(struct ASTNode));
 		if (!(*tail))
-			return free_ast_node(node);
-		
-		(*tail)->m_tag = TAG_STRING_EMBED | (2 << 24) | ('[' << 8) | ']';
+		{
+			free_ast_node(node);
+			*err_node = oom_error();
+			return NULL;
+		}
+
+		(*tail)->m_tag = TAG_ATOM_EMBED | (2 << 24) | ('[' << 8) | ']';
 	}
 	
 	if (*next_type != tokClose)
 	{
-		*err_node = syntax_error("Missing ]",t->m_start_line,t->m_start_col);
-		return free_ast_node(node);
+		node = free_ast_node(node);
+		if (*next_type == tokNoMem)
+			*err_node = oom_error();
+		else
+			*err_node = syntax_error("Missing ]",t->m_start_line,t->m_start_col);
 	}
 	
-	*next_type = next_token(t,next);
 	return node;
 }
 
-static struct ASTNode* read_ast_term_name(struct TermBuilder* b, struct Tokenizer* t, unsigned int* max_prec, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node)
+static struct ASTNode* read_ast_name(struct TermBuilder* b, struct Tokenizer* t, unsigned int* max_prec, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node)
 {
 	struct Operator* op;
-	struct ASTNode* node = alloc_ast_string_node(b,next);
+	struct ASTNode* node = alloc_ast_atom_node(b,t,next,err_node);
 	if (!node)
 		return node;
 
@@ -1937,7 +2053,7 @@ static struct ASTNode* read_ast_term_name(struct TermBuilder* b, struct Tokenize
 		return read_ast_compound_term(b,t,node,next_type,next,err_node);
 	}
 
-	if (node->m_tag == (TAG_STRING_EMBED | (1 << 24) | '-'))
+	if (node->m_tag == (TAG_ATOM_EMBED | (1 << 24) | '-'))
 	{
 		if (*next_type >= tokInt && *next_type <= tokFloat)
 		{
@@ -1949,13 +2065,13 @@ static struct ASTNode* read_ast_term_name(struct TermBuilder* b, struct Tokenize
 	op = lookup_prefix_op(node);
 	if (op)
 	{
-		if (op->m_precedence > *max_prec && (op->m_spec == eFX || op->m_spec == eFY))
+		if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
 		{
-			struct ASTCompoundNode* compound_node = convert_ast_string_to_compound(node);
+			struct ASTCompoundNode* compound_node = convert_ast_atom_to_compound(node);
 			if (compound_node)
 			{
 				node = &compound_node->m_base;
-				compound_node->m_params[0] = read_ast_term(t,op->m_spec == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,err_node);
+				compound_node->m_params[0] = read_ast_term(t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,err_node);
 				if (!compound_node->m_params[0])
 					node = free_ast_node(node);
 				
@@ -1978,20 +2094,24 @@ static struct ASTNode* read_ast_term_name(struct TermBuilder* b, struct Tokenize
 	return node;
 }
 
-static struct ASTNode* read_ast_term_basic(struct TermBuilder* b, struct Tokenizer* t, unsigned int* max_prec, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node)
+static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenizer* t, unsigned int* max_prec, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node)
 {
 	struct ASTNode* node = NULL;
 
 	switch (*next_type)
 	{
 	case tokName:
-		node = read_ast_term_name(b,t,max_prec,next_type,next,err_node);
+		node = read_ast_name(b,t,max_prec,next_type,next,err_node);
 		break;
 
 	case tokVar:
 		node = malloc(sizeof(struct ASTNode) - sizeof(struct ASTNode*));
-		if (node)
+		if (!node)
+			*err_node = oom_error();
+		else
 		{
+			TODO;
+
 			node->m_type = termVar;
 			node->m_value.m_compound.m_str = next->m_str;
 			node->m_value.m_compound.m_len = next->m_len;
@@ -2016,20 +2136,25 @@ static struct ASTNode* read_ast_term_basic(struct TermBuilder* b, struct Tokeniz
 		if (prolog_flag("double_quotes") == 0 /* atom */)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.1:2007 */
-			return read_ast_term_name(t,max_prec,next_type,next,err_node);
+			node = read_ast_name(t,max_prec,next_type,next,err_node);
 		}
-		
-		//TODO!
-		{ void* TODO; }
+		else
+		{
+			//TODO!
+			void* TODO;
 
-		*max_prec = 0;
+			*max_prec = 0;
+		}
 		break;
 
 	case tokBackQuote:
-		node = alloc_ast_string_node(b,next);
-		if (node)
+		if (prolog_flag("back_quotes") == 0 /* atom */)
+			node = read_ast_name(t,max_prec,next_type,next,err_node);
+		else
 		{
-			*next_type = next_token(t,next);
+			//TODO!
+			void* TODO;
+
 			*max_prec = 0;
 		}
 		break;
@@ -2037,7 +2162,6 @@ static struct ASTNode* read_ast_term_basic(struct TermBuilder* b, struct Tokeniz
 	case tokOpen:
 	case tokOpenCt:
 		*next_type = next_token(t,next);
-
 		node = read_ast_term(t,1201,next_type,next,err_node);
 		if (node)
 		{
@@ -2059,9 +2183,11 @@ static struct ASTNode* read_ast_term_basic(struct TermBuilder* b, struct Tokeniz
 		if (*next_type == tokCloseL)
 		{
 			node = malloc(sizeof(struct ASTNode));
-			if (node)
+			if (!node)
+				*err_node = oom_error();
+			else
 			{
-				node->m_tag = TAG_STRING_EMBED | (2 << 24) | ('[' << 8) | ']';
+				node->m_tag = TAG_ATOM_EMBED | (2 << 24) | ('[' << 8) | ']';
 				*next_type = next_token(t,next);
 			}
 		}
@@ -2072,26 +2198,31 @@ static struct ASTNode* read_ast_term_basic(struct TermBuilder* b, struct Tokeniz
 		break;
 
 	case tokOpenC:
-		tokenAppend(next,'}');
-		node = alloc_ast_compound_node(b,next,1);
-		if (node)
+		if (tokenAppend(next,'}') != 0)
+			*err_node = oom_error();
+		else
 		{
-			*next_type = next_token(t,next);
-
-			node->m_params[0] = read_ast_term(t,1201,next_type,next,err_node);
-			if (!node->m_params[0])
-				node = free_ast_node(node);
-			else
+			struct ASTCompoundNode* compound_node = alloc_ast_compound_node(b,t,next,1,err_node);
+			if (compound_node)
 			{
-				if (*next_type != tokCloseC)
-				{
+				*next_type = next_token(t,next);
+
+				compound_node->m_params[0] = read_ast_term(t,1201,next_type,next,err_node);
+				if (!compound_node->m_params[0])
 					node = free_ast_node(node);
-					*err_node = syntax_error("Missing }",t->m_start_line,t->m_start_col);
-				}
 				else
 				{
-					*next_type = next_token(t,next);
-					*max_prec = 0;
+					node = &compound_node->m_base;
+					if (*next_type != tokCloseC)
+					{
+						node = free_ast_node(node);
+						*err_node = syntax_error("Missing }",t->m_start_line,t->m_start_col);
+					}
+					else
+					{
+						*next_type = next_token(t,next);
+						*max_prec = 0;
+					}
 				}
 			}
 		}
@@ -2130,6 +2261,10 @@ static struct ASTNode* read_ast_term_basic(struct TermBuilder* b, struct Tokeniz
 		/* TODO Errors */
 		*err_node = syntax_error("Unterminated quoted string",t->m_line,t->m_col);
 		break;
+
+	case tokNoMem:
+		*err_node = oom_error();
+		break;
 	}
 
 	return node;
@@ -2138,12 +2273,11 @@ static struct ASTNode* read_ast_term_basic(struct TermBuilder* b, struct Tokeniz
 static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node)
 {
 	unsigned int prev_prec = max_prec;
-	struct ASTNode* node = read_ast_term_basic(t,&prev_prec,next_type,next,err_node);
+	struct ASTNode* node = read_ast_term_base(t,&prev_prec,next_type,next,err_node);
 
 	/* This is precedence climbing, if you're interested */
 	while (node)
 	{
-		struct ASTNode* next_node;
 		unsigned int right_prec = 0;
 		unsigned int left_prec = 0;
 		int binary = 0;
@@ -2154,7 +2288,7 @@ static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec,
 			if (!op || op->m_precedence > max_prec)
 				return node;
 
-			switch (op->m_spec)
+			switch (op->m_specifier)
 			{
 			case eFX:
 			case eFY:
@@ -2195,7 +2329,12 @@ static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec,
 			left_prec = 999;
 			right_prec = 1000;
 
-			tokenAppend(next,',');
+			if (tokenAppend(next,',') != 0)
+			{
+				node = free_ast_node(node);
+				*err_node = oom_error();
+				return node;
+			}
 		}
 		else if (*next_type == tokBar)
 		{
@@ -2205,7 +2344,7 @@ static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec,
 			if (!op || op->m_precedence > max_prec)
 				return node;
 
-			switch (op->m_spec)
+			switch (op->m_specifier)
 			{
 			case eFX:
 			case eFY:
@@ -2231,28 +2370,35 @@ static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec,
 				break;
 			}
 
-			tokenAppend(next,'|');
+			if (tokenAppend(next,'|') != 0)
+			{
+				node = free_ast_node(node);
+				*err_node = oom_error();
+				return node;
+			}
 		}
 		else
 			return node;
 
 		if (prev_prec > left_prec)
 			return node;
-
-		next_node = alloc_ast_compound_node(next,1 + binary);
-		if (!next_node)
-			node = free_ast_node(node);
 		else
 		{
-			next_node->m_params[0] = node;
-			node = next_node;
-			*next_type = next_token(t,next);
-
-			if (binary)
+			struct ASTCompoundNode* next_node = alloc_ast_compound_node(b,t,next,1 + binary,err_node);
+			if (!next_node)
+				node = free_ast_node(node);
+			else
 			{
-				node->m_params[1] = read_ast_term(t,right_prec,next_type,next,err_node);
-				if (!node->m_params[1])
-					node = free_ast_node(node);
+				next_node->m_params[0] = node;
+				node = &next_node->m_base;
+				*next_type = next_token(t,next);
+
+				if (binary)
+				{
+					next_node->m_params[1] = read_ast_term(t,right_prec,next_type,next,err_node);
+					if (!next_node->m_params[1])
+						node = free_ast_node(node);
+				}
 			}
 		}
 	}
@@ -2263,7 +2409,6 @@ static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec,
 static struct ASTNode* read_ast(struct Tokenizer* t, struct ASTError** err_node)
 {
 	struct Token next = {0};
-
 	enum eTokenType next_type = next_token(t,&next);
 
 	struct ASTNode* node = read_ast_term(t,1201,&next_type,&next,err_node);
@@ -2271,10 +2416,15 @@ static struct ASTNode* read_ast(struct Tokenizer* t, struct ASTError** err_node)
 	{
 		if (next_type != tokEnd)
 		{
-			*err_node = syntax_error("Unexpected token",t->m_start_line,t->m_start_col);
 			node = free_ast_node(node);
+			if (next_type == tokNoMem)
+				*err_node = oom_error();
+			else
+				*err_node = syntax_error("Unexpected token",t->m_start_line,t->m_start_col);
 		}
 	}
+
+	free(next.m_str);
 
 	return node;
 }
@@ -2289,7 +2439,11 @@ int read_term(struct Stream* s)
 	t.m_s = s;
 
 	node = read_ast(&t,&err_node);
-	if (node)
+	if (!node)
+	{
+		/* Do something with err_node */
+	}
+	else
 	{
 
 	}
@@ -2297,7 +2451,7 @@ int read_term(struct Stream* s)
 	return 0;
 }
 
-int read_term_string(const char* str)
+int read_term_atom(const char* str)
 {
 	void* TODO; /* Build simple stream */
 	return read_term(NULL);
