@@ -5,6 +5,7 @@
 #include <malloc.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 
 #include "prolite.h"
 
@@ -349,6 +350,14 @@ static uint32_t get_char(const unsigned char** p, const unsigned char* pe, int e
 	return val;
 }
 
+static uint32_t get_char_conv(const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
+{
+	uint32_t c = get_char(p,pe,eof,line,col);
+	if (c <= char_max)
+		c = char_conversion(c);
+	return c;
+}
+
 enum eState
 {
 	eStart = 0,
@@ -509,17 +518,13 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 		/* Clear the current token */
 		token->m_len = 0;
 
-		c = get_char(p,pe,eof,line,col);
+		c = get_char_conv(p,pe,eof,line,col);
 		if (c == char_more)
 			return tokMore;
 
 		/* Check for ( first*/
-		if (c <= char_max)
-		{
-			c = char_conversion(c);
-			if (c == '(')
-				return tokOpenCt;
-		}
+		if (c == '(')
+			return tokOpenCt;
 
 		*state = eLayout;
 		goto layout;
@@ -528,12 +533,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 	case eSingleComment:
 	case eMultiComment2:
 	case eMultiComment3:
-		c = get_char(p,pe,eof,line,col);
+		c = get_char_conv(p,pe,eof,line,col);
 		if (c == char_more)
 			return tokMore;
-
-		if (c <= char_max)
-			c = char_conversion(c);
 
 	layout:
 		for (;;)
@@ -677,12 +679,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 			}
 
 			/* Get the next character */
-			c = get_char(p,pe,eof,line,col);
+			c = get_char_conv(p,pe,eof,line,col);
 			if (c == char_more)
 				return tokMore;
-
-			if (c <= char_max)
-				c = char_conversion(c);
 		}
 
 	multi_comment:
@@ -691,12 +690,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 		peek_col = *col;
 
 	case eMultiComment1:
-		c = get_char(&peek,pe,eof,&peek_line,&peek_col);
+		c = get_char_conv(&peek,pe,eof,&peek_line,&peek_col);
 		if (c == char_more)
 			return tokMore;
-
-		if (c <= char_max)
-			c = char_conversion(c);
 
 		if (c != '*')
 		{
@@ -717,19 +713,15 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 	dot:
 		peek = *p;
-		peek_line = *line;
 		peek_col = *col;
 
 	case eDot:
-		c = get_char(&peek,pe,eof,&peek_line,&peek_col);
+		c = get_char_conv(&peek,pe,eof,&peek_line,&peek_col);
 		if (c == char_more)
 			return tokMore;
 
 		if (c == char_eof)
 			return tokEnd;
-
-		if (c <= char_max)
-			c = char_conversion(c);
 
 		if (c == ' ' || c == '\n' || c == '\t')
 		{
@@ -753,7 +745,6 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 	quote:
 		peek = *p;
-		peek_line = *line;
 		peek_col = *col;
 
 	case eSingleQuote:
@@ -951,8 +942,8 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 	case eDoubleQuoteOct:
 	case eBackQuoteOct:
 		/* We know *p == "\o" */
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
+		peek += 2;
+		peek_col += 2;
 		meta = 0;
 		for (;;)
 		{
@@ -1005,8 +996,8 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 	case eDoubleQuoteHex:
 	case eBackQuoteHex:
 		/* We know *p == "\x" */
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
+		peek += 2;
+		peek_col += 2;
 		meta = 0;
 		for (;;)
 		{
@@ -1064,12 +1055,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 	case eZero:
 	zero:
-		c = get_char(&peek,pe,eof,&peek_line,&peek_col);
+		c = get_char_conv(&peek,pe,eof,&peek_line,&peek_col);
 		if (c == char_more)
 			return tokMore;
-
-		if (c <= char_max)
-			c = char_conversion(c);
 
 		if (c == '\'')
 		{
@@ -1154,12 +1142,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 		}
 		else if (c == 'b')
 		{
-			c = get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = get_char_conv(&peek,pe,eof,&peek_line,&peek_col);
 			if (c == char_more)
 				return tokMore;
-
-			if (c <= char_max)
-				c = char_conversion(c);
 
 			if (c == '0' || c == '1')
 			{
@@ -1169,12 +1154,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 		}
 		else if (c == 'o')
 		{
-			c = get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = get_char_conv(&peek,pe,eof,&peek_line,&peek_col);
 			if (c == char_more)
 				return tokMore;
-
-			if (c <= char_max)
-				c = char_conversion(c);
 
 			if (c >= '0' && c <= '7')
 			{
@@ -1184,12 +1166,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 		}
 		else if (c == 'x')
 		{
-			c = get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = get_char_conv(&peek,pe,eof,&peek_line,&peek_col);
 			if (c == char_more)
 				return tokMore;
-
-			if (c <= char_max)
-				c = char_conversion(c);
 
 			if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
 			{
@@ -1208,14 +1187,10 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 	case eOctalCharCode:
 		/* We know *p == "0'\o" */
-		get_char(p,pe,eof,line,col);
-		peek = *p;
-		peek_line = *line;
-		peek_col = *col;
-
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
+		++p;
+		++col;
+		peek = *p + 3;
+		peek_col = *col + 3;
 
 		meta = 0;
 		for (;;)
@@ -1264,14 +1239,10 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 	case eHexCharCode:
 		/* We know *p == "0'\x" */
-		get_char(p,pe,eof,line,col);
-		peek = *p;
-		peek_line = *line;
-		peek_col = *col;
-
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
+		++p;
+		++col;
+		peek = *p + 3;
+		peek_col = *col + 3;
 
 		meta = 0;
 		for (;;)
@@ -1327,15 +1298,13 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 	case eDecimal:
 		/* We know *p == '.' */
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
+		++peek;
+		++peek_col;
 
 	decimal:
-		c = get_char(&peek,pe,eof,&peek_line,&peek_col);
+		c = get_char_conv(&peek,pe,eof,&peek_line,&peek_col);
 		if (c == char_more)
 			return tokMore;
-
-		if (c <= char_max)
-			c = char_conversion(c);
 
 		if (c < '0' || c > '9')
 		{
@@ -1354,15 +1323,13 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 	case eExponent:
 		/* We know *p == 'E' or 'e' */
-		get_char(&peek,pe,eof,&peek_line,&peek_col);
+		++peek;
+		++peek_col;
 
 	exponent:
 		c = get_char(&peek,pe,eof,&peek_line,&peek_col);
 		if (c == char_more)
 			return tokMore;
-
-		if (c <= char_max)
-			c = char_conversion(c);
 
 		if (c >= '0' && c <= '9')
 		{
@@ -1379,12 +1346,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 		if (c == '-' || c == '+')
 		{
 			/* Check the next char */
-			uint32_t c2 = get_char(&peek,pe,eof,&peek_line,&peek_col);
+			uint32_t c2 = get_char_conv(&peek,pe,eof,&peek_line,&peek_col);
 			if (c2 == char_more)
 				return tokMore;
-
-			if (c2 <= char_max)
-				c2 = char_conversion(c2);
 
 			if (c2 >= '0' && c2 <= '9')
 			{
@@ -1406,12 +1370,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 	default:
 		for (;;)
 		{
-			c = get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = get_char_conv(&peek,pe,eof,&peek_line,&peek_col);
 			if (c == char_more)
 				return tokMore;
-
-			if (c <= char_max)
-				c = char_conversion(c);
 
 			switch (*state)
 			{
