@@ -1747,7 +1747,7 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 		{
 			for (i=0;i<next->m_len;++i)
 			{
-				if (v & 0x8000000000000000ULL)
+				if (v & UINT64_C(0x8000000000000000))
 				{
 					*err_node = syntax_error("Integer overflow",t->m_start_line,t->m_start_col);
 					return free_ast_node(node); 
@@ -1759,7 +1759,7 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 		{
 			for (i=0;i<next->m_len;++i)
 			{
-				if (v & 0xE000000000000000ULL)
+				if (v & UINT64_C(0xE000000000000000))
 				{
 					*err_node = syntax_error("Integer overflow",t->m_start_line,t->m_start_col);
 					return free_ast_node(node); 
@@ -1771,7 +1771,7 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 		{
 			for (i=0;i<next->m_len;++i)
 			{
-				if (v & 0xF000000000000000ULL)
+				if (v & UINT64_C(0xF000000000000000))
 				{
 					*err_node = syntax_error("Integer overflow",t->m_start_line,t->m_start_col);
 					return free_ast_node(node); 
@@ -1787,7 +1787,7 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 			}
 		}
 
-		if (v > 0x07FFFFFFFFFFFFFFULL)
+		if (v > UINT64_C(0x07FFFFFFFFFFFFFF))
 		{
 			numeric_node->m_base.m_tag = TAG_INT_64;
 			numeric_node->m_val.m_i64 = v;
