@@ -1187,10 +1187,8 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 	case eOctalCharCode:
 		/* We know *p == "0'\o" */
-		++p;
-		++col;
-		peek = *p + 3;
-		peek_col = *col + 3;
+		peek = *p + 4;
+		peek_col = *col + 4;
 
 		meta = 0;
 		for (;;)
@@ -1219,9 +1217,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 				/* Reset the state and treat as integer */
 				c = '0';
 				*state = eInteger;
-				peek = *p;
+				peek = *p + 1;
 				peek_line = *line;
-				peek_col = *col;
+				peek_col = *col + 1;
 				goto next_char;
 			}
 
@@ -1239,11 +1237,8 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 
 	case eHexCharCode:
 		/* We know *p == "0'\x" */
-		++p;
-		++col;
-		peek = *p + 3;
-		peek_col = *col + 3;
-
+		peek = *p + 4;
+		peek_col = *col + 4;
 		meta = 0;
 		for (;;)
 		{
@@ -1271,9 +1266,9 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 				/* Reset the state and treat as integer */
 				c = '0';
 				*state = eInteger;
-				peek = *p;
+				peek = *p + 1;
 				peek_line = *line;
-				peek_col = *col;
+				peek_col = *col + 1;
 				goto next_char;
 			}
 
