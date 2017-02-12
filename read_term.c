@@ -106,7 +106,9 @@ struct Operator
 #define TAG_BQ_PTR     TAG_BQ
 #define TAG_BQ_EMBED   (0x5 << 28)
 
-#define TAG_CUSTOM     (0x2 << 28)
+#define TAG_DECL       (0x2 << 28)
+#define TAG_DECL_PTR   TAG_DECL
+#define TAG_DECL_EMBED (0x3 << 28)
 
 //#define TAG_UNUSED   (0x0 << 28)
 
@@ -1607,7 +1609,7 @@ static struct ASTNode* alloc_ast_atom_node(struct TermBuilder* b, struct Tokeniz
 		}
 		else if (token->m_len > 0x0FFFFFFF)
 		{
-			*err_node = syntax_error("Atom name too long",t->m_start_line,t->m_start_col);
+			*err_node = syntax_error("Name too long",t->m_start_line,t->m_start_col);
 			free(atom_node);
 		}
 		else if (!alloc_ast_atom(b,token,atom_node,err_node))
@@ -1840,9 +1842,9 @@ static struct ASTNode* read_ast_negative(struct Tokenizer* t, struct ASTNode* no
 			((struct ASTNumericNode*)node)->m_val.m_i64 = -((struct ASTNumericNode*)node)->m_val.m_i64;
 		else
 		{
-			int32_t v = node->m_tag & ~TAG_INT_60;
+			int32_t v = node->m_tag & ~TAG_MASK;
 			v = -v;
-			node->m_tag = TAG_INT_28 | ((uint32_t)v & ~TAG_INT_60);
+			node->m_tag = TAG_INT_28 | ((uint32_t)v & ~TAG_MASK);
 		}
 	}
 	return node;
@@ -2085,22 +2087,10 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 		break;
 
 	case tokVar:
-		node = malloc(sizeof(struct ASTNode) - sizeof(struct ASTNode*));
-		if (!node)
-			*err_node = oom_error();
-		else
-		{
-			// TODO
-			void* TODO;
-
-			node->m_tag = TAG_VAR;
-			node->m_value.m_compound.m_str = next->m_str;
-			node->m_value.m_compound.m_len = next->m_len;
-			memset(next,0,sizeof(struct Token));
-
-			*next_type = next_token(t,next);
-			*max_prec = 0;
-		}
+		/* This is a declaration, not an actual VAR */
+		node = alloc_ast_atom_node(b,t,next,err_node);
+		if (node)
+			node->m_tag = TAG_DECL | (node->m_tag & ~TAG_MASK);
 		break;
 
 	case tokInt:
