@@ -5,7 +5,6 @@
 #include <malloc.h>
 #include <errno.h>
 #include <limits.h>
-#include <stdint.h>
 
 #include "prolite.h"
 
@@ -1552,7 +1551,7 @@ static struct ASTError* syntax_error(const char* message, size_t line, size_t co
 	return (struct ASTError*)1;
 }
 
-static struct ASTError* oom_error()
+static struct ASTError* oom_error(void)
 {
 	// TODO!!
 	void* TODO;
@@ -1565,7 +1564,7 @@ static uint32_t alloc_atom(struct TermBuilder* b, struct Token* token)
 	// TODO!!
 	void* TODO;
 
-	return -1;
+	return (uint32_t)-1;
 }
 
 static int alloc_ast_atom(struct TermBuilder* b, struct Token* token, struct ASTAtomNode* atom, struct ASTError** err_node)
@@ -1684,7 +1683,7 @@ static struct ASTCompoundNode* convert_ast_atom_to_compound(struct ASTNode* node
 		return NULL;
 	}
 
-	compound_node->m_base.m_tag = TAG_COMPOUND | 1;
+	compound_node->m_base.m_tag = (uint32_t)TAG_COMPOUND | 1;
 	compound_node->m_functor.m_base.m_tag = prev_tag;
 	compound_node->m_functor.m_offset = prev_offset;
 	compound_node->m_params[0] = NULL;
@@ -1731,7 +1730,7 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 			return free_ast_node(node); 
 		}
 
-		numeric_node->m_base.m_tag = TAG_FLOAT_64;
+		numeric_node->m_base.m_tag = (uint32_t)TAG_FLOAT_64;
 	}
 	else if (*next_type == tokCharCode)
 	{
@@ -1815,7 +1814,7 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 
 		if (v > UINT64_C(0x07FFFFFFFFFFFFFF))
 		{
-			numeric_node->m_base.m_tag = TAG_INT_64;
+			numeric_node->m_base.m_tag = (uint32_t)TAG_INT_64;
 			numeric_node->m_val.m_i64 = v;
 		}
 		else if (v > 0x07FFFFFF)
@@ -1969,8 +1968,8 @@ static struct ASTNode* read_ast_list_term(struct TermBuilder* b, struct Tokenize
 			return NULL;
 		}
 		
-		compound_node->m_base.m_tag = TAG_COMPOUND | 2;
-		compound_node->m_functor.m_base.m_tag = TAG_ATOM_EMBED | (1 << 24) | '.';
+		compound_node->m_base.m_tag = (uint32_t)TAG_COMPOUND | 2;
+		compound_node->m_functor.m_base.m_tag = (uint32_t)TAG_ATOM_EMBED | (1 << 24) | '.';
 		*tail = &compound_node->m_base;
 
 		*next_type = next_token(t,next);
@@ -2004,7 +2003,7 @@ static struct ASTNode* read_ast_list_term(struct TermBuilder* b, struct Tokenize
 			return NULL;
 		}
 
-		(*tail)->m_tag = TAG_ATOM_EMBED | (2 << 24) | ('[' << 8) | ']';
+		(*tail)->m_tag = (uint32_t)TAG_ATOM_EMBED | (2 << 24) | ('[' << 8) | ']';
 	}
 	
 	if (*next_type != tokClose)
@@ -2159,7 +2158,7 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 				*err_node = oom_error();
 			else
 			{
-				node->m_tag = TAG_ATOM_EMBED | (2 << 24) | ('[' << 8) | ']';
+				node->m_tag = (uint32_t)TAG_ATOM_EMBED | (2 << 24) | ('[' << 8) | ']';
 				*next_type = next_token(t,next);
 			}
 		}
