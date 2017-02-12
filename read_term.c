@@ -5,12 +5,15 @@
 #include <malloc.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 
 #include "prolite.h"
 
 struct Stream;
 
 ssize_t read(struct Stream* s, void* dest, size_t len);
+
+int prolog_flag(const char*);
 
 
 uint32_t char_conversion(uint32_t in_char);
@@ -57,11 +60,11 @@ struct Tokenizer
 {
 	struct Stream* m_s;
 	struct Token m_buffer;
-	int m_eof;
 	size_t m_start_line;
 	size_t m_start_col;
 	size_t m_line;
 	size_t m_col;
+	int m_eof;
 };
 
 enum eOpSpec
@@ -238,11 +241,12 @@ static uint32_t skip_ilseq(const unsigned char** p, const unsigned char* pe, int
 		{
 			*p += i;
 			*col += i;
-			return char_ilseq;
+			break;
 		}
 
 		++i;
 	}
+	return char_ilseq;
 }
 
 static uint32_t get_char(const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
@@ -1499,6 +1503,10 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 					return tokFloat;
 				}
 				break;
+
+			default:
+				// Never going to happen
+				break;
 			}
 
 		next_char:
@@ -1587,6 +1595,22 @@ static struct ASTError* syntax_error(const char* message, size_t line, size_t co
 	return (struct ASTError*)1;
 }
 
+static struct ASTError* oom_error()
+{
+	// TODO!!
+	void* TODO;
+
+	return (struct ASTError*)2;
+}
+
+static uint32_t alloc_atom(struct TermBuilder* b, struct Token* token)
+{
+	// TODO!!
+	void* TODO;
+
+	return -1;
+}
+
 static int alloc_ast_atom(struct TermBuilder* b, struct Token* token, struct ASTAtomNode* atom, struct ASTError** err_node)
 {
 	atom->m_base.m_tag = TAG_ATOM_PTR | token->m_len;
@@ -1622,7 +1646,7 @@ static struct ASTNode* alloc_ast_atom_node(struct TermBuilder* b, struct Tokeniz
 			*err_node = oom_error();
 		else if (token->m_len <= 7)
 		{
-			atom_node->m_tag = TAG_ATOM_EMBED | (token->m_len << 24);
+			atom_node->m_base.m_tag = TAG_ATOM_EMBED | (token->m_len << 24);
 			memcpy(((unsigned char*)atom_node) + (8 - token->m_len),token->m_str,token->m_len);
 			node = &atom_node->m_base;
 		}
@@ -1686,7 +1710,7 @@ static struct ASTNode* free_ast_node(struct ASTNode* node)
 	return NULL;
 }
 
-static struct ASTCompoundNode* convert_ast_atom_to_compound(struct ASTNode* node)
+static struct ASTCompoundNode* convert_ast_atom_to_compound(struct ASTNode* node, struct ASTError** err_node)
 {
 	struct ASTCompoundNode* compound_node; 
 	uint32_t prev_tag = node->m_tag;
@@ -1754,18 +1778,19 @@ static struct ASTNode* read_ast_number(struct Tokenizer* t, struct ASTNode* node
 	}
 	else if (*next_type == tokCharCode)
 	{
-		uint32_t v = token->m_str[0];
+		size_t i;
+		uint32_t v = next->m_str[0];
 
-		if ((token->m_str[0] & 0xE0) == 0xC0)
-			val = (token->m_str[0] & 0x1F);
-		else if ((token->m_str[0] & 0xF0) == 0xE0)
-			val = (token->m_str[0] & 0x0F);
+		if ((next->m_str[0] & 0xE0) == 0xC0)
+			v = (next->m_str[0] & 0x1F);
+		else if ((next->m_str[0] & 0xF0) == 0xE0)
+			v = (next->m_str[0] & 0x0F);
 		else
-			val = (token->m_str[0] & 0x7);
+			v = (next->m_str[0] & 0x7);
 
-		for (i=1;i<(unsigned int)token->m_len;++i)
+		for (i=1;i<next->m_len;++i)
 		{
-			val = (val << 6) | (token->m_str[i] & 0x3F);
+			v = (v << 6) | (next->m_str[i] & 0x3F);
 		}
 
 		numeric_node->m_base.m_tag = TAG_INT_28 | v;
@@ -1854,7 +1879,7 @@ static struct ASTNode* read_ast_negative(struct Tokenizer* t, struct ASTNode* no
 	node = read_ast_number(t,node,next_type,next,err_node);
 	if (node)
 	{
-		if (node->m_tag == TAG_FLOAT)
+		if (node->m_tag == TAG_FLOAT_64)
 			((struct ASTNumericNode*)node)->m_val.m_f64 = -((struct ASTNumericNode*)node)->m_val.m_f64;
 		else if (node->m_tag == TAG_INT_64)
 			((struct ASTNumericNode*)node)->m_val.m_i64 = -((struct ASTNumericNode*)node)->m_val.m_i64;
@@ -1868,7 +1893,7 @@ static struct ASTNode* read_ast_negative(struct Tokenizer* t, struct ASTNode* no
 	return node;
 }
 
-static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node);
+static struct ASTNode* read_ast_term(struct TermBuilder* b, struct Tokenizer* t, unsigned int max_prec, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node);
 static struct ASTNode* read_ast_compound_term(struct TermBuilder* b, struct Tokenizer* t, struct ASTNode* node, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node);
 
 static struct ASTNode* read_ast_arg(struct TermBuilder* b, struct Tokenizer* t, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node)
@@ -1894,11 +1919,11 @@ static struct ASTNode* read_ast_arg(struct TermBuilder* b, struct Tokenizer* t, 
 		op = lookup_prefix_op(node);
 		if (op && op->m_precedence <= 999 && (op->m_specifier == eFX || op->m_specifier == eFY))
 		{
-			struct ASTCompoundNode* compound_node = convert_ast_atom_to_compound(node);
+			struct ASTCompoundNode* compound_node = convert_ast_atom_to_compound(node,err_node);
 			if (compound_node)
 			{
 				node = &compound_node->m_base;
-				compound_node->m_params[0] = read_ast_term(t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,err_node);
+				compound_node->m_params[0] = read_ast_term(b,t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,err_node);
 				if (!compound_node->m_params[0])
 					node = free_ast_node(node);
 			}
@@ -1907,14 +1932,14 @@ static struct ASTNode* read_ast_arg(struct TermBuilder* b, struct Tokenizer* t, 
 		return node;
 	}
 
-	return read_ast_term(t,999,next_type,next,err_node);
+	return read_ast_term(b,t,999,next_type,next,err_node);
 }
 
 static struct ASTNode* read_ast_compound_term(struct TermBuilder* b, struct Tokenizer* t, struct ASTNode* node, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node)
 {
 	uint32_t arity = 0;
 	uint32_t alloc_arity = 1;
-	struct ASTCompoundNode* compound_node = convert_ast_atom_to_compound(node);
+	struct ASTCompoundNode* compound_node = convert_ast_atom_to_compound(node,err_node);
 	if (!compound_node)
 		return NULL;
 
@@ -2067,11 +2092,11 @@ static struct ASTNode* read_ast_name(struct TermBuilder* b, struct Tokenizer* t,
 	{
 		if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
 		{
-			struct ASTCompoundNode* compound_node = convert_ast_atom_to_compound(node);
+			struct ASTCompoundNode* compound_node = convert_ast_atom_to_compound(node,err_node);
 			if (compound_node)
 			{
 				node = &compound_node->m_base;
-				compound_node->m_params[0] = read_ast_term(t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,err_node);
+				compound_node->m_params[0] = read_ast_term(b,t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,err_node);
 				if (!compound_node->m_params[0])
 					node = free_ast_node(node);
 				
@@ -2110,9 +2135,10 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 			*err_node = oom_error();
 		else
 		{
-			TODO;
+			// TODO
+			void* TODO;
 
-			node->m_type = termVar;
+			node->m_tag = TAG_VAR;
 			node->m_value.m_compound.m_str = next->m_str;
 			node->m_value.m_compound.m_len = next->m_len;
 			memset(next,0,sizeof(struct Token));
@@ -2136,7 +2162,7 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 		if (prolog_flag("double_quotes") == 0 /* atom */)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.1:2007 */
-			node = read_ast_name(t,max_prec,next_type,next,err_node);
+			node = read_ast_name(b,t,max_prec,next_type,next,err_node);
 		}
 		else
 		{
@@ -2149,7 +2175,7 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 
 	case tokBackQuote:
 		if (prolog_flag("back_quotes") == 0 /* atom */)
-			node = read_ast_name(t,max_prec,next_type,next,err_node);
+			node = read_ast_name(b,t,max_prec,next_type,next,err_node);
 		else
 		{
 			//TODO!
@@ -2162,7 +2188,7 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 	case tokOpen:
 	case tokOpenCt:
 		*next_type = next_token(t,next);
-		node = read_ast_term(t,1201,next_type,next,err_node);
+		node = read_ast_term(b,t,1201,next_type,next,err_node);
 		if (node)
 		{
 			if (*next_type != tokClose)
@@ -2207,7 +2233,7 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 			{
 				*next_type = next_token(t,next);
 
-				compound_node->m_params[0] = read_ast_term(t,1201,next_type,next,err_node);
+				compound_node->m_params[0] = read_ast_term(b,t,1201,next_type,next,err_node);
 				if (!compound_node->m_params[0])
 					node = free_ast_node(node);
 				else
@@ -2270,10 +2296,10 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 	return node;
 }
 
-static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node)
+static struct ASTNode* read_ast_term(struct TermBuilder* b, struct Tokenizer* t, unsigned int max_prec, enum eTokenType* next_type, struct Token* next, struct ASTError** err_node)
 {
 	unsigned int prev_prec = max_prec;
-	struct ASTNode* node = read_ast_term_base(t,&prev_prec,next_type,next,err_node);
+	struct ASTNode* node = read_ast_term_base(b,t,&prev_prec,next_type,next,err_node);
 
 	/* This is precedence climbing, if you're interested */
 	while (node)
@@ -2395,7 +2421,7 @@ static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec,
 
 				if (binary)
 				{
-					next_node->m_params[1] = read_ast_term(t,right_prec,next_type,next,err_node);
+					next_node->m_params[1] = read_ast_term(b,t,right_prec,next_type,next,err_node);
 					if (!next_node->m_params[1])
 						node = free_ast_node(node);
 				}
@@ -2406,12 +2432,12 @@ static struct ASTNode* read_ast_term(struct Tokenizer* t, unsigned int max_prec,
 	return node;
 }
 
-static struct ASTNode* read_ast(struct Tokenizer* t, struct ASTError** err_node)
+static struct ASTNode* read_ast(struct TermBuilder* b, struct Tokenizer* t, struct ASTError** err_node)
 {
 	struct Token next = {0};
 	enum eTokenType next_type = next_token(t,&next);
 
-	struct ASTNode* node = read_ast_term(t,1201,&next_type,&next,err_node);
+	struct ASTNode* node = read_ast_term(b,t,1201,&next_type,&next,err_node);
 	if (node)
 	{
 		if (next_type != tokEnd)
@@ -2432,13 +2458,14 @@ static struct ASTNode* read_ast(struct Tokenizer* t, struct ASTError** err_node)
 int read_term(struct Stream* s)
 {
 	struct Tokenizer t = {0};
+	struct TermBuilder b = {0};
 	struct ASTNode* node = NULL;
 	struct ASTError* err_node = NULL;
 
 	t.m_line = 1;
 	t.m_s = s;
 
-	node = read_ast(&t,&err_node);
+	node = read_ast(&b,&t,&err_node);
 	if (!node)
 	{
 		/* Do something with err_node */
