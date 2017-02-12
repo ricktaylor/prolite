@@ -1842,9 +1842,8 @@ static struct ASTNode* read_ast_negative(struct Tokenizer* t, struct ASTNode* no
 			((struct ASTNumericNode*)node)->m_val.m_i64 = -((struct ASTNumericNode*)node)->m_val.m_i64;
 		else
 		{
-			int32_t v = node->m_tag & ~TAG_MASK;
-			v = -v;
-			node->m_tag = TAG_INT_28 | ((uint32_t)v & ~TAG_MASK);
+			// Flip bit 27
+			node->m_tag ^= 0x08000000;
 		}
 	}
 	return node;
@@ -2111,8 +2110,9 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 		}
 		else
 		{
-			//TODO!
-			void* TODO;
+			node = alloc_ast_atom_node(b,t,next,err_node);
+			if (node)
+				node->m_tag = TAG_DQL | (node->m_tag & ~TAG_MASK);
 
 			*max_prec = 0;
 		}
@@ -2123,8 +2123,9 @@ static struct ASTNode* read_ast_term_base(struct TermBuilder* b, struct Tokenize
 			node = read_ast_name(b,t,max_prec,next_type,next,err_node);
 		else
 		{
-			//TODO!
-			void* TODO;
+			node = alloc_ast_atom_node(b,t,next,err_node);
+			if (node)
+				node->m_tag = TAG_BQ | (node->m_tag & ~TAG_MASK);
 
 			*max_prec = 0;
 		}
