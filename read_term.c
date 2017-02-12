@@ -6,11 +6,11 @@
 #include <errno.h>
 #include <limits.h>
 
-#include "prolite.h"
+#include <stdint.h>
 
 struct Stream;
 
-ssize_t read(struct Stream* s, void* dest, size_t len);
+int64_t read(struct Stream* s, void* dest, size_t len);
 
 int prolog_flag(const char*);
 
@@ -1496,7 +1496,7 @@ static enum eTokenType next_token(struct Tokenizer* t, struct Token* token)
 		if (!t->m_eof)
 		{
 			unsigned char c;
-			ssize_t i = read(t->m_s,&c,1);
+			int64_t i = read(t->m_s,&c,1);
 			if (i == 0)
 				t->m_eof = 1;
 			else if (tokenAppend(&t->m_buffer,c) != 0)
@@ -1572,7 +1572,10 @@ static int alloc_ast_atom(struct TermBuilder* b, struct Token* token, struct AST
 	atom->m_base.m_tag = TAG_ATOM_PTR | token->m_len;
 	atom->m_offset = alloc_atom(b,token);
 	if (atom->m_offset == (uint32_t)-1)
+	{
+		*err_node = oom_error();
 		return 0;
+	}
 
 	return 1;
 }
