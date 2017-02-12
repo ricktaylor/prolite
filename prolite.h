@@ -4,7 +4,7 @@
 typedef __int64 ssize_t;
 #define _INTPTR 2
 #else
-typedef unsigned int ssize_t;
+typedef int ssize_t;
 #define _INTPTR 1
 #endif
 #endif
