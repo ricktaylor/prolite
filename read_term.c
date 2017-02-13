@@ -232,7 +232,7 @@ static uint32_t skip_ilseq(const unsigned char** p, const unsigned char* pe, int
 			{
 				*p += i;
 				*col += i;
-				return char_ilseq;
+				break;
 			}
 
 			return char_more;
