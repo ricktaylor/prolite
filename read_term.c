@@ -1844,8 +1844,9 @@ static struct ASTNode* read_ast_negative(struct Tokenizer* t, struct ASTNode* no
 			((struct ASTNumericNode*)node)->m_val.m_i64 = -((struct ASTNumericNode*)node)->m_val.m_i64;
 		else
 		{
-			// Flip bit 27
-			node->m_tag ^= 0x08000000;
+			uint32_t v = node->m_tag & 0x0FFFFFFFF;
+			v = -v;
+			node->m_tag = (uint32_t)TAG_INT_28 | (v & 0x0FFFFFFFF);
 		}
 	}
 	return node;
