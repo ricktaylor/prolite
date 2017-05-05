@@ -12,4 +12,4 @@ struct context_string_t
 	unsigned char            m_char[];
 };
 
-unsigned char* context_string_alloc(struct context_t* context, size_t len);
+unsigned char* context_alloc_string(struct context_t* context, size_t len);

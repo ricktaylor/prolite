@@ -36,7 +36,7 @@ struct Operator
 	unsigned int m_precedence;
 };
 
-struct Operator* lookup_op(const unsigned char* name, size_t len)
+struct Operator* lookup_op(const unsigned char* name, size_t name_len)
 {
 	struct Operator* op = NULL;
 
@@ -47,7 +47,7 @@ struct Operator* lookup_op(const unsigned char* name, size_t len)
 	return op;
 }
 
-struct Operator* lookup_prefix_op(struct ast_node_t* node)
+struct Operator* lookup_prefix_op(const unsigned char* name, size_t name_len)
 {
 	struct Operator* op = NULL;
 
@@ -165,10 +165,13 @@ enum eASTError
 	AST_SYNTAX_ERR_MISSING_QUOTE,
 };
 
-static const uint32_t char_max = 0x1FFFF; /* Greatest valid unicode char */
-static const uint32_t char_more = char_max+1;
-static const uint32_t char_eof = char_max+2;
-static const uint32_t char_ilseq = char_max+3;
+enum eCharMax
+{
+	char_max = 0x1FFFF, /* Greatest valid unicode char */
+	char_more = char_max+1,
+	char_eof = char_max+2,
+	char_ilseq = char_max+3
+};
 
 static int token_append_char(struct token_t* token, unsigned char c)
 {
@@ -362,9 +365,9 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 	return val;
 }
 
-static uint32_t token_get_char_conv(const unsigned char** p, const unsigned char* pe, struct token_info_t* info)
+static uint32_t token_get_char_conv(const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
 {
-	uint32_t c = token_get_char(p,pe,info);
+	uint32_t c = token_get_char(p,pe,eof,line,col);
 	if (c <= char_max)
 		c = char_conversion(c);
 	return c;
@@ -530,7 +533,7 @@ static enum eTokenType read_token(enum eState* state, const unsigned char** p, c
 		/* Clear the current token */
 		token->m_len = 0;
 
-		c = token_get_char_conv(p,pe,info);
+		c = token_get_char_conv(p,pe,eof,&info->m_line,&info->m_col);
 		if (c == char_more)
 			return tokMore;
 
@@ -1719,8 +1722,7 @@ static struct ast_node_t* ast_read_arg(struct context_t* context, struct tokeniz
 	if (*next_type != tokName)
 		return ast_read_term(context,t,999,next_type,next,ast_err);
 
-	struct Operator* op;
-	struct ast_node_t* node = ast_alloc_node(context,AST_TYPE_ATOM,t,next,0,ast_err);
+	struct ast_node_t* node = ast_alloc_node(context,AST_TYPE_ATOM,next,0,ast_err);
 	if (!node)
 		return node;
 
@@ -1729,21 +1731,24 @@ static struct ast_node_t* ast_read_arg(struct context_t* context, struct tokeniz
 	if (*next_type == tokOpenCt)
 		return ast_read_compound_term(context,t,node,next_type,next,ast_err);
 
-	if (node->m_type == AST_TYPE_ATOM && node->m_name_len == 1 && node->m_name[0] == '-')
+	if (node->m_type == AST_TYPE_ATOM)
 	{
-		if (*next_type >= tokInt && *next_type <= tokFloat)
-			return ast_read_negative(context,t,node,next_type,next,ast_err);
-	}
-
-	op = lookup_prefix_op(node);
-	if (op && op->m_precedence <= 999 && (op->m_specifier == eFX || op->m_specifier == eFY))
-	{
-		node = ast_atom_to_compound(node,ast_err);
-		if (node)
+		if (node->m_name_len == 1 && node->m_name[0] == '-')
 		{
-			node->m_params[0] = ast_read_term(context,t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
-			if (!node->m_params[0])
-				node = ast_free_node(node);
+			if (*next_type >= tokInt && *next_type <= tokFloat)
+				return ast_read_negative(context,t,node,next_type,next,ast_err);
+		}
+
+		struct Operator* op = lookup_prefix_op(node->m_name,node->m_name_len);
+		if (op && op->m_precedence <= 999 && (op->m_specifier == eFX || op->m_specifier == eFY))
+		{
+			node = ast_atom_to_compound(node,ast_err);
+			if (node)
+			{
+				node->m_params[0] = ast_read_term(context,t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
+				if (!node->m_params[0])
+					node = ast_free_node(node);
+			}
 		}
 	}
 
@@ -1851,52 +1856,47 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct t
 
 static struct ast_node_t* ast_read_name(struct context_t* context, struct tokenizer_t* t, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
-	struct Operator* op;
-	struct ast_node_t* node = ast_alloc_node(context,AST_TYPE_ATOM,t,next,0,ast_err);
+	struct ast_node_t* node = ast_alloc_node(context,AST_TYPE_ATOM,next,0,ast_err);
 	if (!node)
 		return node;
 
 	*next_type = token_next(t,next);
+	*max_prec = 0;
 
 	if (*next_type == tokOpenCt)
-	{
-		*max_prec = 0;
 		return ast_read_compound_term(context,t,node,next_type,next,ast_err);
-	}
 
-	if (node->m_type == AST_TYPE_ATOM && node->m_name_len == 1 && node->m_name[0] == '-')
+	if (node->m_type == AST_TYPE_ATOM)
 	{
-		if (*next_type >= tokInt && *next_type <= tokFloat)
+		if (node->m_name_len == 1 && node->m_name[0] == '-')
 		{
-			*max_prec = 0;
-			return ast_read_negative(context,t,node,next_type,next,ast_err);
+			if (*next_type >= tokInt && *next_type <= tokFloat)
+				return ast_read_negative(context,t,node,next_type,next,ast_err);
 		}
-	}
 
-	op = lookup_prefix_op(node);
-	if (op)
-	{
-		if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
+		struct Operator* op = lookup_prefix_op(node->m_name,node->m_name_len);
+		if (op)
 		{
-			node = ast_atom_to_compound(node,ast_err);
-			if (node)
+			if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
 			{
-				node->m_params[0] = ast_read_term(context,t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
-				if (!node->m_params[0])
-					node = ast_free_node(node);
-				
-				*max_prec = op->m_precedence;
+				node = ast_atom_to_compound(node,ast_err);
+				if (node)
+				{
+					node->m_params[0] = ast_read_term(context,t,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
+					if (!node->m_params[0])
+						node = ast_free_node(node);
+
+					*max_prec = op->m_precedence;
+				}
+				return node;
 			}
-			return node;
+
+			if (*max_prec < 1201)
+				return ast_syntax_error(AST_SYNTAX_ERR_INVALID_ARG,node,ast_err);
+
+			*max_prec = 1201;
 		}
-
-		if (*max_prec < 1201)
-			return ast_syntax_error(AST_SYNTAX_ERR_INVALID_ARG,node,ast_err);
-
-		*max_prec = 1201;
 	}
-	else
-		*max_prec = 0;
 
 	return node;
 }
