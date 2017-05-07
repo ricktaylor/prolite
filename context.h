@@ -1,40 +1,9 @@
 
-struct context_t;
-
 union box_t
 {
 	double   m_dval;
 	uint64_t m_uval;
 };
-
-enum eProliteType
-{
-	PROLITE_TYPE_VAR,
-	PROLITE_TYPE_COMPOUND,
-	PROLITE_TYPE_DOUBLE,
-	PROLITE_TYPE_INTEGER,
-	PROLITE_TYPE_ATOM,
-	PROLITE_TYPE_CHARS,
-	PROLITE_TYPE_CODES,
-};
-
-// Bits required:  51 - 48 = 3 bits
-
-// Var : MaxVars  0xFFF7
-// Compound : MaxArity  0xFFF6
-// Int : 32  0xFFF5
-// Atom
-//	- Atom embed : 43  0xFFF1/3
-//  - Atom local:      0xFFF1/C
-//  - Atom ptr  : 48  0xFFF4
-// Chars
-//	- Chars embed : 43  0xFFF1/2
-//  - Chars local       0xFFF1/8
-//  - Chars ptr  : 48  0xFFF3
-// Codes
-//	- Codes embed : 43  0xFFF1/1
-//  - Codes local     0xFFF1/4
-//  - Codes ptr : 48 0xFFF2
 
 enum eBoxTag
 {
@@ -59,24 +28,39 @@ enum eBoxTag
 	BOX_TAG_INT32       = BOX_TAG_EXTEND | (UINT64_C(0x9) << 44)
 };
 
-static inline void box_pointer(union box_t* val, void* ptr)
+struct context_t
+{
+	// Heap strings
+	// Stack strings
+
+	struct context_flags_t
+	{
+		unsigned char_conversion : 1;
+		unsigned double_quotes : 2;
+		unsigned back_quotes : 2;
+		unsigned debug : 1;
+		unsigned unknown : 2;
+	} m_flags;
+};
+
+static inline void box_pointer(union box_t* b, void* ptr)
 {
 #if UINTPTR_MAX == UINT32_MAX
-	val->m_uval |= (uintptr_t)ptr;
+	b->m_uval |= (uintptr_t)ptr;
 #elif defined (__x86_64__) || defined(_M_X64) || defined(__aarch64__)
-	val->m_uval |= ((uintptr_t)ptr & ~BOX_TAG_MASK);
+	b->m_uval |= ((uintptr_t)ptr & ~BOX_TAG_MASK);
 #else
 #error No idea what to do with addresses on your architecture!
 #endif
 }
 
-static inline void* unbox_pointer(const union box_t* val)
+static inline void* unbox_pointer(const union box_t* b)
 {
 #if UINTPTR_MAX == UINT32_MAX
-	return (void*)(uintptr_t)(val->m_uval);
+	return (void*)(uintptr_t)(b->m_uval);
 #elif defined (__x86_64__) || defined(_M_X64) || defined(__aarch64__)
 	/* Sign extend to make an x86_64 canonical address */
-	return (void*)(uintptr_t)(((val->m_uval & ~BOX_TAG_MASK) << 16) >> 16);
+	return (void*)(uintptr_t)(((b->m_uval & ~BOX_TAG_MASK) << 16) >> 16);
 #else
 #error No idea what to do with addresses on your architecture!
 #endif
@@ -116,24 +100,22 @@ static inline int box_string(struct context_t* context, union box_t* b, const un
 	return 1;
 }
 
-static inline const unsigned char* unbox_string(struct context_t* context, const union box_t* val, size_t* len)
+struct string_ptr_t const* unbox_string_stack(struct context_t* context, const union box_t* b);
+
+static inline const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len)
 {
-	uint64_t masked = (val->m_uval & (BOX_TAG_MASK | (UINT64_C(0x1) << 44)));
-
-	if (masked == (BOX_TAG_EXTEND | (UINT64_C(0x1) << 44)))
+	uint64_t tag = (b->m_uval & (BOX_TAG_MASK | (UINT64_C(0x1) << 44)));
+	if (tag == (BOX_TAG_EXTEND | (UINT64_C(0x1) << 44)))
 	{
-		*len = val->m_uval & (UINT64_C(0xF) << 40);
-		return ((const unsigned char*)val) + 3;
+		*len = b->m_uval & (UINT64_C(0xF) << 40);
+		return ((const unsigned char*)b) + 3;
 	}
 
-	struct string_ptr_t* s;
-	if (masked == BOX_TAG_EXTEND)
-	{
-		/* TODO: Deref from context */
-		return NULL;
-	}
+	struct string_ptr_t const* s;
+	if (tag == BOX_TAG_EXTEND)
+		s = unbox_string_stack(context,b);
 	else
-		s = (struct string_ptr_t*)unbox_pointer(val);
+		s = (struct string_ptr_t const*)unbox_pointer(b);
 
 	*len = s->m_len;
 	return s->m_str;
@@ -160,24 +142,8 @@ static inline union box_t box_int32(int32_t n)
 
 static inline int32_t unbox_int32(const union box_t* b)
 {
-	return (int32_t)(b->m_uval & 0xFFFFFFFF);
+	return (int32_t)(b->m_uval & UINT64_C(0xFFFFFFFF));
 }
-
-struct context_t
-{
-	// Heap strings
-	// Stack strings
-
-	struct context_flags_t
-	{
-		unsigned char_conversion : 1;
-		unsigned double_quotes : 2;
-		unsigned back_quotes : 2;
-		unsigned debug : 1;
-		unsigned unknown : 2;
-
-	} m_flags;
-};
 
 struct stream_t;
 int64_t stream_read(struct stream_t* s, void* dest, size_t len);
