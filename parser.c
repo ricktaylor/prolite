@@ -77,9 +77,9 @@ enum eAstType
 
 struct ast_node_t
 {
-	enum eAstType      m_type;
 	union box_t        m_boxed;
 	size_t             m_arity;
+	enum eAstType      m_type;
 	struct ast_node_t* m_params[];
 };
 
@@ -1410,7 +1410,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 				break;
 
 			default:
-				// Never going to happen
+				/* Never going to happen */
 				break;
 			}
 
@@ -1516,8 +1516,9 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 
 	if (*next_type == tokFloat)
 	{
+		double dval;
 		errno = 0;
-		double dval = strtod((const char*)next->m_str,NULL);
+		dval = strtod((const char*)next->m_str,NULL);
 		if (dval == HUGE_VAL)
 			return ast_syntax_error(AST_SYNTAX_ERR_FLOAT_OVERFLOW,node,ast_err);
 
@@ -1626,10 +1627,13 @@ static struct ast_node_t* ast_read_compound_term(struct context_t* context, stru
 
 static struct ast_node_t* ast_read_arg(struct context_t* context, struct parser_t* parser, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
+	struct ast_node_t* node;
+	struct Operator* op;
+
 	if (*next_type != tokName)
 		return ast_read_term(context,parser,999,next_type,next,ast_err);
 
-	struct ast_node_t* node = malloc(sizeof(struct ast_node_t));
+	node = malloc(sizeof(struct ast_node_t));
 	if (!node)
 		return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
 
@@ -1653,7 +1657,7 @@ static struct ast_node_t* ast_read_arg(struct context_t* context, struct parser_
 			return ast_read_negative(context,parser,node,next_type,next,ast_err);
 	}
 
-	struct Operator* op = lookup_prefix_op(context,&node->m_boxed);
+	op = lookup_prefix_op(context,&node->m_boxed);
 	if (op && op->m_precedence <= 999 && (op->m_specifier == eFX || op->m_specifier == eFY))
 	{
 		node = ast_atom_to_compound(node,ast_err);
@@ -1778,6 +1782,7 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct p
 
 static struct ast_node_t* ast_read_name(struct context_t* context, struct parser_t* parser, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
+	struct Operator* op;
 	struct ast_node_t* node = malloc(sizeof(struct ast_node_t));
 	if (!node)
 		return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
@@ -1800,7 +1805,7 @@ static struct ast_node_t* ast_read_name(struct context_t* context, struct parser
 			return ast_read_negative(context,parser,node,next_type,next,ast_err);
 	}
 
-	struct Operator* op = lookup_prefix_op(context,&node->m_boxed);
+	op = lookup_prefix_op(context,&node->m_boxed);
 	if (op)
 	{
 		if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
@@ -1997,10 +2002,12 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 
 		if (*next_type == tokName)
 		{
+			struct Operator* op;
+
 			if (!box_string(context,&name,next->m_str,next->m_len))
 				return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
 
-			struct Operator* op = lookup_op(context,&name);
+			op = lookup_op(context,&name);
 			if (!op || op->m_precedence > max_prec)
 				return node;
 
@@ -2050,9 +2057,10 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 		else if (*next_type == tokBar)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.2:2012 */
+			struct Operator* op;
 			name.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)'|' << 32);
 
-			struct Operator* op = lookup_op(context,&name);
+			op = lookup_op(context,&name);
 			if (!op || op->m_precedence > max_prec)
 				break;
 
@@ -2087,24 +2095,26 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 
 		if (prev_prec > left_prec)
 			break;
-
-		struct ast_node_t* next_node = malloc(sizeof(struct ast_node_t) + ((1 + binary) * sizeof(struct ast_node_t*)));
-		if (!next_node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
-
-		node->m_type = AST_TYPE_COMPOUND;
-		node->m_boxed = name;
-		node->m_arity = 1 + binary;
-		next_node->m_params[0] = node;
-		node = next_node;
-
-		*next_type = token_next(context,parser,next);
-
-		if (binary)
+		else
 		{
-			next_node->m_params[1] = ast_read_term(context,parser,right_prec,next_type,next,ast_err);
-			if (!next_node->m_params[1])
-				return ast_free_node(node);
+			struct ast_node_t* next_node = malloc(sizeof(struct ast_node_t) + ((1 + binary) * sizeof(struct ast_node_t*)));
+			if (!next_node)
+				return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+
+			node->m_type = AST_TYPE_COMPOUND;
+			node->m_boxed = name;
+			node->m_arity = 1 + binary;
+			next_node->m_params[0] = node;
+			node = next_node;
+		
+			*next_type = token_next(context,parser,next);
+
+			if (binary)
+			{
+				next_node->m_params[1] = ast_read_term(context,parser,right_prec,next_type,next,ast_err);
+				if (!next_node->m_params[1])
+					return ast_free_node(node);
+			}
 		}
 	}
 
@@ -2139,9 +2149,14 @@ static int emit_term(struct context_t* context, struct parser_t* parser, struct 
 
 int read_term(struct context_t* context, struct stream_t* s)
 {
-	struct parser_t parser = { .m_s = s, .m_info = { .m_line = 1 } };
+	struct parser_t parser = {0};
 	struct token_t next = {0};
-	int err = emit_term(context,&parser,&next);
+	int err;
+
+	parser.m_s = s;
+	parser.m_info.m_line = 1;
+
+	err = emit_term(context,&parser,&next);
 	if (err)
 	{
 		/* Throw the error */
@@ -2154,9 +2169,12 @@ int read_term(struct context_t* context, struct stream_t* s)
 
 int consult(struct context_t* context, struct stream_t* s)
 {
-	int err = 0;
-	struct parser_t parser = { .m_s = s, .m_info = { .m_line = 1 } };
+	struct parser_t parser = {0};
 	struct token_t next = {0};
+	int err = 0;
+	
+	parser.m_s = s;
+	parser.m_info.m_line = 1;
 
 	for (;;)
 	{
@@ -2178,9 +2196,12 @@ int consult(struct context_t* context, struct stream_t* s)
 
 int consult_bulk(struct context_t* context, struct stream_t* s)
 {
-	int err = 0;
-	struct parser_t parser = { .m_s = s, .m_info = { .m_line = 1 } };
+	struct parser_t parser = {0};
 	struct token_t next = {0};
+	int err = 0;
+	
+	parser.m_s = s;
+	parser.m_info.m_line = 1;
 
 	for (;;)
 	{
@@ -2196,6 +2217,9 @@ int consult_bulk(struct context_t* context, struct stream_t* s)
 				next_type = token_next(context,&parser,&next);
 			}
 			while (next_type != tokEnd && next_type != tokEOF);
+
+			if (next_type == tokEOF)
+				break;
 		}
 
 		if (!err)

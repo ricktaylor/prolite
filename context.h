@@ -5,28 +5,25 @@ union box_t
 	uint64_t m_uval;
 };
 
-enum eBoxTag
-{
-	BOX_TAG_MASK        = UINT64_C(0xFFFF) << 48,
+static const uint64_t BOX_TAG_MASK        = UINT64_C(0xFFFF) << 48;
 
-	BOX_TAG_VAR         = UINT64_C(0xFFF7) << 48,
-	BOX_TAG_COMPOUND    = UINT64_C(0xFFF6) << 48,
-	BOX_TAG_ATOM_PTR    = UINT64_C(0xFFF5) << 48,
-	BOX_TAG_CHARS_PTR   = UINT64_C(0xFFF4) << 48,
-	BOX_TAG_CODES_PTR   = UINT64_C(0xFFF3) << 48,
-	BOX_TAG_CUSTOM_PTR  = UINT64_C(0xFFF2) << 48,
-	BOX_TAG_EXTEND      = UINT64_C(0xFFF1) << 48,
+static const uint64_t BOX_TAG_VAR         = UINT64_C(0xFFF7) << 48;
+static const uint64_t BOX_TAG_COMPOUND    = UINT64_C(0xFFF6) << 48;
+static const uint64_t BOX_TAG_ATOM_PTR    = UINT64_C(0xFFF5) << 48;
+static const uint64_t BOX_TAG_CHARS_PTR   = UINT64_C(0xFFF4) << 48;
+static const uint64_t BOX_TAG_CODES_PTR   = UINT64_C(0xFFF3) << 48;
+static const uint64_t BOX_TAG_CUSTOM_PTR  = UINT64_C(0xFFF2) << 48;
+static const uint64_t BOX_TAG_EXTEND      = UINT64_C(0xFFF1) << 48;
 
-	BOX_TAG_EXTEND_MASK = BOX_TAG_EXTEND | (UINT64_C(0xF) << 44),
+static const uint64_t BOX_TAG_EXTEND_MASK = (UINT64_C(0xFFF1) << 48) | (UINT64_C(0xF) << 44);
 
-	BOX_TAG_ATOM_EMBED  = BOX_TAG_EXTEND | (UINT64_C(0xF) << 44),
-	BOX_TAG_ATOM_STACK  = BOX_TAG_EXTEND | (UINT64_C(0xE) << 44),
-	BOX_TAG_CHARS_EMBED = BOX_TAG_EXTEND | (UINT64_C(0xD) << 44),
-	BOX_TAG_CHARS_STACK = BOX_TAG_EXTEND | (UINT64_C(0xC) << 44),
-	BOX_TAG_CODES_EMBED = BOX_TAG_EXTEND | (UINT64_C(0xB) << 44),
-	BOX_TAG_CODES_STACK = BOX_TAG_EXTEND | (UINT64_C(0xA) << 44),
-	BOX_TAG_INT32       = BOX_TAG_EXTEND | (UINT64_C(0x9) << 44)
-};
+static const uint64_t BOX_TAG_ATOM_EMBED  = (UINT64_C(0xFFF1) << 48) | (UINT64_C(0xF) << 44);
+static const uint64_t BOX_TAG_ATOM_STACK  = (UINT64_C(0xFFF1) << 48) | (UINT64_C(0xE) << 44);
+static const uint64_t BOX_TAG_CHARS_EMBED = (UINT64_C(0xFFF1) << 48) | (UINT64_C(0xD) << 44);
+static const uint64_t BOX_TAG_CHARS_STACK = (UINT64_C(0xFFF1) << 48) | (UINT64_C(0xC) << 44);
+static const uint64_t BOX_TAG_CODES_EMBED = (UINT64_C(0xFFF1) << 48) | (UINT64_C(0xB) << 44);
+static const uint64_t BOX_TAG_CODES_STACK = (UINT64_C(0xFFF1) << 48) | (UINT64_C(0xA) << 44);
+static const uint64_t BOX_TAG_INT32       = (UINT64_C(0xFFF1) << 48) | (UINT64_C(0x9) << 44);
 
 struct context_t
 {
@@ -42,6 +39,10 @@ struct context_t
 		unsigned unknown : 2;
 	} m_flags;
 };
+
+#if defined(_MSC_VER)
+#define inline __inline
+#endif
 
 static inline void box_pointer(union box_t* b, void* ptr)
 {
@@ -77,11 +78,12 @@ int box_string_ptr(struct context_t* context, union box_t* b, const unsigned cha
 
 static inline int box_string(struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
 {
+	const unsigned char* s;
 	if (len > 5)
 		return box_string_ptr(context,b,str,len);
 
-	b->m_uval = BOX_TAG_ATOM_EMBED | (uint64_t)(len & 0xF) << 40;
-	const unsigned char* s = str;
+	s = str;
+	b->m_uval = BOX_TAG_ATOM_EMBED | ((len & UINT64_C(0xF)) << 40);
 	switch (len)
 	{
 	case 5:
@@ -104,14 +106,14 @@ struct string_ptr_t const* unbox_string_stack(struct context_t* context, const u
 
 static inline const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len)
 {
+	struct string_ptr_t const* s;
 	uint64_t tag = (b->m_uval & (BOX_TAG_MASK | (UINT64_C(0x1) << 44)));
 	if (tag == (BOX_TAG_EXTEND | (UINT64_C(0x1) << 44)))
 	{
-		*len = b->m_uval & (UINT64_C(0xF) << 40);
+		*len = (size_t)(b->m_uval & (UINT64_C(0xF) << 40));
 		return ((const unsigned char*)b) + 3;
 	}
 
-	struct string_ptr_t const* s;
 	if (tag == BOX_TAG_EXTEND)
 		s = unbox_string_stack(context,b);
 	else
@@ -123,7 +125,8 @@ static inline const unsigned char* unbox_string(struct context_t* context, const
 
 static inline union box_t box_double(double d)
 {
-	union box_t r = { .m_dval = d };
+	union box_t r;
+	r.m_dval = d;
 	if (isnan(d))
 		r.m_uval = UINT64_C(0xFFF8) << 48;
 	return r;
@@ -136,7 +139,8 @@ static inline double unbox_double(const union box_t* b)
 
 static inline union box_t box_int32(int32_t n)
 {
-	union box_t r = { .m_uval = BOX_TAG_INT32 | (uint32_t)n };
+	union box_t r;
+	r.m_uval = BOX_TAG_INT32 | (uint32_t)n;
 	return r;
 }
 
