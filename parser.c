@@ -1625,7 +1625,7 @@ static struct ast_node_t* ast_read_arg(struct context_t* context, struct parser_
 	node->m_arity = 0;
 	node->m_type = PROLITE_TYPE_ATOM;
 
-	if (!box_string(context,&node->m_boxed,node->m_type,next->m_str,next->m_len))
+	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
 	{
 		free(node);
 		return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
@@ -1774,7 +1774,7 @@ static struct ast_node_t* ast_read_name(struct context_t* context, struct parser
 	node->m_arity = 0;
 	node->m_type = PROLITE_TYPE_ATOM;
 
-	if (!box_string(context,&node->m_boxed,node->m_type,next->m_str,next->m_len))
+	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
 		return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
 
 	*next_type = token_next(context,parser,next);
@@ -1832,7 +1832,7 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 		node->m_type = PROLITE_TYPE_VAR;
 		node->m_arity = 0;
 
-		if (!box_string(context,&node->m_boxed,PROLITE_TYPE_ATOM,next->m_str,next->m_len))
+		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
 			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
 		break;
 
@@ -1859,8 +1859,15 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 		node->m_type = context->m_flags.double_quotes == 1 /* chars */ ? PROLITE_TYPE_CHARS : PROLITE_TYPE_CODES;
 		node->m_arity = 0;
 
-		if (!box_string(context,&node->m_boxed,node->m_type,next->m_str,next->m_len))
+		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
 			return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+
+		if ((node->m_boxed.m_uval & BOX_TAG_MASK) == BOX_TAG_ATOM_PTR)
+			node->m_boxed.m_uval = (node->m_boxed.m_uval & ~BOX_TAG_MASK) | (node->m_type == PROLITE_TYPE_CHARS ? BOX_TAG_CHARS_PTR : BOX_TAG_CODES_PTR);
+		else if ((node->m_boxed.m_uval & BOX_TAG_EXTEND_MASK) == BOX_TAG_ATOM_STACK)
+			node->m_boxed.m_uval = (node->m_boxed.m_uval & ~BOX_TAG_MASK) | (node->m_type == PROLITE_TYPE_CHARS ? BOX_TAG_CHARS_STACK : BOX_TAG_CODES_STACK);
+		else
+			node->m_boxed.m_uval = (node->m_boxed.m_uval & ~BOX_TAG_MASK) | (node->m_type == PROLITE_TYPE_CHARS ? BOX_TAG_CHARS_EMBED : BOX_TAG_CODES_EMBED);
 		break;
 
 	case tokBackQuote:
@@ -1874,8 +1881,15 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 		node->m_type = context->m_flags.back_quotes == 1 /* chars */ ? PROLITE_TYPE_CHARS : PROLITE_TYPE_CODES;
 		node->m_arity = 0;
 
-		if (!box_string(context,&node->m_boxed,node->m_type,next->m_str,next->m_len))
+		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
 			return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+
+		if ((node->m_boxed.m_uval & BOX_TAG_MASK) == BOX_TAG_ATOM_PTR)
+			node->m_boxed.m_uval = (node->m_boxed.m_uval & ~BOX_TAG_MASK) | (node->m_type == PROLITE_TYPE_CHARS ? BOX_TAG_CHARS_PTR : BOX_TAG_CODES_PTR);
+		else if ((node->m_boxed.m_uval & BOX_TAG_EXTEND_MASK) == BOX_TAG_ATOM_STACK)
+			node->m_boxed.m_uval = (node->m_boxed.m_uval & ~BOX_TAG_MASK) | (node->m_type == PROLITE_TYPE_CHARS ? BOX_TAG_CHARS_STACK : BOX_TAG_CODES_STACK);
+		else
+			node->m_boxed.m_uval = (node->m_boxed.m_uval & ~BOX_TAG_MASK) | (node->m_type == PROLITE_TYPE_CHARS ? BOX_TAG_CHARS_EMBED : BOX_TAG_CODES_EMBED);
 		break;
 
 	case tokOpen:
@@ -1896,7 +1910,7 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 
 		node = malloc(sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
 
 		node->m_type = PROLITE_TYPE_ATOM;
 		node->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)'[' << 32) | ((uint64_t)']' << 24);
@@ -1906,7 +1920,7 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 	case tokOpenC:
 		node = malloc(sizeof(struct ast_node_t) + sizeof(struct ast_node_t*));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
 
 		node->m_type = PROLITE_TYPE_COMPOUND;
 		node->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)'{' << 32) | ((uint64_t)'}' << 24);
@@ -1972,7 +1986,7 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 
 		if (*next_type == tokName)
 		{
-			if (!box_string(context,&name,PROLITE_TYPE_ATOM,next->m_str,next->m_len))
+			if (!box_string(context,&name,next->m_str,next->m_len))
 				return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
 
 			struct Operator* op = lookup_op(context,&name);

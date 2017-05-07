@@ -38,24 +38,25 @@ enum eProliteType
 
 enum eBoxTag
 {
-	BOX_TAG_MASK      = UINT64_C(0xFFFF) << 48,
+	BOX_TAG_MASK        = UINT64_C(0xFFFF) << 48,
 
-	BOX_TAG_VAR       = UINT64_C(0xFFF7) << 48,
-	BOX_TAG_COMPOUND  = UINT64_C(0xFFF6) << 48,
-	BOX_TAG_INT32     = UINT64_C(0xFFF5) << 48,
-	BOX_TAG_ATOM_PTR  = UINT64_C(0xFFF4) << 48,
-	BOX_TAG_CHARS_PTR = UINT64_C(0xFFF3) << 48,
-	BOX_TAG_CODES_PTR = UINT64_C(0xFFF2) << 48,
-	BOX_TAG_EXTEND    = UINT64_C(0xFFF1) << 48,
+	BOX_TAG_VAR         = UINT64_C(0xFFF7) << 48,
+	BOX_TAG_COMPOUND    = UINT64_C(0xFFF6) << 48,
+	BOX_TAG_ATOM_PTR    = UINT64_C(0xFFF5) << 48,
+	BOX_TAG_CHARS_PTR   = UINT64_C(0xFFF4) << 48,
+	BOX_TAG_CODES_PTR   = UINT64_C(0xFFF3) << 48,
+	BOX_TAG_CUSTOM_PTR  = UINT64_C(0xFFF2) << 48,
+	BOX_TAG_EXTEND      = UINT64_C(0xFFF1) << 48,
 
-	BOX_TAG_EXTEND_MASK = BOX_TAG_EXTEND | (UINT64_C(0xC) << 44),
+	BOX_TAG_EXTEND_MASK = BOX_TAG_EXTEND | (UINT64_C(0xF) << 44),
 
-	BOX_TAG_ATOM_STACK  = BOX_TAG_EXTEND | (UINT64_C(0xC) << 44),
-	BOX_TAG_ATOM_EMBED  = BOX_TAG_EXTEND | (UINT64_C(0xD) << 44),
-	BOX_TAG_CHARS_STACK = BOX_TAG_EXTEND | (UINT64_C(0x8) << 44),
-	BOX_TAG_CHARS_EMBED = BOX_TAG_EXTEND | (UINT64_C(0x9) << 44),
-	BOX_TAG_CODES_STACK = BOX_TAG_EXTEND | (UINT64_C(0x4) << 44),
-	BOX_TAG_CODES_EMBED = BOX_TAG_EXTEND | (UINT64_C(0x5) << 44),
+	BOX_TAG_ATOM_EMBED  = BOX_TAG_EXTEND | (UINT64_C(0xF) << 44),
+	BOX_TAG_ATOM_STACK  = BOX_TAG_EXTEND | (UINT64_C(0xE) << 44),
+	BOX_TAG_CHARS_EMBED = BOX_TAG_EXTEND | (UINT64_C(0xD) << 44),
+	BOX_TAG_CHARS_STACK = BOX_TAG_EXTEND | (UINT64_C(0xC) << 44),
+	BOX_TAG_CODES_EMBED = BOX_TAG_EXTEND | (UINT64_C(0xB) << 44),
+	BOX_TAG_CODES_STACK = BOX_TAG_EXTEND | (UINT64_C(0xA) << 44),
+	BOX_TAG_INT32       = BOX_TAG_EXTEND | (UINT64_C(0x9) << 44)
 };
 
 static inline void box_pointer(union box_t* val, void* ptr)
@@ -88,32 +89,14 @@ struct string_ptr_t
 	unsigned char        m_str[];
 };
 
-int box_string_ptr(struct context_t* context, union box_t* b, enum eProliteType type, const unsigned char* str, size_t len);
+int box_string_ptr(struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
 
-static inline int box_string(struct context_t* context, union box_t* b, enum eProliteType type, const unsigned char* str, size_t len)
+static inline int box_string(struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
 {
 	if (len > 5)
-		return box_string_ptr(context,b,type,str,len);
+		return box_string_ptr(context,b,str,len);
 
-	switch (type)
-	{
-	case PROLITE_TYPE_ATOM:
-		b->m_uval = BOX_TAG_ATOM_EMBED;
-		break;
-
-	case PROLITE_TYPE_CHARS:
-		b->m_uval = BOX_TAG_CHARS_EMBED;
-		break;
-
-	case PROLITE_TYPE_CODES:
-		b->m_uval = BOX_TAG_CODES_EMBED;
-		break;
-
-	default:
-		break;
-	}
-
-	b->m_uval |= (uint64_t)(len & 0xF) << 40;
+	b->m_uval = BOX_TAG_ATOM_EMBED | (uint64_t)(len & 0xF) << 40;
 	const unsigned char* s = str;
 	switch (len)
 	{
