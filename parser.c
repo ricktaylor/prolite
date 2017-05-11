@@ -2154,47 +2154,20 @@ int read_term(struct context_t* context, struct stream_t* s)
 	return 0;
 }
 
-int consult(struct context_t* context, struct stream_t* s)
+int compile(struct context_t* context, struct stream_t* s)
 {
 	struct parser_t parser = {0};
-	struct token_t next = {0};
-	uint64_t scratch_base = stack_top(context->m_scratch_stack);
-	int err;
+	int final_err = 0;
 	
 	parser.m_s = s;
 	parser.m_info.m_line = 1;
 
 	for (;;)
 	{
-		err = emit_term(context,&parser,&next);
-		if (err)
-		{
-			/* TODO: Throw the error */
+		struct token_t next = {0};
+		uint64_t scratch_base = stack_top(context->m_scratch_stack);
 
-			break;
-		}
-
-		/* Assert the node */
-	}
-
-	stack_reset(context->m_scratch_stack,scratch_base);
-
-	return err;
-}
-
-int consult_bulk(struct context_t* context, struct stream_t* s)
-{
-	struct parser_t parser = {0};
-	struct token_t next = {0};
-	uint64_t scratch_base = stack_top(context->m_scratch_stack);
-	int err;
-	
-	parser.m_s = s;
-	parser.m_info.m_line = 1;
-
-	for (;;)
-	{
-		err = emit_term(context,&parser,&next);
+		int err = emit_term(context,&parser,&next);
 		if (err)
 		{
 			/* TODO: Report the error */
@@ -2215,9 +2188,13 @@ int consult_bulk(struct context_t* context, struct stream_t* s)
 		{
 			/* Assert the node */
 		}
+		else
+		{
+			final_err = err;
+		}
+
+		stack_reset(context->m_scratch_stack,scratch_base);
 	}
 
-	stack_reset(context->m_scratch_stack,scratch_base);
-
-	return err;
+	return final_err;
 }
