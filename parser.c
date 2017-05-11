@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
-#include <malloc.h>
 #include <errno.h>
 #include <limits.h>
 
@@ -111,12 +110,12 @@ enum eCharMax
 	char_ilseq = char_max+3
 };
 
-static int token_append_char(struct token_t* token, unsigned char c)
+static int token_append_char(struct context_t* context, struct token_t* token, unsigned char c)
 {
 	if (token->m_alloc == token->m_len)
 	{
-		size_t new_size = (token->m_alloc == 0 ? 32 : token->m_alloc * 2);
-		unsigned char* new_str = realloc(token->m_str,new_size);
+		size_t new_size = (token->m_alloc == 0 ? 64 : token->m_alloc * 2);
+		unsigned char* new_str = stack_realloc(&context->m_scratch_stack,token->m_str,new_size);
 		if (!new_str)
 			return -1;
 
@@ -128,11 +127,11 @@ static int token_append_char(struct token_t* token, unsigned char c)
 	return 0;
 }
 
-static int token_append_unicode_char(struct token_t* token, uint32_t unicode_char)
+static int token_append_unicode_char(struct context_t* context, struct token_t* token, uint32_t unicode_char)
 {
 	if (unicode_char <= 0x7F)
 	{
-		return token_append_char(token,(unsigned char)unicode_char);
+		return token_append_char(context,token,(unsigned char)unicode_char);
 	}
 	else
 	{
@@ -163,7 +162,7 @@ static int token_append_unicode_char(struct token_t* token, uint32_t unicode_cha
 
 		for (i=0; i<count; ++i)
 		{
-			if (token_append_char(token,chars[i]) == -1)
+			if (token_append_char(context,token,chars[i]) == -1)
 				return -1;
 		}
 
@@ -407,7 +406,7 @@ static const enum eAction actions[128] =
 	/* | */ eaBar, /* } */ eaCloseC, /* ~ */ eaGraphic, /*0x7f */ eaErr
 };
 
-static int token_meta_char(uint32_t meta, struct token_t* token)
+static int token_meta_char(struct context_t* context, uint32_t meta, struct token_t* token)
 {
 	unsigned char c = 0;
 	switch (meta)
@@ -451,7 +450,7 @@ static int token_meta_char(uint32_t meta, struct token_t* token)
 		return 0;
 	}
 
-	if (token_append_char(token,c) == -1)
+	if (token_append_char(context,token,c) == -1)
 		return -1;
 
 	return 1;
@@ -519,7 +518,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 				case eaShortName:
 					*state = eStart;
-					if (token_append_char(token,(unsigned char)c) != 0)
+					if (token_append_char(context,token,(unsigned char)c) != 0)
 						return tokNoMem;
 					return tokName;
 
@@ -649,7 +648,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 		if (c != '*')
 		{
-			if (token_append_char(token,'/') != 0)
+			if (token_append_char(context,token,'/') != 0)
 			{
 				*state = eStart;
 				return tokNoMem;
@@ -688,7 +687,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 			return tokEnd;
 		}
 
-		if (token_append_char(token,'.') != 0)
+		if (token_append_char(context,token,'.') != 0)
 		{
 			*state = eStart;
 			return tokNoMem;
@@ -727,7 +726,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 				if (c == char_more)
 					return tokMore;
 
-				if (!token_meta_char(c,token))
+				if (!token_meta_char(context,c,token))
 				{
 					if (c == 'o')
 					{
@@ -804,7 +803,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 					peek_col = peek_col2;
 					peek = peek2;
 				}
-				if (token_append_char(token,(unsigned char)c) != 0)
+				if (token_append_char(context,token,(unsigned char)c) != 0)
 				{
 					*state = eStart;
 					return tokNoMem;
@@ -833,7 +832,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 					peek_col = peek_col2;
 					peek = peek2;
 				}
-				if (token_append_char(token,(unsigned char)c) != 0)
+				if (token_append_char(context,token,(unsigned char)c) != 0)
 				{
 					*state = eStart;
 					return tokNoMem;
@@ -862,7 +861,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 					peek_col = peek_col2;
 					peek = peek2;
 				}
-				if (token_append_char(token,(unsigned char)c) != 0)
+				if (token_append_char(context,token,(unsigned char)c) != 0)
 				{
 					*state = eStart;
 					return tokNoMem;
@@ -878,7 +877,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 					*state = eStart;
 					return tokInvalidChar;
 				}
-				if (token_append_unicode_char(token,c) != 0)
+				if (token_append_unicode_char(context,token,c) != 0)
 				{
 					*state = eStart;
 					return tokNoMem;
@@ -912,7 +911,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 				if (c == '\\')
 				{
-					if (token_append_unicode_char(token,meta) != 0)
+					if (token_append_unicode_char(context,token,meta) != 0)
 					{
 						*state = eStart;
 						return tokNoMem;
@@ -966,7 +965,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 				if (c == '\\')
 				{
-					if (token_append_unicode_char(token,meta) != 0)
+					if (token_append_unicode_char(context,token,meta) != 0)
 					{
 						*state = eStart;
 						return tokNoMem;
@@ -1027,7 +1026,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 				if (c == '\'')
 				{
-					if (token_append_char(token,'\'') != 0)
+					if (token_append_char(context,token,'\'') != 0)
 					{
 						*state = eStart;
 						return tokNoMem;
@@ -1045,7 +1044,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 				if (c == char_more)
 					return tokMore;
 
-				if (token_meta_char(c,token))
+				if (token_meta_char(context,c,token))
 				{
 					info->m_line = peek_line;
 					info->m_col = peek_col;
@@ -1081,7 +1080,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 			}
 			else if (c >= 32 && c <= char_max)
 			{
-				if (token_append_unicode_char(token,c) != 0)
+				if (token_append_unicode_char(context,token,c) != 0)
 				{
 					*state = eStart;
 					return tokNoMem;
@@ -1152,7 +1151,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 			if (c == '\\')
 			{
-				if (token_append_unicode_char(token,meta) != 0)
+				if (token_append_unicode_char(context,token,meta) != 0)
 				{
 					*state = eStart;
 					return tokNoMem;
@@ -1201,7 +1200,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 			if (c == '\\')
 			{
-				if (token_append_unicode_char(token,meta) != 0)
+				if (token_append_unicode_char(context,token,meta) != 0)
 				{
 					*state = eStart;
 					return tokNoMem;
@@ -1260,7 +1259,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 			return tokInt;
 		}
 
-		if (token_append_char(token,'.') != 0)
+		if (token_append_char(context,token,'.') != 0)
 		{
 			*state = eStart;
 			return tokNoMem;
@@ -1281,7 +1280,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 		if (c >= '0' && c <= '9')
 		{
-			if (token_append_char(token,'e') != 0)
+			if (token_append_char(context,token,'e') != 0)
 			{
 				*state = eStart;
 				return tokNoMem;
@@ -1300,7 +1299,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 			if (c2 >= '0' && c2 <= '9')
 			{
-				if (token_append_char(token,'e') != 0 || token_append_char(token,(unsigned char)c) != 0)
+				if (token_append_char(context,token,'e') != 0 || token_append_char(context,token,(unsigned char)c) != 0)
 				{
 					*state = eStart;
 					return tokNoMem;
@@ -1415,7 +1414,7 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 			}
 
 		next_char:
-			if (token_append_unicode_char(token,c) != 0)
+			if (token_append_unicode_char(context,token,c) != 0)
 			{
 				*state = eStart;
 				return tokNoMem;
@@ -1470,30 +1469,17 @@ static enum eTokenType token_next(struct context_t* context, struct parser_t* pa
 	return tok;
 }
 
-static struct ast_node_t* ast_free_node(struct ast_node_t* node)
+static struct ast_node_t* ast_syntax_error(enum eASTError error, enum eASTError* ast_err)
 {
-	if (node)
-	{
-		while (node->m_arity--)
-			ast_free_node(node->m_params[node->m_arity]);
-
-		free(node);
-
-	}
+	*ast_err = error;
 	return NULL;
 }
 
-static struct ast_node_t* ast_syntax_error(enum eASTError error, struct ast_node_t* node, enum eASTError* ast_err)
+static struct ast_node_t* ast_atom_to_compound(struct context_t* context, struct ast_node_t* node, enum eASTError* ast_err)
 {
-	*ast_err = error;
-	return ast_free_node(node);
-}
-
-static struct ast_node_t* ast_atom_to_compound(struct ast_node_t* node, enum eASTError* ast_err)
-{
-	struct ast_node_t* new_node = realloc(node,sizeof(struct ast_node_t) + sizeof(struct ast_node_t*));
+	struct ast_node_t* new_node = stack_realloc(&context->m_scratch_stack,node,sizeof(struct ast_node_t) + sizeof(struct ast_node_t*));
 	if (!new_node)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	new_node->m_type = AST_TYPE_COMPOUND;
 	new_node->m_arity = 1;
@@ -1506,9 +1492,9 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 {
 	if (!node)
 	{
-		node = malloc(sizeof(struct ast_node_t));
+		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_DOUBLE;
 		node->m_arity = 0;
@@ -1520,10 +1506,10 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 		errno = 0;
 		dval = strtod((const char*)next->m_str,NULL);
 		if (dval == HUGE_VAL)
-			return ast_syntax_error(AST_SYNTAX_ERR_FLOAT_OVERFLOW,node,ast_err);
+			return ast_syntax_error(AST_SYNTAX_ERR_FLOAT_OVERFLOW,ast_err);
 
 		if (dval == 0.0 && errno == ERANGE)
-			return ast_syntax_error(AST_SYNTAX_ERR_FLOAT_UNDERFLOW,node,ast_err);
+			return ast_syntax_error(AST_SYNTAX_ERR_FLOAT_UNDERFLOW,ast_err);
 
 		node->m_type = AST_TYPE_DOUBLE;
 		node->m_boxed = box_double(dval);
@@ -1558,7 +1544,7 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 			for (i=0;i<next->m_len;++i)
 			{
 				if (v > 0x0CCCCCCC)
-					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,node,ast_err);
+					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,ast_err);
 
 				v = (v * 10) + (next->m_str[i] - '0');
 			}
@@ -1568,7 +1554,7 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 			for (i=0;i<next->m_len;++i)
 			{
 				if (v & 0xC0000000)
-					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,node,ast_err);
+					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,ast_err);
 
 				v = (v << 1) | (next->m_str[i] - '0');
 			}
@@ -1578,7 +1564,7 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 			for (i=0;i<next->m_len;++i)
 			{
 				if (v & 0xF0000000)
-					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,node,ast_err);
+					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,ast_err);
 
 				v = (v << 3) | (next->m_str[i] - '0');
 			}
@@ -1588,7 +1574,7 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 			for (i=0;i<next->m_len;++i)
 			{
 				if (v & 0xF8000000)
-					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,node,ast_err);
+					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,ast_err);
 
 				v <<= 4;
 
@@ -1633,17 +1619,17 @@ static struct ast_node_t* ast_read_arg(struct context_t* context, struct parser_
 	if (*next_type != tokName)
 		return ast_read_term(context,parser,999,next_type,next,ast_err);
 
-	node = malloc(sizeof(struct ast_node_t));
+	node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 	if (!node)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
 
 	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
 	{
-		free(node);
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+		stack_free(&context->m_scratch_stack,sizeof(struct ast_node_t));
+		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 	}
 
 	*next_type = token_next(context,parser,next);
@@ -1660,12 +1646,12 @@ static struct ast_node_t* ast_read_arg(struct context_t* context, struct parser_
 	op = lookup_prefix_op(context,&node->m_boxed);
 	if (op && op->m_precedence <= 999 && (op->m_specifier == eFX || op->m_specifier == eFY))
 	{
-		node = ast_atom_to_compound(node,ast_err);
+		node = ast_atom_to_compound(context,node,ast_err);
 		if (node)
 		{
 			node->m_params[0] = ast_read_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
 			if (!node->m_params[0])
-				node = ast_free_node(node);
+				node = NULL;
 		}
 	}
 
@@ -1676,7 +1662,7 @@ static struct ast_node_t* ast_read_compound_term(struct context_t* context, stru
 {
 	uint32_t arity = 0;
 	uint32_t alloc_arity = 1;
-	node = ast_atom_to_compound(node,ast_err);
+	node = ast_atom_to_compound(context,node,ast_err);
 	if (!node)
 		return NULL;
 
@@ -1691,9 +1677,9 @@ static struct ast_node_t* ast_read_compound_term(struct context_t* context, stru
 			if (alloc_arity > 2)
 				new_arity = alloc_arity * 2;
 							
-			new_node = realloc(node,sizeof(struct ast_node_t) + (new_arity * sizeof(struct ast_node_t*)));
+			new_node = stack_realloc(&context->m_scratch_stack,node,sizeof(struct ast_node_t) + (new_arity * sizeof(struct ast_node_t*)));
 			if (!new_node)
-				return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+				return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 			alloc_arity = new_arity;
 			node = new_node;
@@ -1702,22 +1688,22 @@ static struct ast_node_t* ast_read_compound_term(struct context_t* context, stru
 		/*if (arity == ~TAG_MASK)
 		{
 			TODO: MAX_ARITY
-			return ast_syntax_error(AST_SYNTAX_ERR_MAX_ARITY,node,ast_err);
+			return ast_syntax_error(AST_SYNTAX_ERR_MAX_ARITY,ast_err);
 		}*/
 
 		node->m_params[arity] = ast_read_arg(context,parser,next_type,next,ast_err);
 		if (!node->m_params[arity])
-			return ast_free_node(node);
+			return NULL;
 
 		++arity;
 	}
 	while (*next_type == tokComma);
 
 	if (*next_type == tokNoMem)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	if (*next_type != tokClose)
-		return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE,node,ast_err);
+		return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE,ast_err);
 	
 	*next_type = token_next(context,parser,next);
 	return node;
@@ -1730,9 +1716,9 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct p
 	
 	do
 	{
-		*tail = malloc(sizeof(struct ast_node_t) + (2*sizeof(struct ast_node_t*)));
+		*tail = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t) + (2*sizeof(struct ast_node_t*)));
 		if (!(*tail))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		(*tail)->m_type = AST_TYPE_COMPOUND;
 		(*tail)->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)'.' << 32);
@@ -1743,7 +1729,7 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct p
 		
 		(*tail)->m_params[0] = ast_read_arg(context,parser,next_type,next,ast_err);
 		if (!(*tail)->m_params[0])
-			return ast_free_node(node);
+			return NULL;
 			
 		tail = &((*tail)->m_params[1]);
 	}
@@ -1755,16 +1741,16 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct p
 
 		*tail = ast_read_arg(context,parser,next_type,next,ast_err);
 		if (!(*tail))
-			return ast_free_node(node);
+			return NULL;
 
 		*next_type = token_next(context,parser,next);
 	}
 	else if (*next_type == tokCloseL)
 	{
 		/* Append [] */
-		*tail = malloc(sizeof(struct ast_node_t));
+		*tail = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!(*tail))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		(*tail)->m_type = AST_TYPE_ATOM;
 		(*tail)->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)'[' << 32) | ((uint64_t)']' << 24);
@@ -1772,10 +1758,10 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct p
 	}
 	
 	if (*next_type == tokNoMem)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	if (*next_type != tokCloseL)
-		return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_L,node,ast_err);
+		return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_L,ast_err);
 	
 	return node;
 }
@@ -1783,15 +1769,15 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct p
 static struct ast_node_t* ast_read_name(struct context_t* context, struct parser_t* parser, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
 	struct Operator* op;
-	struct ast_node_t* node = malloc(sizeof(struct ast_node_t));
+	struct ast_node_t* node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 	if (!node)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
 
 	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	*next_type = token_next(context,parser,next);
 	*max_prec = 0;
@@ -1810,12 +1796,12 @@ static struct ast_node_t* ast_read_name(struct context_t* context, struct parser
 	{
 		if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
 		{
-			node = ast_atom_to_compound(node,ast_err);
+			node = ast_atom_to_compound(context,node,ast_err);
 			if (node)
 			{
 				node->m_params[0] = ast_read_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
 				if (!node->m_params[0])
-					node = ast_free_node(node);
+					node = NULL;
 
 				*max_prec = op->m_precedence;
 			}
@@ -1823,7 +1809,7 @@ static struct ast_node_t* ast_read_name(struct context_t* context, struct parser
 		}
 
 		if (*max_prec < 1201)
-			return ast_syntax_error(AST_SYNTAX_ERR_INVALID_ARG,node,ast_err);
+			return ast_syntax_error(AST_SYNTAX_ERR_INVALID_ARG,ast_err);
 
 		*max_prec = 1201;
 	}
@@ -1841,15 +1827,15 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 		return ast_read_name(context,parser,max_prec,next_type,next,ast_err);
 
 	case tokVar:
-		node = malloc(sizeof(struct ast_node_t));
+		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_VAR;
 		node->m_arity = 0;
 
 		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 		break;
 
 	case tokInt:
@@ -1868,15 +1854,15 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 			return ast_read_name(context,parser,max_prec,next_type,next,ast_err);
 		}
 
-		node = malloc(sizeof(struct ast_node_t));
+		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = context->m_flags.double_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
 		node->m_arity = 0;
 
 		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		if ((node->m_boxed.m_uval & BOX_TAG_MASK) == BOX_TAG_ATOM_PTR)
 			node->m_boxed.m_uval = (node->m_boxed.m_uval & ~BOX_TAG_MASK) | (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS_PTR : BOX_TAG_CODES_PTR);
@@ -1890,15 +1876,15 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 		if (context->m_flags.back_quotes == 0 /* atom */)
 			return ast_read_name(context,parser,max_prec,next_type,next,ast_err);
 
-		node = malloc(sizeof(struct ast_node_t));
+		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = context->m_flags.back_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
 		node->m_arity = 0;
 
 		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		if ((node->m_boxed.m_uval & BOX_TAG_MASK) == BOX_TAG_ATOM_PTR)
 			node->m_boxed.m_uval = (node->m_boxed.m_uval & ~BOX_TAG_MASK) | (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS_PTR : BOX_TAG_CODES_PTR);
@@ -1913,7 +1899,7 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 		*next_type = token_next(context,parser,next);
 		node = ast_read_term(context,parser,1201,next_type,next,ast_err);
 		if (node && *next_type != tokClose)
-			return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE,node,ast_err);
+			return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE,ast_err);
 		break;
 
 	case tokOpenL:
@@ -1924,9 +1910,9 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 			return ast_read_list_term(context,parser,next_type,next,ast_err);
 		}
 
-		node = malloc(sizeof(struct ast_node_t));
+		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_ATOM;
 		node->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)'[' << 32) | ((uint64_t)']' << 24);
@@ -1934,9 +1920,9 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 		break;
 		
 	case tokOpenC:
-		node = malloc(sizeof(struct ast_node_t) + sizeof(struct ast_node_t*));
+		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t) + sizeof(struct ast_node_t*));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,NULL,ast_err);
+			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_COMPOUND;
 		node->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)'{' << 32) | ((uint64_t)'}' << 24);
@@ -1946,10 +1932,10 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 
 		node->m_params[0] = ast_read_term(context,parser,1201,next_type,next,ast_err);
 		if (!node->m_params[0])
-			return ast_free_node(node);
+			return NULL;
 
 		if (*next_type != tokCloseC)
-			return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_C,node,ast_err);
+			return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_C,ast_err);
 		break;
 
 	case tokMore: 
@@ -1961,25 +1947,25 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 	case tokCloseC:
 	case tokBar:
 	case tokEnd:
-		return ast_syntax_error(AST_SYNTAX_ERR_UNEXPECTED_TOKEN,node,ast_err);
+		return ast_syntax_error(AST_SYNTAX_ERR_UNEXPECTED_TOKEN,ast_err);
 
 	case tokInvalidChar:
-		return ast_syntax_error(AST_SYNTAX_ERR_INVALID_CHAR,node,ast_err);
+		return ast_syntax_error(AST_SYNTAX_ERR_INVALID_CHAR,ast_err);
 
 	case tokEOF:
-		return ast_syntax_error(AST_ERR_EOF,node,ast_err);
+		return ast_syntax_error(AST_ERR_EOF,ast_err);
 
 	case tokInvalidSeq:
-		return ast_syntax_error(AST_SYNTAX_ERR_INVALID_UTF8,node,ast_err);
+		return ast_syntax_error(AST_SYNTAX_ERR_INVALID_UTF8,ast_err);
 
 	case tokInvalidEscape:
-		return ast_syntax_error(AST_SYNTAX_ERR_INVALID_ESCAPE,node,ast_err);
+		return ast_syntax_error(AST_SYNTAX_ERR_INVALID_ESCAPE,ast_err);
 
 	case tokHalfQuote:
-		return ast_syntax_error(AST_SYNTAX_ERR_MISSING_QUOTE,node,ast_err);
+		return ast_syntax_error(AST_SYNTAX_ERR_MISSING_QUOTE,ast_err);
 
 	case tokNoMem:
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 	}
 
 	*max_prec = 0;
@@ -2005,7 +1991,7 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 			struct Operator* op;
 
 			if (!box_string(context,&name,next->m_str,next->m_len))
-				return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+				return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 			op = lookup_op(context,&name);
 			if (!op || op->m_precedence > max_prec)
@@ -2097,9 +2083,9 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 			break;
 		else
 		{
-			struct ast_node_t* next_node = malloc(sizeof(struct ast_node_t) + ((1 + binary) * sizeof(struct ast_node_t*)));
+			struct ast_node_t* next_node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t) + ((1 + binary) * sizeof(struct ast_node_t*)));
 			if (!next_node)
-				return ast_syntax_error(AST_ERR_OUTOFMEMORY,node,ast_err);
+				return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 			node->m_type = AST_TYPE_COMPOUND;
 			node->m_boxed = name;
@@ -2113,7 +2099,7 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 			{
 				next_node->m_params[1] = ast_read_term(context,parser,right_prec,next_type,next,ast_err);
 				if (!next_node->m_params[1])
-					return ast_free_node(node);
+					return NULL;
 			}
 		}
 	}
@@ -2130,9 +2116,9 @@ static int emit_term(struct context_t* context, struct parser_t* parser, struct 
 	if (node)
 	{
 		if (next_type == tokNoMem)
-			node = ast_syntax_error(AST_ERR_OUTOFMEMORY,node,&ast_err);
+			node = ast_syntax_error(AST_ERR_OUTOFMEMORY,&ast_err);
 		else if (next_type != tokEnd)
-			node = ast_syntax_error(AST_SYNTAX_ERR_UNEXPECTED_TOKEN,node,&ast_err);
+			node = ast_syntax_error(AST_SYNTAX_ERR_UNEXPECTED_TOKEN,&ast_err);
 	}
 
 	if (!node)
@@ -2151,6 +2137,7 @@ int read_term(struct context_t* context, struct stream_t* s)
 {
 	struct parser_t parser = {0};
 	struct token_t next = {0};
+	uint64_t scratch_base = stack_top(context->m_scratch_stack);
 	int err;
 
 	parser.m_s = s;
@@ -2162,7 +2149,7 @@ int read_term(struct context_t* context, struct stream_t* s)
 		/* Throw the error */
 	}
 
-	free(next.m_str);
+	stack_reset(context->m_scratch_stack,scratch_base);
 
 	return 0;
 }
@@ -2171,7 +2158,8 @@ int consult(struct context_t* context, struct stream_t* s)
 {
 	struct parser_t parser = {0};
 	struct token_t next = {0};
-	int err = 0;
+	uint64_t scratch_base = stack_top(context->m_scratch_stack);
+	int err;
 	
 	parser.m_s = s;
 	parser.m_info.m_line = 1;
@@ -2189,7 +2177,7 @@ int consult(struct context_t* context, struct stream_t* s)
 		/* Assert the node */
 	}
 
-	free(next.m_str);
+	stack_reset(context->m_scratch_stack,scratch_base);
 
 	return err;
 }
@@ -2198,7 +2186,8 @@ int consult_bulk(struct context_t* context, struct stream_t* s)
 {
 	struct parser_t parser = {0};
 	struct token_t next = {0};
-	int err = 0;
+	uint64_t scratch_base = stack_top(context->m_scratch_stack);
+	int err;
 	
 	parser.m_s = s;
 	parser.m_info.m_line = 1;
@@ -2228,7 +2217,7 @@ int consult_bulk(struct context_t* context, struct stream_t* s)
 		}
 	}
 
-	free(next.m_str);
+	stack_reset(context->m_scratch_stack,scratch_base);
 
 	return err;
 }

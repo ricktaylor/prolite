@@ -1,4 +1,6 @@
 
+#include "stack.h"
+
 union box_t
 {
 	double   m_dval;
@@ -27,8 +29,8 @@ static const uint64_t BOX_TAG_INT32       = (UINT64_C(0xFFF1) << 48) | (UINT64_C
 
 struct context_t
 {
-	// Heap strings
-	// Stack strings
+	struct stack_t* m_scratch_stack;
+	struct stack_t* m_exec_stack;
 
 	struct context_flags_t
 	{
