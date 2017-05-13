@@ -9,6 +9,18 @@ struct string_ptr_t
 	unsigned char        m_str[];
 };
 
+struct var_info_t
+{
+	union box_t* m_value;
+	union box_t  m_name;
+};
+
+struct term_t
+{
+	struct var_info_t* m_vars;
+	union box_t*       m_value;
+};
+
 struct context_t
 {
 	struct stack_t* m_scratch_stack;

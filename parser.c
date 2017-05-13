@@ -1684,7 +1684,7 @@ static struct ast_node_t* ast_read_compound_term(struct context_t* context, stru
 			node = new_node;
 		}
 
-		if (arity > ~BOX_TAG_MASK)
+		if (arity > (UINT64_C(1) << 47) - 1)
 			return ast_syntax_error(AST_SYNTAX_ERR_MAX_ARITY,ast_err);
 
 		node->m_params[arity] = ast_read_arg(context,parser,next_type,next,ast_err);
@@ -1829,7 +1829,7 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_VAR;
-		node->m_arity = 0;
+		node->m_arity = -1;
 
 		node->m_boxed.m_uval = BOX_TAG_ATOM;
 		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
@@ -2096,25 +2096,112 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 	return node;
 }
 
+static int emit_node_vars(struct context_t* context, struct var_info_t* vars, struct ast_node_t* node)
+{
+	if (node->m_type == AST_TYPE_VAR)
+	{
+		uint64_t var_count = ((struct var_info_t*)stack_top_ptr(context->m_exec_stack) - vars);
+		uint64_t i;
+		for (i = 0; i < var_count; ++i)
+		{
+			if (node->m_boxed.m_uval == vars[i].m_name.m_uval)
+			{
+				node->m_arity = i;
+				break;
+			}
+		}
+
+		if (i == var_count)
+		{
+			if (var_count == ~BOX_TAG_MASK)
+				return -1;  /* Too many variables */
+			else
+			{
+				struct var_info_t* var = stack_malloc(&context->m_exec_stack,sizeof(struct var_info_t));
+				if (!var)
+					return -1;
+
+				var->m_name = node->m_boxed;
+				var->m_value = NULL;
+			}
+		}
+	}
+	else if (node->m_type == AST_TYPE_COMPOUND)
+	{
+		int err = 0;
+		uint64_t i;
+		for (i = 0; !err && i < node->m_arity; ++i)
+			err = emit_node_vars(context,vars,node->m_params[i]);
+	}
+
+	return 0;
+}
+
+static int emit_node_value(struct context_t* context, struct var_info_t* vars, struct ast_node_t* node)
+{
+	int err = 0;
+	if (node->m_type == AST_TYPE_VAR)
+	{
+		err = (stack_push(&context->m_exec_stack,BOX_TAG_VAR | node->m_arity) == -1 ? -1 : 0);
+	}
+	else if (node->m_type == AST_TYPE_COMPOUND)
+	{
+		err = (stack_push(&context->m_exec_stack,BOX_TAG_COMPOUND | node->m_arity) == -1 ? -1 : 0);
+		if (!err)
+		{
+			err = (stack_push(&context->m_exec_stack,node->m_boxed.m_uval) == -1 ? -1 : 0);
+			if (!err)
+			{
+				uint64_t i;
+				for (i = 0; !err && i < node->m_arity; ++i)
+					err = emit_node_value(context,vars,node->m_params[i]);
+			}
+		}
+	}
+	else
+	{
+		err = (stack_push(&context->m_exec_stack,node->m_boxed.m_uval) == -1 ? -1 : 0);
+	}
+	return err;
+}
+
 static int parse_term(struct context_t* context, struct parser_t* parser, struct token_t* next)
 {
 	int err = 0;
 	enum eASTError ast_err = AST_ERR_NONE;
 	uint64_t stack_base = stack_top(context->m_exec_stack);
+	struct string_ptr_t* prev_strings = context->m_strings;
 
 	enum eTokenType next_type = token_next(context,parser,next);
 	struct ast_node_t* node = ast_read_term(context,parser,1201,&next_type,next,&ast_err);
 	if (!node)
 	{
-		stack_reset(&context->m_exec_stack,stack_base);
-
-		/* TODO: Emit error */
-
+		/* TODO: Emit syntax error */
 		err = -1;
 	}
 	else
 	{
-		/* TODO: Emit the node */
+		/* Emit the node */
+		struct term_t term;
+		term.m_vars = stack_top_ptr(context->m_exec_stack);
+		err = emit_node_vars(context,term.m_vars,node);
+		if (!err)
+		{
+			term.m_value = stack_top_ptr(context->m_exec_stack);
+			err = emit_node_value(context,term.m_vars,node);
+		}
+
+		if (err)
+		{
+			/* TODO: Emit out of memory error */
+		}
+	}
+
+	if (err)
+	{
+		/* Reset exec stack */
+		context->m_strings = prev_strings;
+		stack_reset(&context->m_exec_stack,stack_base);
 	}
 
 	return err;
@@ -2134,10 +2221,11 @@ int read_term(struct context_t* context, struct stream_t* s)
 	if (err)
 	{
 		/* TODO: Throw the error */
+
+
 	}
 
 	stack_reset(&context->m_scratch_stack,scratch_base);
-
 	return 0;
 }
 
@@ -2182,7 +2270,7 @@ int compile(struct context_t* context, struct stream_t* s)
 		stack_reset(&context->m_scratch_stack,scratch_base);
 	}
 
-	stack_reset(&context->m_scratch_stack,scratch_base);
+	stack_reset_hard(&context->m_scratch_stack,scratch_base);
 
 	return final_err;
 }

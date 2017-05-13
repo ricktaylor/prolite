@@ -11,6 +11,10 @@
 #include <stdint.h>
 #include <math.h>
 
+#if defined(_MSC_VER)
+#define inline __inline
+#endif
+
 union box_t
 {
 	double   m_dval;
@@ -20,21 +24,17 @@ union box_t
 static const uint64_t BOX_TAG_MASK        = UINT64_C(0xFFFF) << 48;
 static const uint64_t BOX_TAG_VAR         = UINT64_C(0xFFF7) << 48;
 static const uint64_t BOX_TAG_COMPOUND    = UINT64_C(0xFFF6) << 48;
-static const uint64_t BOX_TAG_ATOM        = UINT64_C(0xFFF5) << 48;
-static const uint64_t BOX_TAG_INT32       = UINT64_C(0xFFF4) << 48;
+static const uint64_t BOX_TAG_INT32       = UINT64_C(0xFFF5) << 48;
+static const uint64_t BOX_TAG_ATOM        = UINT64_C(0xFFF4) << 48;
 static const uint64_t BOX_TAG_CHARS       = UINT64_C(0xFFF3) << 48;
 static const uint64_t BOX_TAG_CODES       = UINT64_C(0xFFF2) << 48;
 static const uint64_t BOX_TAG_OBJECT      = UINT64_C(0xFFF1) << 48;
 
 static const uint64_t BOX_TAG_TYPE_MASK        = UINT64_C(0xFFFFE) << 44;
 static const uint64_t BOX_TAG_COMPOUND_BUILTIN = UINT64_C(0xFFF68) << 44;
-static const uint64_t BOX_TAG_ATOM_EMBED       = UINT64_C(0xFFF58) << 44;
-static const uint64_t BOX_TAG_CHARS_EMBED      = UINT64_C(0xFFF48) << 44;
-static const uint64_t BOX_TAG_CODES_EMBED      = UINT64_C(0xFFF38) << 44;
-
-#if defined(_MSC_VER)
-#define inline __inline
-#endif
+static const uint64_t BOX_TAG_ATOM_EMBED       = UINT64_C(0xFFF48) << 44;
+static const uint64_t BOX_TAG_CHARS_EMBED      = UINT64_C(0xFFF38) << 44;
+static const uint64_t BOX_TAG_CODES_EMBED      = UINT64_C(0xFFF28) << 44;
 
 static inline void box_pointer(union box_t* b, void* ptr)
 {

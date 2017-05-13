@@ -1,6 +1,10 @@
 
 #include <stdint.h>
 
+#if defined(_MSC_VER)
+#define inline __inline
+#endif
+
 struct stack_t
 {
 	struct stack_t* m_prev;
@@ -12,11 +16,22 @@ struct stack_t
 
 void stack_delete(struct stack_t* s);
 
-uint64_t stack_top(const struct stack_t* stack);
+static inline uint64_t stack_top(const struct stack_t* stack)
+{
+	return (!stack ? 0 : stack->m_base + stack->m_top);
+}
+
+static inline void* stack_top_ptr(struct stack_t* stack)
+{
+	return (!stack ? NULL : &stack->m_data[stack->m_top]);
+}
 
 uint64_t stack_push(struct stack_t** stack, uint64_t val);
 
-uint64_t stack_pop(struct stack_t* stack);
+static inline uint64_t stack_pop(struct stack_t* stack)
+{
+	return ((stack && stack->m_top) ? stack->m_data[stack->m_top--] : 0);
+}
 
 void stack_reset(struct stack_t** stack, uint64_t pos);
 
