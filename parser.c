@@ -78,7 +78,7 @@ enum eAstType
 struct ast_node_t
 {
 	union box_t        m_boxed;
-	size_t             m_arity;
+	uint64_t           m_arity;
 	enum eAstType      m_type;
 	struct ast_node_t* m_params[];
 };
@@ -1659,8 +1659,8 @@ static struct ast_node_t* ast_read_arg(struct context_t* context, struct parser_
 
 static struct ast_node_t* ast_read_compound_term(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
-	uint32_t arity = 0;
-	uint32_t alloc_arity = 1;
+	uint64_t arity = 0;
+	uint64_t alloc_arity = 1;
 	node = ast_atom_to_compound(context,node,ast_err);
 	if (!node)
 		return NULL;
@@ -1684,11 +1684,8 @@ static struct ast_node_t* ast_read_compound_term(struct context_t* context, stru
 			node = new_node;
 		}
 
-		/*if (arity == ~TAG_MASK)
-		{
-			TODO: MAX_ARITY
+		if (arity > ~BOX_TAG_MASK)
 			return ast_syntax_error(AST_SYNTAX_ERR_MAX_ARITY,ast_err);
-		}*/
 
 		node->m_params[arity] = ast_read_arg(context,parser,next_type,next,ast_err);
 		if (!node->m_params[arity])
