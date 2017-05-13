@@ -1,4 +1,5 @@
 
+#include <stdint.h>
 
 struct stack_t
 {
@@ -18,6 +19,8 @@ uint64_t stack_push(struct stack_t** stack, uint64_t val);
 uint64_t stack_pop(struct stack_t* stack);
 
 void stack_reset(struct stack_t** stack, uint64_t pos);
+
+void stack_reset_hard(struct stack_t** stack, uint64_t pos);
 
 void* stack_malloc(struct stack_t** stack, size_t len);
 

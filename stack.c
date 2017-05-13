@@ -1,8 +1,8 @@
 
-#include <stdlib.h>
-#include <stdint.h>
-
 #include "stack.h"
+
+#include <stdlib.h>
+#include <string.h>
 
 static const uint64_t PAGE_SIZE = 4096 * sizeof(uint64_t);
 
@@ -46,18 +46,11 @@ uint64_t stack_top(const struct stack_t* stack)
 
 uint64_t stack_push(struct stack_t** stack, uint64_t val)
 {
-	if (!(*stack))
-	{
-		*stack = stack_push_page(sizeof(val),NULL);
-		if (!(*stack))
-			return NULL;
-	}
-
-	if ((*stack)->m_top == (*stack)->m_count)
+	if (!(*stack) || (*stack)->m_top == (*stack)->m_count)
 	{
 		struct stack_t* s = stack_push_page(sizeof(val),*stack);
 		if (!s)
-			return NULL;
+			return (uint64_t)-1;
 
 		*stack = s;
 	}
