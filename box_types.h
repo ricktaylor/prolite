@@ -31,10 +31,12 @@ static const uint64_t BOX_TAG_CODES       = UINT64_C(0xFFF2) << 48;
 static const uint64_t BOX_TAG_OBJECT      = UINT64_C(0xFFF1) << 48;
 
 static const uint64_t BOX_TAG_TYPE_MASK        = UINT64_C(0xFFFFE) << 44;
-static const uint64_t BOX_TAG_COMPOUND_BUILTIN = UINT64_C(0xFFF68) << 44;
 static const uint64_t BOX_TAG_ATOM_EMBED       = UINT64_C(0xFFF48) << 44;
+static const uint64_t BOX_TAG_ATOM_BUILTIN     = UINT64_C(0xFFF44) << 44;
 static const uint64_t BOX_TAG_CHARS_EMBED      = UINT64_C(0xFFF38) << 44;
+static const uint64_t BOX_TAG_CHARS_BUILTIN    = UINT64_C(0xFFF34) << 44;
 static const uint64_t BOX_TAG_CODES_EMBED      = UINT64_C(0xFFF28) << 44;
+static const uint64_t BOX_TAG_CODES_BUILTIN    = UINT64_C(0xFFF24) << 44;
 
 static inline void box_pointer(union box_t* b, void* ptr)
 {
@@ -63,6 +65,8 @@ static inline void* unbox_pointer(const union box_t* b)
 struct context_t;
 
 int box_string(struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
+int box_string_builtin(union box_t* b, const unsigned char* str, size_t len);
+
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len);
 
 static inline union box_t box_double(double d)

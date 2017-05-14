@@ -3,12 +3,14 @@
 
 #include <stdlib.h>
 #include <string.h>
-
+#include <assert.h>
 
 /* TODO: Bring these out to "stream.h" */
 struct stream_t;
 int64_t stream_read(struct stream_t* s, void* dest, size_t len);
 
+#define STR_1_EMBED(c)     (BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)(c) << 32))
+#define STR_2_EMBED(c1,c2) (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c1) << 24))
 
 enum eTokenType
 {
@@ -18,7 +20,9 @@ enum eTokenType
 	tokInvalidSeq,
 	tokInvalidEscape,
 	tokInvalidChar,
-	tokHalfQuote,
+	tokMissingSQ,
+	tokMissingDQ,
+	tokMissingBQ,
 	tokName,
 	tokVar,
 	tokInt,
@@ -87,20 +91,23 @@ enum eASTError
 {
 	AST_ERR_NONE = 0,
 	AST_ERR_OUTOFMEMORY,
-	AST_ERR_EOF,
 	AST_SYNTAX_ERR_FLOAT_OVERFLOW,
 	AST_SYNTAX_ERR_FLOAT_UNDERFLOW,
-	AST_SYNTAX_ERR_INTEGER_OVERFLOW,
+	AST_SYNTAX_ERR_MAX_INTEGER,
+	AST_SYNTAX_ERR_MIN_INTEGER,
 	AST_SYNTAX_ERR_MAX_ARITY,
+	AST_SYNTAX_ERR_MISSING_DOT,
 	AST_SYNTAX_ERR_MISSING_CLOSE,
 	AST_SYNTAX_ERR_MISSING_CLOSE_L,
 	AST_SYNTAX_ERR_MISSING_CLOSE_C,
+	AST_SYNTAX_ERR_MISSING_SQ,
+	AST_SYNTAX_ERR_MISSING_DQ,
+	AST_SYNTAX_ERR_MISSING_BQ,
 	AST_SYNTAX_ERR_INVALID_ARG,
 	AST_SYNTAX_ERR_UNEXPECTED_TOKEN,
 	AST_SYNTAX_ERR_INVALID_CHAR,
 	AST_SYNTAX_ERR_INVALID_ESCAPE,
-	AST_SYNTAX_ERR_INVALID_UTF8,
-	AST_SYNTAX_ERR_MISSING_QUOTE,
+	AST_SYNTAX_ERR_INVALID_UTF8
 };
 
 enum eCharMax
@@ -457,7 +464,7 @@ static int token_meta_char(struct context_t* context, uint32_t meta, struct toke
 	return 1;
 }
 
-static enum eTokenType read_token(struct context_t* context, enum eState* state, const unsigned char** p, const unsigned char* pe, int eof, struct token_t* token, struct token_info_t* info)
+static enum eTokenType parse_token(struct context_t* context, enum eState* state, const unsigned char** p, const unsigned char* pe, int eof, struct token_t* token, struct token_info_t* info)
 {
 	const unsigned char* peek = *p;
 	size_t peek_line = info->m_line;
@@ -713,7 +720,11 @@ static enum eTokenType read_token(struct context_t* context, enum eState* state,
 
 			case char_eof:
 				*state = eStart;
-				return tokHalfQuote;
+				if (*state == eSingleQuote)
+					return tokMissingSQ;
+				else if (*state == eDoubleQuote)
+					return tokMissingDQ;
+				return tokMissingBQ;
 
 			case char_ilseq:
 				info->m_line = peek_line;
@@ -1455,7 +1466,7 @@ static enum eTokenType token_next(struct context_t* context, struct parser_t* pa
 		p = start = parser->m_buffer.m_str;
 		pe = start + parser->m_buffer.m_len;
 
-		tok = read_token(context,&state,&p,pe,parser->m_eof,token,&parser->m_info);
+		tok = parse_token(context,&state,&p,pe,parser->m_eof,token,&parser->m_info);
 
 		if (p == pe)
 			parser->m_buffer.m_len = 0;
@@ -1470,17 +1481,17 @@ static enum eTokenType token_next(struct context_t* context, struct parser_t* pa
 	return tok;
 }
 
-static struct ast_node_t* ast_syntax_error(enum eASTError error, enum eASTError* ast_err)
+static struct ast_node_t* syntax_error(enum eASTError error, enum eASTError* ast_err)
 {
 	*ast_err = error;
 	return NULL;
 }
 
-static struct ast_node_t* ast_atom_to_compound(struct context_t* context, struct ast_node_t* node, enum eASTError* ast_err)
+static struct ast_node_t* atom_to_compound(struct context_t* context, struct ast_node_t* node, enum eASTError* ast_err)
 {
 	struct ast_node_t* new_node = stack_realloc(&context->m_scratch_stack,node,sizeof(struct ast_node_t),sizeof(struct ast_node_t) + sizeof(struct ast_node_t*));
 	if (!new_node)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	new_node->m_type = AST_TYPE_COMPOUND;
 	new_node->m_arity = 1;
@@ -1489,13 +1500,13 @@ static struct ast_node_t* ast_atom_to_compound(struct context_t* context, struct
 	return new_node;
 }
 
-static struct ast_node_t* ast_read_number(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
+static struct ast_node_t* parse_number(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err, int neg)
 {
 	if (!node)
 	{
 		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_DOUBLE;
 		node->m_arity = 0;
@@ -1507,10 +1518,10 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 		errno = 0;
 		dval = strtod((const char*)next->m_str,NULL);
 		if (dval == HUGE_VAL)
-			return ast_syntax_error(AST_SYNTAX_ERR_FLOAT_OVERFLOW,ast_err);
+			return syntax_error(AST_SYNTAX_ERR_FLOAT_OVERFLOW,ast_err);
 
 		if (dval == 0.0 && errno == ERANGE)
-			return ast_syntax_error(AST_SYNTAX_ERR_FLOAT_UNDERFLOW,ast_err);
+			return syntax_error(AST_SYNTAX_ERR_FLOAT_UNDERFLOW,ast_err);
 
 		node->m_type = AST_TYPE_DOUBLE;
 		node->m_boxed = box_double(dval);
@@ -1537,48 +1548,19 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 	}
 	else
 	{
+		uint64_t v = 0;
 		size_t i;
-		uint32_t v = 0;
-
-		if (*next_type == tokInt)
+		for (i=0;i<next->m_len;++i)
 		{
-			for (i=0;i<next->m_len;++i)
-			{
-				if (v > 0x0CCCCCCC)
-					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,ast_err);
-
+			if (*next_type == tokInt)
 				v = (v * 10) + (next->m_str[i] - '0');
-			}
-		}
-		else if (*next_type == tokBinaryInt)
-		{
-			for (i=0;i<next->m_len;++i)
-			{
-				if (v & 0xC0000000)
-					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,ast_err);
-
+			else if (*next_type == tokBinaryInt)
 				v = (v << 1) | (next->m_str[i] - '0');
-			}
-		}
-		else if (*next_type == tokOctalInt)
-		{
-			for (i=0;i<next->m_len;++i)
-			{
-				if (v & 0xF0000000)
-					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,ast_err);
-
+			else if (*next_type == tokOctalInt)
 				v = (v << 3) | (next->m_str[i] - '0');
-			}
-		}
-		else /* tokHexInt */
-		{
-			for (i=0;i<next->m_len;++i)
+			else /* tokHexInt */
 			{
-				if (v & 0xF8000000)
-					return ast_syntax_error(AST_SYNTAX_ERR_INTEGER_OVERFLOW,ast_err);
-
 				v <<= 4;
-
 				if (next->m_str[i] >= 'a')
 					v |= (next->m_str[i] - 'a');
 				else if (next->m_str[i] >= 'A')
@@ -1586,69 +1568,80 @@ static struct ast_node_t* ast_read_number(struct context_t* context, struct pars
 				else
 					v |= (next->m_str[i] - '0');
 			}
+
+			if (v > (UINT64_C(0x7FFFFFFF) + neg))
+				return syntax_error(neg ? AST_SYNTAX_ERR_MIN_INTEGER : AST_SYNTAX_ERR_MAX_INTEGER,ast_err);
 		}
 
 		node->m_type = AST_TYPE_INTEGER;
-		node->m_boxed = box_int32(v);
+
+		if (v == UINT64_C(0x80000000))
+			node->m_boxed = box_int32(INT32_MIN);
+		else
+			node->m_boxed = box_int32(v);
 	}
 
 	*next_type = token_next(context,parser,next);
 	return node;
 }
 
-static struct ast_node_t* ast_read_negative(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
+static struct ast_node_t* parse_negative(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
-	node = ast_read_number(context,parser,node,next_type,next,ast_err);
+	node = parse_number(context,parser,node,next_type,next,ast_err,1);
 	if (node)
 	{
 		if (node->m_type == AST_TYPE_DOUBLE)
 			node->m_boxed = box_double(-unbox_double(&node->m_boxed));
 		else
-			node->m_boxed = box_int32(-unbox_int32(&node->m_boxed));
+		{
+			int32_t v = unbox_int32(&node->m_boxed);
+			if (v > 0)
+				node->m_boxed = box_int32(-v);
+		}
 	}
 	return node;
 }
 
-static struct ast_node_t* ast_read_term(struct context_t* context, struct parser_t* parser, unsigned int max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err);
-static struct ast_node_t* ast_read_compound_term(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err);
+static struct ast_node_t* parse_term(struct context_t* context, struct parser_t* parser, unsigned int max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err);
+static struct ast_node_t* parse_compound_term(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err);
 
-static struct ast_node_t* ast_read_arg(struct context_t* context, struct parser_t* parser, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
+static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* parser, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
 	struct ast_node_t* node;
 	struct operator_t* op;
 
 	if (*next_type != tokName)
-		return ast_read_term(context,parser,999,next_type,next,ast_err);
+		return parse_term(context,parser,999,next_type,next,ast_err);
 
 	node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 	if (!node)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
 
 	node->m_boxed.m_uval = BOX_TAG_ATOM;
 	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	*next_type = token_next(context,parser,next);
 
 	if (*next_type == tokOpenCt)
-		return ast_read_compound_term(context,parser,node,next_type,next,ast_err);
+		return parse_compound_term(context,parser,node,next_type,next,ast_err);
 
-	if (node->m_boxed.m_uval == (BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)'-' << 32)))
+	if (node->m_boxed.m_uval == (STR_1_EMBED('-')))
 	{
 		if (*next_type >= tokInt && *next_type <= tokFloat)
-			return ast_read_negative(context,parser,node,next_type,next,ast_err);
+			return parse_negative(context,parser,node,next_type,next,ast_err);
 	}
 
 	op = lookup_prefix_op(context,&node->m_boxed);
 	if (op && op->m_precedence <= 999 && (op->m_specifier == eFX || op->m_specifier == eFY))
 	{
-		node = ast_atom_to_compound(context,node,ast_err);
+		node = atom_to_compound(context,node,ast_err);
 		if (node)
 		{
-			node->m_params[0] = ast_read_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
+			node->m_params[0] = parse_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
 			if (!node->m_params[0])
 				node = NULL;
 		}
@@ -1657,11 +1650,11 @@ static struct ast_node_t* ast_read_arg(struct context_t* context, struct parser_
 	return node;
 }
 
-static struct ast_node_t* ast_read_compound_term(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
+static struct ast_node_t* parse_compound_term(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
 	uint64_t arity = 0;
 	uint64_t alloc_arity = 1;
-	node = ast_atom_to_compound(context,node,ast_err);
+	node = atom_to_compound(context,node,ast_err);
 	if (!node)
 		return NULL;
 
@@ -1678,16 +1671,16 @@ static struct ast_node_t* ast_read_compound_term(struct context_t* context, stru
 							
 			new_node = stack_realloc(&context->m_scratch_stack,node,sizeof(struct ast_node_t) + (alloc_arity * sizeof(struct ast_node_t*)),sizeof(struct ast_node_t) + (new_arity * sizeof(struct ast_node_t*)));
 			if (!new_node)
-				return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 			alloc_arity = new_arity;
 			node = new_node;
 		}
 
 		if (arity > (UINT64_C(1) << 47) - 1)
-			return ast_syntax_error(AST_SYNTAX_ERR_MAX_ARITY,ast_err);
+			return syntax_error(AST_SYNTAX_ERR_MAX_ARITY,ast_err);
 
-		node->m_params[arity] = ast_read_arg(context,parser,next_type,next,ast_err);
+		node->m_params[arity] = parse_arg(context,parser,next_type,next,ast_err);
 		if (!node->m_params[arity])
 			return NULL;
 
@@ -1696,16 +1689,16 @@ static struct ast_node_t* ast_read_compound_term(struct context_t* context, stru
 	while (*next_type == tokComma);
 
 	if (*next_type == tokNoMem)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	if (*next_type != tokClose)
-		return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE,ast_err);
+		return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE,ast_err);
 	
 	*next_type = token_next(context,parser,next);
 	return node;
 }
 
-static struct ast_node_t* ast_read_list_term(struct context_t* context, struct parser_t* parser, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
+static struct ast_node_t* parse_list_term(struct context_t* context, struct parser_t* parser, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
 	struct ast_node_t* node = NULL;
 	struct ast_node_t** tail = &node;
@@ -1714,16 +1707,16 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct p
 	{
 		*tail = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t) + (2*sizeof(struct ast_node_t*)));
 		if (!(*tail))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		(*tail)->m_type = AST_TYPE_COMPOUND;
-		(*tail)->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)'.' << 32);
+		(*tail)->m_boxed.m_uval = STR_1_EMBED('.');
 		(*tail)->m_arity = 2;
 		(*tail)->m_params[1] = NULL;
 		
 		*next_type = token_next(context,parser,next);
 		
-		(*tail)->m_params[0] = ast_read_arg(context,parser,next_type,next,ast_err);
+		(*tail)->m_params[0] = parse_arg(context,parser,next_type,next,ast_err);
 		if (!(*tail)->m_params[0])
 			return NULL;
 			
@@ -1735,7 +1728,7 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct p
 	{
 		*next_type = token_next(context,parser,next);
 
-		*tail = ast_read_arg(context,parser,next_type,next,ast_err);
+		*tail = parse_arg(context,parser,next_type,next,ast_err);
 		if (!(*tail))
 			return NULL;
 
@@ -1746,46 +1739,46 @@ static struct ast_node_t* ast_read_list_term(struct context_t* context, struct p
 		/* Append [] */
 		*tail = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!(*tail))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		(*tail)->m_type = AST_TYPE_ATOM;
-		(*tail)->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)'[' << 32) | ((uint64_t)']' << 24);
+		(*tail)->m_boxed.m_uval = STR_2_EMBED('[',']');
 		(*tail)->m_arity = 0;
 	}
 	
 	if (*next_type == tokNoMem)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	if (*next_type != tokCloseL)
-		return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_L,ast_err);
+		return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_L,ast_err);
 	
 	return node;
 }
 
-static struct ast_node_t* ast_read_name(struct context_t* context, struct parser_t* parser, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
+static struct ast_node_t* parse_name(struct context_t* context, struct parser_t* parser, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
 	struct operator_t* op;
 	struct ast_node_t* node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 	if (!node)
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
 
 	node->m_boxed.m_uval = BOX_TAG_ATOM;
 	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	*next_type = token_next(context,parser,next);
 	*max_prec = 0;
 
 	if (*next_type == tokOpenCt)
-		return ast_read_compound_term(context,parser,node,next_type,next,ast_err);
+		return parse_compound_term(context,parser,node,next_type,next,ast_err);
 
-	if (node->m_boxed.m_uval == (BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)'-' << 32)))
+	if (node->m_boxed.m_uval == (STR_1_EMBED('-')))
 	{
 		if (*next_type >= tokInt && *next_type <= tokFloat)
-			return ast_read_negative(context,parser,node,next_type,next,ast_err);
+			return parse_negative(context,parser,node,next_type,next,ast_err);
 	}
 
 	op = lookup_prefix_op(context,&node->m_boxed);
@@ -1793,10 +1786,10 @@ static struct ast_node_t* ast_read_name(struct context_t* context, struct parser
 	{
 		if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
 		{
-			node = ast_atom_to_compound(context,node,ast_err);
+			node = atom_to_compound(context,node,ast_err);
 			if (node)
 			{
-				node->m_params[0] = ast_read_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
+				node->m_params[0] = parse_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
 				if (!node->m_params[0])
 					node = NULL;
 
@@ -1806,7 +1799,7 @@ static struct ast_node_t* ast_read_name(struct context_t* context, struct parser
 		}
 
 		if (*max_prec < 1201)
-			return ast_syntax_error(AST_SYNTAX_ERR_INVALID_ARG,ast_err);
+			return syntax_error(AST_SYNTAX_ERR_INVALID_ARG,ast_err);
 
 		*max_prec = 1201;
 	}
@@ -1814,26 +1807,26 @@ static struct ast_node_t* ast_read_name(struct context_t* context, struct parser
 	return node;
 }
 
-static struct ast_node_t* ast_read_term_base(struct context_t* context, struct parser_t* parser, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
+static struct ast_node_t* parse_term_base(struct context_t* context, struct parser_t* parser, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
 	struct ast_node_t* node = NULL;
 
 	switch (*next_type)
 	{
 	case tokName:
-		return ast_read_name(context,parser,max_prec,next_type,next,ast_err);
+		return parse_name(context,parser,max_prec,next_type,next,ast_err);
 
 	case tokVar:
 		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_VAR;
 		node->m_arity = -1;
 
 		node->m_boxed.m_uval = BOX_TAG_ATOM;
 		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 		break;
 
 	case tokInt:
@@ -1843,49 +1836,49 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 	case tokCharCode:
 	case tokFloat:
 		*max_prec = 0;
-		return ast_read_number(context,parser,node,next_type,next,ast_err);
+		return parse_number(context,parser,node,next_type,next,ast_err,0);
 
 	case tokDQL:
 		if (context->m_flags.double_quotes == 0 /* atom */)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.1:2007 */
-			return ast_read_name(context,parser,max_prec,next_type,next,ast_err);
+			return parse_name(context,parser,max_prec,next_type,next,ast_err);
 		}
 
 		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = context->m_flags.double_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
 		node->m_arity = 0;
 
 		node->m_boxed.m_uval = (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS : BOX_TAG_CODES);
 		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 		break;
 
 	case tokBackQuote:
 		if (context->m_flags.back_quotes == 0 /* atom */)
-			return ast_read_name(context,parser,max_prec,next_type,next,ast_err);
+			return parse_name(context,parser,max_prec,next_type,next,ast_err);
 
 		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = context->m_flags.back_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
 		node->m_arity = 0;
 
 		node->m_boxed.m_uval = (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS : BOX_TAG_CODES);
 		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 		break;
 
 	case tokOpen:
 	case tokOpenCt:
 		*next_type = token_next(context,parser,next);
-		node = ast_read_term(context,parser,1201,next_type,next,ast_err);
+		node = parse_term(context,parser,1201,next_type,next,ast_err);
 		if (node && *next_type != tokClose)
-			return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE,ast_err);
+			return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE,ast_err);
 		break;
 
 	case tokOpenL:
@@ -1893,35 +1886,35 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 		if (*next_type != tokCloseL)
 		{
 			*max_prec = 0;
-			return ast_read_list_term(context,parser,next_type,next,ast_err);
+			return parse_list_term(context,parser,next_type,next,ast_err);
 		}
 
 		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_ATOM;
-		node->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)'[' << 32) | ((uint64_t)']' << 24);
+		node->m_boxed.m_uval = STR_2_EMBED('[',']');
 		node->m_arity = 0;
 		break;
 		
 	case tokOpenC:
 		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t) + sizeof(struct ast_node_t*));
 		if (!node)
-			return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_COMPOUND;
-		node->m_boxed.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)'{' << 32) | ((uint64_t)'}' << 24);
+		node->m_boxed.m_uval = STR_2_EMBED('{','}');
 		node->m_arity = 1;
 
 		*next_type = token_next(context,parser,next);
 
-		node->m_params[0] = ast_read_term(context,parser,1201,next_type,next,ast_err);
+		node->m_params[0] = parse_term(context,parser,1201,next_type,next,ast_err);
 		if (!node->m_params[0])
 			return NULL;
 
 		if (*next_type != tokCloseC)
-			return ast_syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_C,ast_err);
+			return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_C,ast_err);
 		break;
 
 	case tokMore: 
@@ -1933,25 +1926,31 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 	case tokCloseC:
 	case tokBar:
 	case tokEnd:
-		return ast_syntax_error(AST_SYNTAX_ERR_UNEXPECTED_TOKEN,ast_err);
+		return syntax_error(AST_SYNTAX_ERR_UNEXPECTED_TOKEN,ast_err);
 
 	case tokInvalidChar:
-		return ast_syntax_error(AST_SYNTAX_ERR_INVALID_CHAR,ast_err);
+		return syntax_error(AST_SYNTAX_ERR_INVALID_CHAR,ast_err);
 
-	case tokEOF:
-		return ast_syntax_error(AST_ERR_EOF,ast_err);
+	case tokMissingSQ:
+		return syntax_error(AST_SYNTAX_ERR_MISSING_SQ,ast_err);
+
+	case tokMissingDQ:
+		return syntax_error(AST_SYNTAX_ERR_MISSING_DQ,ast_err);
+
+	case tokMissingBQ:
+		return syntax_error(AST_SYNTAX_ERR_MISSING_BQ,ast_err);
 
 	case tokInvalidSeq:
-		return ast_syntax_error(AST_SYNTAX_ERR_INVALID_UTF8,ast_err);
+		return syntax_error(AST_SYNTAX_ERR_INVALID_UTF8,ast_err);
 
 	case tokInvalidEscape:
-		return ast_syntax_error(AST_SYNTAX_ERR_INVALID_ESCAPE,ast_err);
-
-	case tokHalfQuote:
-		return ast_syntax_error(AST_SYNTAX_ERR_MISSING_QUOTE,ast_err);
+		return syntax_error(AST_SYNTAX_ERR_INVALID_ESCAPE,ast_err);
 
 	case tokNoMem:
-		return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+
+	case tokEOF:
+		return NULL;
 	}
 
 	*max_prec = 0;
@@ -1959,10 +1958,10 @@ static struct ast_node_t* ast_read_term_base(struct context_t* context, struct p
 	return node;
 }
 
-static struct ast_node_t* ast_read_term(struct context_t* context, struct parser_t* parser, unsigned int max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
+static struct ast_node_t* parse_term(struct context_t* context, struct parser_t* parser, unsigned int max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
 	unsigned int prev_prec = max_prec;
-	struct ast_node_t* node = ast_read_term_base(context,parser,&prev_prec,next_type,next,ast_err);
+	struct ast_node_t* node = parse_term_base(context,parser,&prev_prec,next_type,next,ast_err);
 	if (!node)
 		return NULL;
 
@@ -1980,7 +1979,7 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 
 			name.m_uval = BOX_TAG_ATOM;
 			if (!box_string(context,&name,next->m_str,next->m_len))
-				return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 			op = lookup_op(context,&name);
 			if (!op || op->m_precedence > max_prec)
@@ -2027,13 +2026,13 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 			left_prec = 999;
 			right_prec = 1000;
 
-			name.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)',' << 32);
+			name.m_uval = STR_1_EMBED(',');
 		}
 		else if (*next_type == tokBar)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.2:2012 */
 			struct operator_t* op;
-			name.m_uval = BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)'|' << 32);
+			name.m_uval = STR_1_EMBED('|');
 
 			op = lookup_op(context,&name);
 			if (!op || op->m_precedence > max_prec)
@@ -2074,7 +2073,7 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 		{
 			struct ast_node_t* next_node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t) + ((1 + binary) * sizeof(struct ast_node_t*)));
 			if (!next_node)
-				return ast_syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 			node->m_type = AST_TYPE_COMPOUND;
 			node->m_boxed = name;
@@ -2086,7 +2085,7 @@ static struct ast_node_t* ast_read_term(struct context_t* context, struct parser
 
 			if (binary)
 			{
-				next_node->m_params[1] = ast_read_term(context,parser,right_prec,next_type,next,ast_err);
+				next_node->m_params[1] = parse_term(context,parser,right_prec,next_type,next,ast_err);
 				if (!next_node->m_params[1])
 					return NULL;
 			}
@@ -2114,7 +2113,11 @@ static int emit_node_vars(struct context_t* context, struct var_info_t* vars, st
 		if (i == var_count)
 		{
 			if (var_count == ~BOX_TAG_MASK)
-				return -1;  /* Too many variables */
+			{
+				/* There is not an ISO standard error for 'too many vars'
+				 * but we will be out of memory soon anyway, so that will do */
+				return -1;
+			}
 			else
 			{
 				struct var_info_t* var = stack_malloc(&context->m_exec_stack,sizeof(struct var_info_t));
@@ -2136,96 +2139,238 @@ static int emit_node_vars(struct context_t* context, struct var_info_t* vars, st
 
 	return 0;
 }
+static int emit_compound(struct context_t* context, union box_t* functor, uint64_t arity)
+{
+	int err = (stack_push(&context->m_exec_stack,BOX_TAG_COMPOUND | arity) == -1 ? -1 : 0);
+	if (!err)
+		err = (stack_push(&context->m_exec_stack,functor->m_uval) == -1 ? -1 : 0);
+	return err;
+}
 
 static int emit_node_value(struct context_t* context, struct var_info_t* vars, struct ast_node_t* node)
 {
 	int err = 0;
 	if (node->m_type == AST_TYPE_VAR)
-	{
 		err = (stack_push(&context->m_exec_stack,BOX_TAG_VAR | node->m_arity) == -1 ? -1 : 0);
-	}
 	else if (node->m_type == AST_TYPE_COMPOUND)
 	{
-		err = (stack_push(&context->m_exec_stack,BOX_TAG_COMPOUND | node->m_arity) == -1 ? -1 : 0);
+		err = emit_compound(context,&node->m_boxed,node->m_arity);
 		if (!err)
 		{
-			err = (stack_push(&context->m_exec_stack,node->m_boxed.m_uval) == -1 ? -1 : 0);
-			if (!err)
-			{
-				uint64_t i;
-				for (i = 0; !err && i < node->m_arity; ++i)
-					err = emit_node_value(context,vars,node->m_params[i]);
-			}
+			uint64_t i;
+			for (i = 0; !err && i < node->m_arity; ++i)
+				err = emit_node_value(context,vars,node->m_params[i]);
 		}
 	}
 	else
-	{
 		err = (stack_push(&context->m_exec_stack,node->m_boxed.m_uval) == -1 ? -1 : 0);
-	}
+
 	return err;
 }
 
-static int parse_term(struct context_t* context, struct parser_t* parser, struct token_t* next)
+static int emit_builtin_atom(struct context_t* context, const unsigned char* atom, size_t alen)
+{
+	union box_t b;
+	b.m_uval = BOX_TAG_ATOM;
+#if defined(NDEBUG)
+	box_string_builtin(&b,atom,alen);
+#else
+	assert(box_string_builtin(&b,atom,alen) == 1);
+#endif
+	return (stack_push(&context->m_exec_stack,b.m_uval) == -1 ? -1 : 0);
+}
+
+static int emit_builtin_compound(struct context_t* context, const unsigned char* functor, size_t flen, uint64_t arity)
+{
+	union box_t b;
+	b.m_uval = BOX_TAG_ATOM;
+#if defined(NDEBUG)
+	box_string_builtin(&b,functor,flen);
+#else
+	assert(box_string_builtin(&b,functor,flen) == 1);
+#endif
+	return emit_compound(context,&b,arity);
+}
+
+#define STR_AND_LEN(s) (const unsigned char*)(s),sizeof(s)
+
+static int emit_error(struct context_t* context, enum eASTError ast_err, struct parser_t* parser, struct term_t* term)
+{
+	int err = 0;
+	if (ast_err == AST_ERR_OUTOFMEMORY)
+	{
+		err = emit_builtin_compound(context,STR_AND_LEN("system_error"),1);
+		if (!err)
+			err = emit_builtin_atom(context,STR_AND_LEN("out_of_memory"));
+	}
+	else
+	{
+		err = emit_builtin_compound(context,STR_AND_LEN("syntax_error"),1);
+		if (!err)
+		{
+			if (ast_err <= AST_SYNTAX_ERR_MAX_ARITY)
+				err = emit_builtin_compound(context,STR_AND_LEN("representation_error"),1);
+			else if (ast_err <= AST_SYNTAX_ERR_MISSING_BQ)
+				err = emit_builtin_compound(context,STR_AND_LEN("missing"),1);
+
+			switch (ast_err)
+			{
+			case AST_SYNTAX_ERR_FLOAT_OVERFLOW:
+				err = emit_builtin_atom(context,STR_AND_LEN("float_overflow"));
+				break;
+
+			case AST_SYNTAX_ERR_FLOAT_UNDERFLOW:
+				err = emit_builtin_atom(context,STR_AND_LEN("underflow"));
+				break;
+
+			case AST_SYNTAX_ERR_MAX_INTEGER:
+				err = emit_builtin_atom(context,STR_AND_LEN("max_integer"));
+				break;
+
+			case AST_SYNTAX_ERR_MIN_INTEGER:
+				err = emit_builtin_atom(context,STR_AND_LEN("min_integer"));
+				break;
+
+			case AST_SYNTAX_ERR_MAX_ARITY:
+				err = emit_builtin_atom(context,STR_AND_LEN("max_arity"));
+				break;
+
+			case AST_SYNTAX_ERR_MISSING_DOT:
+				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('.')) == -1 ? -1 : 0);
+				break;
+
+			case AST_SYNTAX_ERR_MISSING_CLOSE:
+				err = (stack_push(&context->m_exec_stack,STR_1_EMBED(')')) == -1 ? -1 : 0);
+				break;
+
+			case AST_SYNTAX_ERR_MISSING_CLOSE_L:
+				err = (stack_push(&context->m_exec_stack,STR_1_EMBED(']')) == -1 ? -1 : 0);
+				break;
+
+			case AST_SYNTAX_ERR_MISSING_CLOSE_C:
+				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('}')) == -1 ? -1 : 0);
+				break;
+
+			case AST_SYNTAX_ERR_MISSING_SQ:
+				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('\'')) == -1 ? -1 : 0);
+				break;
+
+			case AST_SYNTAX_ERR_MISSING_DQ:
+				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('"')) == -1 ? -1 : 0);
+				break;
+
+			case AST_SYNTAX_ERR_MISSING_BQ:
+				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('`')) == -1 ? -1 : 0);
+				break;
+
+			case AST_SYNTAX_ERR_INVALID_ARG:
+				err = emit_builtin_atom(context,STR_AND_LEN("invalid_argument"));
+				break;
+
+			case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
+				err = emit_builtin_atom(context,STR_AND_LEN("unexpected_token"));
+				break;
+
+			case AST_SYNTAX_ERR_INVALID_CHAR:
+				err = emit_builtin_atom(context,STR_AND_LEN("invalid_character"));
+				break;
+
+			case AST_SYNTAX_ERR_INVALID_ESCAPE:
+				err = emit_builtin_atom(context,STR_AND_LEN("invalid_escape"));
+				break;
+
+			case AST_SYNTAX_ERR_INVALID_UTF8:
+				err = emit_builtin_atom(context,STR_AND_LEN("invalid_utf8"));
+				break;
+
+			default:
+				break;
+			}
+
+			/* TODO: line info? */
+		}
+	}
+
+	return err;
+}
+
+static int emit_term(struct context_t* context, struct term_t* term, struct parser_t* parser, int skip)
 {
 	int err = 0;
 	enum eASTError ast_err = AST_ERR_NONE;
 	uint64_t stack_base = stack_top(context->m_exec_stack);
+	uint64_t scratch_base = stack_top(context->m_scratch_stack);
 	struct string_ptr_t* prev_strings = context->m_strings;
 
-	enum eTokenType next_type = token_next(context,parser,next);
-	struct ast_node_t* node = ast_read_term(context,parser,1201,&next_type,next,&ast_err);
+	struct token_t next = {0};
+	enum eTokenType next_type = token_next(context,parser,&next);
+	struct ast_node_t* node = parse_term(context,parser,1201,&next_type,&next,&ast_err);
+	if (node && next_type != tokEnd)
+	{
+		/* Missing . */
+		node = syntax_error(AST_SYNTAX_ERR_MISSING_DOT,&ast_err);
+	}
+
 	if (!node)
-	{
-		/* TODO: Emit syntax error */
-		err = -1;
-	}
-	else
-	{
-		/* Emit the node */
-		struct term_t term;
-		term.m_vars = stack_top_ptr(context->m_exec_stack);
-		err = emit_node_vars(context,term.m_vars,node);
-		if (!err)
-		{
-			term.m_value = stack_top_ptr(context->m_exec_stack);
-			err = emit_node_value(context,term.m_vars,node);
-		}
-
-		if (err)
-		{
-			/* TODO: Emit out of memory error */
-		}
-	}
-
-	if (err)
 	{
 		/* Reset exec stack */
 		context->m_strings = prev_strings;
 		stack_reset(&context->m_exec_stack,stack_base);
+
+		if (next_type != tokEOF)
+			err = emit_error(context,ast_err,parser,term);
+	}
+	else
+	{
+		/* Emit the node */
+		term->m_vars = stack_top_ptr(context->m_exec_stack);
+		err = emit_node_vars(context,term->m_vars,node);
+		if (!err)
+		{
+			term->m_value = stack_top_ptr(context->m_exec_stack);
+			err = emit_node_value(context,term->m_vars,node);
+		}
+
+		if (err)
+		{
+			/* Reset exec stack */
+			context->m_strings = prev_strings;
+			stack_reset(&context->m_exec_stack,stack_base);
+
+			err = emit_error(context,AST_ERR_OUTOFMEMORY,parser,term);
+		}
 	}
 
+	if (skip)
+	{
+		while (next_type != tokEnd && next_type != tokEOF)
+			next_type = token_next(context,parser,&next);
+	}
+
+	/* Reset scratch stack */
+	stack_reset(&context->m_scratch_stack,scratch_base);
 	return err;
 }
 
 int read_term(struct context_t* context, struct stream_t* s)
 {
 	struct parser_t parser = {0};
-	struct token_t next = {0};
-	uint64_t scratch_base = stack_top(context->m_scratch_stack);
+	struct term_t new_term = {0};
 	int err;
 
 	parser.m_s = s;
 	parser.m_info.m_line = 1;
 
-	err = parse_term(context,&parser,&next);
+	/* TODO: Check for stream eof */
+
+	err = emit_term(context,&new_term,&parser,0);
 	if (err)
 	{
-		/* TODO: Throw the error */
+		/* TODO: Throw the error term */
 
 
 	}
 
-	stack_reset(&context->m_scratch_stack,scratch_base);
 	return 0;
 }
 
@@ -2238,25 +2383,13 @@ int compile(struct context_t* context, struct stream_t* s)
 	parser.m_s = s;
 	parser.m_info.m_line = 1;
 
-	for (;;)
+	while (!final_err)
 	{
-		struct token_t next = {0};
-
-		int err = parse_term(context,&parser,&next);
+		struct term_t new_term = {0};
+		int err = emit_term(context,&new_term,&parser,1);
 		if (err)
 		{
-			/* TODO: Report the error */
-
-			/* Skip to tokEnd or tokEOF */
-			enum eTokenType next_type;
-			do
-			{
-				next_type = token_next(context,&parser,&next);
-			}
-			while (next_type != tokEnd && next_type != tokEOF);
-
-			if (next_type == tokEOF)
-				break;
+			/* TODO: Report the error term */
 
 			if (!final_err)
 				final_err = err;
@@ -2264,10 +2397,10 @@ int compile(struct context_t* context, struct stream_t* s)
 
 		if (!final_err)
 		{
-			/* TODO: Assert the node */
+			/* TODO: Assert the term */
 		}
 
-		stack_reset(&context->m_scratch_stack,scratch_base);
+		/* TODO: Check for stream eof */
 	}
 
 	stack_reset_hard(&context->m_scratch_stack,scratch_base);
