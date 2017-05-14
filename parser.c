@@ -2362,46 +2362,11 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	return status;
 }
 
-int read_term(struct context_t* context, struct stream_t* s)
-{
-	struct parser_t parser = {0};
-	struct term_t new_term = {0};
-	enum eEmitStatus status = EMIT_OK;
-
-	parser.m_s = s;
-	parser.m_info.m_line = 1;
-
-	/* TODO: Check for permission errors first */
-
-	status = emit_term(context,&new_term,&parser);
-	if (status == EMIT_EOF)
-	{
-		status = emit_builtin_compound(context,STRING_AND_LEN("syntax_error"),1);
-		if (!status)
-			status = emit_builtin_atom(context,STRING_AND_LEN("past_end_of_stream"));
-		if (!status)
-			status = EMIT_ERR_ON_STACK;
-	}
-
-	if (status == EMIT_ERR_ON_STACK)
-	{
-		/* TODO: Throw the error term */
-
-		return 1;
-	}
-
-	if (status == EMIT_OUT_OF_MEM)
-		return -1;
-
-	return 0;
-}
-
 int load_file(struct context_t* context, struct stream_t* s)
 {
-	struct parser_t parser = {0};
 	uint64_t scratch_base = stack_top(context->m_scratch_stack);
 	int failed = 0;
-	
+	struct parser_t parser = {0};
 	parser.m_s = s;
 	parser.m_info.m_line = 1;
 
@@ -2430,4 +2395,37 @@ int load_file(struct context_t* context, struct stream_t* s)
 	stack_reset_hard(&context->m_scratch_stack,scratch_base);
 
 	return failed ? -1 : 0;
+}
+
+int read_term(struct context_t* context, struct stream_t* s)
+{
+	struct term_t new_term = {0};
+	enum eEmitStatus status = EMIT_OK;
+	struct parser_t parser = {0};
+	parser.m_s = s;
+	parser.m_info.m_line = 1;
+
+	/* TODO: Check for permission errors first */
+
+	status = emit_term(context,&new_term,&parser);
+	if (status == EMIT_EOF)
+	{
+		status = emit_builtin_compound(context,STRING_AND_LEN("syntax_error"),1);
+		if (!status)
+			status = emit_builtin_atom(context,STRING_AND_LEN("past_end_of_stream"));
+		if (!status)
+			status = EMIT_ERR_ON_STACK;
+	}
+
+	if (status == EMIT_ERR_ON_STACK)
+	{
+		/* TODO: Throw the error term */
+
+		return 1;
+	}
+
+	if (status == EMIT_OUT_OF_MEM)
+		return -1;
+
+	return 0;
 }
