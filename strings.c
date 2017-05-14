@@ -16,17 +16,25 @@ struct builtin_string_t
 /* These MUST be sorted by length then text */
 struct builtin_string_t s_builtin_strings[] =
 {
+	BUILTIN_STRING("dynamic"),
+	BUILTIN_STRING("include"),
 	BUILTIN_STRING("missing"),
 	BUILTIN_STRING("max_arity"),
+	BUILTIN_STRING("multifile"),
 	BUILTIN_STRING("underflow"),
 	BUILTIN_STRING("max_integer"),
 	BUILTIN_STRING("min_integer"),
 	BUILTIN_STRING("invalid_utf8"),
 	BUILTIN_STRING("syntax_error"),
 	BUILTIN_STRING("system_error"),
+	BUILTIN_STRING("discontiguous"),
+	BUILTIN_STRING("ensure_loaded"),
 	BUILTIN_STRING("out_of_memory"),
 	BUILTIN_STRING("float_overflow"),
+	BUILTIN_STRING("initialization"),
 	BUILTIN_STRING("invalid_escape"),
+	BUILTIN_STRING("char_conversion"),
+	BUILTIN_STRING("set_prolog_flag"),
 	BUILTIN_STRING("evaluation_error"),
 	BUILTIN_STRING("invalid_argument"),
 	BUILTIN_STRING("unexpected_token"),
@@ -77,7 +85,7 @@ static int box_string_embed(union box_t* b, const unsigned char* str, size_t len
 	case 1:
 		b->m_uval |= *str;
 	default:
-		b->m_uval |= ((UINT64_C(0x8) << 44) | ((len & UINT64_C(0xF)) << 40));
+		b->m_uval |= (UINT64_C(0x8) << 44) | ((uint64_t)len << 40);
 		break;
 	}
 	return 1;

@@ -21,22 +21,37 @@ union box_t
 	uint64_t m_uval;
 };
 
-static const uint64_t BOX_TAG_MASK        = UINT64_C(0xFFFF) << 48;
-static const uint64_t BOX_TAG_VAR         = UINT64_C(0xFFF7) << 48;
-static const uint64_t BOX_TAG_COMPOUND    = UINT64_C(0xFFF6) << 48;
-static const uint64_t BOX_TAG_INT32       = UINT64_C(0xFFF5) << 48;
-static const uint64_t BOX_TAG_ATOM        = UINT64_C(0xFFF4) << 48;
-static const uint64_t BOX_TAG_CHARS       = UINT64_C(0xFFF3) << 48;
-static const uint64_t BOX_TAG_CODES       = UINT64_C(0xFFF2) << 48;
-static const uint64_t BOX_TAG_OBJECT      = UINT64_C(0xFFF1) << 48;
+#define BOX_TAG_MASK        (UINT64_C(0xFFFF) << 48)
+#define BOX_TAG_VAR         (UINT64_C(0xFFF7) << 48)
+#define BOX_TAG_COMPOUND    (UINT64_C(0xFFF6) << 48)
+#define BOX_TAG_INT32       (UINT64_C(0xFFF5) << 48)
+#define BOX_TAG_ATOM        (UINT64_C(0xFFF4) << 48)
+#define BOX_TAG_CHARS       (UINT64_C(0xFFF3) << 48)
+#define BOX_TAG_CODES       (UINT64_C(0xFFF2) << 48)
+#define BOX_TAG_OBJECT      (UINT64_C(0xFFF1) << 48)
 
-static const uint64_t BOX_TAG_TYPE_MASK        = UINT64_C(0xFFFFE) << 44;
-static const uint64_t BOX_TAG_ATOM_EMBED       = UINT64_C(0xFFF48) << 44;
-static const uint64_t BOX_TAG_ATOM_BUILTIN     = UINT64_C(0xFFF44) << 44;
-static const uint64_t BOX_TAG_CHARS_EMBED      = UINT64_C(0xFFF38) << 44;
-static const uint64_t BOX_TAG_CHARS_BUILTIN    = UINT64_C(0xFFF34) << 44;
-static const uint64_t BOX_TAG_CODES_EMBED      = UINT64_C(0xFFF28) << 44;
-static const uint64_t BOX_TAG_CODES_BUILTIN    = UINT64_C(0xFFF24) << 44;
+#define BOX_TAG_COMPOUND_EMBED   (UINT64_C(0xFFF68) << 48)
+
+#define BOX_COMPOUND_EMBED_1(a,c)              (BOX_TAG_COMPOUND_EMBED | ((uint64_t)1 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c) << 32))
+#define BOX_COMPOUND_EMBED_2(a,c1,c2)          (BOX_TAG_COMPOUND_EMBED | ((uint64_t)2 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24))
+#define BOX_COMPOUND_EMBED_3(a,c1,c2,c3)       (BOX_TAG_COMPOUND_EMBED | ((uint64_t)3 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16))
+#define BOX_COMPOUND_EMBED_4(a,c1,c2,c3,c4)    (BOX_TAG_COMPOUND_EMBED | ((uint64_t)4 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c4) << 8))
+#define BOX_COMPOUND_EMBED_5(a,c1,c2,c3,c4,c5) (BOX_TAG_COMPOUND_EMBED | ((uint64_t)5 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c4) << 8) | (uint64_t)(c5))
+
+#define MAX_ARITY ((UINT64_C(1) << 47) - 1)
+
+#define BOX_TAG_ATOM_EMBED       (UINT64_C(0xFFF48) << 44)
+#define BOX_TAG_ATOM_BUILTIN     (UINT64_C(0xFFF44) << 44)
+#define BOX_TAG_CHARS_EMBED      (UINT64_C(0xFFF38) << 44)
+#define BOX_TAG_CHARS_BUILTIN    (UINT64_C(0xFFF34) << 44)
+#define BOX_TAG_CODES_EMBED      (UINT64_C(0xFFF28) << 44)
+#define BOX_TAG_CODES_BUILTIN    (UINT64_C(0xFFF24) << 44)
+
+#define BOX_ATOM_EMBED_1(c)              (BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)(c) << 32))
+#define BOX_ATOM_EMBED_2(c1,c2)          (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24))
+#define BOX_ATOM_EMBED_3(c1,c2,c3)       (BOX_TAG_ATOM_EMBED | ((uint64_t)3 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16))
+#define BOX_ATOM_EMBED_4(c1,c2,c3,c4)    (BOX_TAG_ATOM_EMBED | ((uint64_t)4 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c4) << 8))
+#define BOX_ATOM_EMBED_5(c1,c2,c3,c4,c5) (BOX_TAG_ATOM_EMBED | ((uint64_t)5 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c4) << 8) | (uint64_t)(c5))
 
 static inline void box_pointer(union box_t* b, void* ptr)
 {
@@ -61,19 +76,6 @@ static inline void* unbox_pointer(const union box_t* b)
 #error No idea what to do with addresses on your architecture!
 #endif
 }
-
-struct context_t;
-
-#define BOX_ATOM_EMBED_1(c)              (BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)(c) << 32))
-#define BOX_ATOM_EMBED_2(c1,c2)          (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24))
-#define BOX_ATOM_EMBED_3(c1,c2,c3)       (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16))
-#define BOX_ATOM_EMBED_4(c1,c2,c3,c4)    (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c3) << 8))
-#define BOX_ATOM_EMBED_5(c1,c2,c3,c4,c5) (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c3) << 8) | (uint64_t)(c4))
-
-int box_string(struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
-int box_string_builtin(union box_t* b, const unsigned char* str, size_t len);
-
-const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len);
 
 static inline union box_t box_double(double d)
 {
@@ -100,5 +102,12 @@ static inline int32_t unbox_int32(const union box_t* b)
 {
 	return (int32_t)(b->m_uval & UINT64_C(0xFFFFFFFF));
 }
+
+struct context_t;
+
+int box_string(struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
+int box_string_builtin(union box_t* b, const unsigned char* str, size_t len);
+
+const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len);
 
 #endif /* BOX_TYPES_H_ */

@@ -309,8 +309,8 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 static uint32_t token_get_char_conv(struct context_t* context, const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
 {
 	uint32_t c = token_get_char(p,pe,eof,line,col);
-	if (context->m_flags.char_conversion && c <= char_max)
-		c = context_convert_char(context,c);
+	if (context->m_module->m_flags.char_conversion && c <= char_max)
+		c = convert_char(context,c);
 	return c;
 }
 
@@ -1673,7 +1673,7 @@ static struct ast_node_t* parse_compound_term(struct context_t* context, struct 
 			node = new_node;
 		}
 
-		if (arity > (UINT64_C(1) << 47) - 1)
+		if (arity > MAX_ARITY)
 			return syntax_error(AST_SYNTAX_ERR_MAX_ARITY,ast_err);
 
 		node->m_params[arity] = parse_arg(context,parser,next_type,next,ast_err);
@@ -1835,7 +1835,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 		return parse_number(context,parser,node,next_type,next,ast_err,0);
 
 	case tokDQL:
-		if (context->m_flags.double_quotes == 0 /* atom */)
+		if (context->m_module->m_flags.double_quotes == 0 /* atom */)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.1:2007 */
 			return parse_name(context,parser,max_prec,next_type,next,ast_err);
@@ -1845,7 +1845,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 		if (!node)
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
-		node->m_type = context->m_flags.double_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
+		node->m_type = context->m_module->m_flags.double_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
 		node->m_arity = 0;
 
 		node->m_boxed.m_uval = (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS : BOX_TAG_CODES);
@@ -1854,14 +1854,14 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 		break;
 
 	case tokBackQuote:
-		if (context->m_flags.back_quotes == 0 /* atom */)
+		if (context->m_module->m_flags.back_quotes == 0 /* atom */)
 			return parse_name(context,parser,max_prec,next_type,next,ast_err);
 
 		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
 		if (!node)
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
-		node->m_type = context->m_flags.back_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
+		node->m_type = context->m_module->m_flags.back_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
 		node->m_arity = 0;
 
 		node->m_boxed.m_uval = (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS : BOX_TAG_CODES);
@@ -2145,9 +2145,19 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 }
 static enum eEmitStatus emit_compound(struct context_t* context, union box_t* functor, uint64_t arity)
 {
-	enum eEmitStatus status = (stack_push(&context->m_exec_stack,BOX_TAG_COMPOUND | arity) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
-	if (!status)
-		status = (stack_push(&context->m_exec_stack,functor->m_uval) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+	enum eEmitStatus status;
+	if (arity < 16 && (functor->m_uval & BOX_TAG_ATOM_EMBED) == BOX_TAG_ATOM_EMBED)
+	{
+		uint64_t len = (functor->m_uval & ((uint64_t)7 << 40)) << 4;
+		uint64_t val = BOX_TAG_COMPOUND_EMBED | (functor->m_uval & ~(UINT64_C(0xFFFFFF) << 40)) | len | (arity << 40);
+		status = (stack_push(&context->m_exec_stack,val) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+	}
+	else
+	{
+		status = (stack_push(&context->m_exec_stack,BOX_TAG_COMPOUND | arity) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+		if (!status)
+			status = (stack_push(&context->m_exec_stack,functor->m_uval) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+	}
 	return status;
 }
 
@@ -2364,7 +2374,11 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 
 int load_file(struct context_t* context, struct stream_t* s)
 {
+	uint64_t original_stack_base = stack_top(context->m_exec_stack);
+	uint64_t stack_base = original_stack_base;
 	uint64_t scratch_base = stack_top(context->m_scratch_stack);
+	struct string_ptr_t* original_prev_strings = context->m_strings;
+	struct string_ptr_t* prev_strings = original_prev_strings;
 	int failed = 0;
 	struct parser_t parser = {0};
 	parser.m_s = s;
@@ -2372,10 +2386,39 @@ int load_file(struct context_t* context, struct stream_t* s)
 
 	while (failed != -1)
 	{
-		struct term_t new_term = {0};
-		enum eEmitStatus status = emit_term(context,&new_term,&parser);
+		struct term_t term = {0};
+		enum eEmitStatus status = emit_term(context,&term,&parser);
 		if (status == EMIT_EOF)
 			break;
+
+		if (status == EMIT_OK)
+		{
+			if (term.m_value->m_uval == BOX_COMPOUND_EMBED_2(1,':','-'))
+			{
+				/* Directive, skip to first arg */
+				++term.m_value;
+				int err = directive(context,&term);
+				if (err == -1)
+					status = EMIT_OUT_OF_MEM;
+				else if (err)
+					status = EMIT_ERR_ON_STACK;
+				else
+				{
+					/* Update stack_base and strings as we may have pushed things */
+					stack_base = stack_top(context->m_exec_stack);
+					prev_strings = context->m_strings;
+				}
+			}
+			else if (!failed)
+			{
+				/* TODO: Assert the term */
+				int err = assert_clause(context,&term,1);
+				if (err == -1)
+					status = EMIT_OUT_OF_MEM;
+				else if (err)
+					status = EMIT_ERR_ON_STACK;
+			}
+		}
 
 		if (status == EMIT_ERR_ON_STACK)
 		{
@@ -2383,15 +2426,19 @@ int load_file(struct context_t* context, struct stream_t* s)
 
 			failed = 1;
 		}
-		else if (status == EMIT_OK && !failed)
-		{
-			/* TODO: Assert the term */
-		}
 
 		if (status == EMIT_OUT_OF_MEM)
 			failed = -1;
+
+		/* Reset exec and scratch stack */
+		context->m_strings = prev_strings;
+		stack_reset(&context->m_exec_stack,stack_base);
+		stack_reset(&context->m_scratch_stack,scratch_base);
 	}
 
+	/* Hard reset the stacks because we may have allocated a lot */
+	context->m_strings = original_prev_strings;
+	stack_reset_hard(&context->m_exec_stack,original_stack_base);
 	stack_reset_hard(&context->m_scratch_stack,scratch_base);
 
 	return failed ? -1 : 0;
