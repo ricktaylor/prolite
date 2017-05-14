@@ -64,6 +64,12 @@ static inline void* unbox_pointer(const union box_t* b)
 
 struct context_t;
 
+#define BOX_ATOM_EMBED_1(c)              (BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)(c) << 32))
+#define BOX_ATOM_EMBED_2(c1,c2)          (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24))
+#define BOX_ATOM_EMBED_3(c1,c2,c3)       (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16))
+#define BOX_ATOM_EMBED_4(c1,c2,c3,c4)    (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c3) << 8))
+#define BOX_ATOM_EMBED_5(c1,c2,c3,c4,c5) (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c3) << 8) | (uint64_t)(c4))
+
 int box_string(struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
 int box_string_builtin(union box_t* b, const unsigned char* str, size_t len);
 

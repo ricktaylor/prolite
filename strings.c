@@ -31,6 +31,7 @@ struct builtin_string_t s_builtin_strings[] =
 	BUILTIN_STRING("invalid_argument"),
 	BUILTIN_STRING("unexpected_token"),
 	BUILTIN_STRING("invalid_character"),
+	BUILTIN_STRING("past_end_of_stream"),
 	BUILTIN_STRING("representation_error"),
 };
 

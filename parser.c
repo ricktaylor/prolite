@@ -9,9 +9,6 @@
 struct stream_t;
 int64_t stream_read(struct stream_t* s, void* dest, size_t len);
 
-#define STR_1_EMBED(c)     (BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)(c) << 32))
-#define STR_2_EMBED(c1,c2) (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c1) << 24))
-
 enum eTokenType
 {
 	tokMore = 0,
@@ -96,7 +93,6 @@ enum eASTError
 	AST_SYNTAX_ERR_MAX_INTEGER,
 	AST_SYNTAX_ERR_MIN_INTEGER,
 	AST_SYNTAX_ERR_MAX_ARITY,
-	AST_SYNTAX_ERR_MISSING_DOT,
 	AST_SYNTAX_ERR_MISSING_CLOSE,
 	AST_SYNTAX_ERR_MISSING_CLOSE_L,
 	AST_SYNTAX_ERR_MISSING_CLOSE_C,
@@ -1629,7 +1625,7 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 	if (*next_type == tokOpenCt)
 		return parse_compound_term(context,parser,node,next_type,next,ast_err);
 
-	if (node->m_boxed.m_uval == (STR_1_EMBED('-')))
+	if (node->m_boxed.m_uval == (BOX_ATOM_EMBED_1('-')))
 	{
 		if (*next_type >= tokInt && *next_type <= tokFloat)
 			return parse_negative(context,parser,node,next_type,next,ast_err);
@@ -1710,7 +1706,7 @@ static struct ast_node_t* parse_list_term(struct context_t* context, struct pars
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		(*tail)->m_type = AST_TYPE_COMPOUND;
-		(*tail)->m_boxed.m_uval = STR_1_EMBED('.');
+		(*tail)->m_boxed.m_uval = BOX_ATOM_EMBED_1('.');
 		(*tail)->m_arity = 2;
 		(*tail)->m_params[1] = NULL;
 		
@@ -1742,7 +1738,7 @@ static struct ast_node_t* parse_list_term(struct context_t* context, struct pars
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		(*tail)->m_type = AST_TYPE_ATOM;
-		(*tail)->m_boxed.m_uval = STR_2_EMBED('[',']');
+		(*tail)->m_boxed.m_uval = BOX_ATOM_EMBED_2('[',']');
 		(*tail)->m_arity = 0;
 	}
 	
@@ -1775,7 +1771,7 @@ static struct ast_node_t* parse_name(struct context_t* context, struct parser_t*
 	if (*next_type == tokOpenCt)
 		return parse_compound_term(context,parser,node,next_type,next,ast_err);
 
-	if (node->m_boxed.m_uval == (STR_1_EMBED('-')))
+	if (node->m_boxed.m_uval == (BOX_ATOM_EMBED_1('-')))
 	{
 		if (*next_type >= tokInt && *next_type <= tokFloat)
 			return parse_negative(context,parser,node,next_type,next,ast_err);
@@ -1894,7 +1890,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_ATOM;
-		node->m_boxed.m_uval = STR_2_EMBED('[',']');
+		node->m_boxed.m_uval = BOX_ATOM_EMBED_2('[',']');
 		node->m_arity = 0;
 		break;
 		
@@ -1904,7 +1900,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_COMPOUND;
-		node->m_boxed.m_uval = STR_2_EMBED('{','}');
+		node->m_boxed.m_uval = BOX_ATOM_EMBED_2('{','}');
 		node->m_arity = 1;
 
 		*next_type = token_next(context,parser,next);
@@ -2026,13 +2022,13 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 			left_prec = 999;
 			right_prec = 1000;
 
-			name.m_uval = STR_1_EMBED(',');
+			name.m_uval = BOX_ATOM_EMBED_1(',');
 		}
 		else if (*next_type == tokBar)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.2:2012 */
 			struct operator_t* op;
-			name.m_uval = STR_1_EMBED('|');
+			name.m_uval = BOX_ATOM_EMBED_1('|');
 
 			op = lookup_op(context,&name);
 			if (!op || op->m_precedence > max_prec)
@@ -2095,8 +2091,17 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 	return node;
 }
 
-static int emit_node_vars(struct context_t* context, struct var_info_t* vars, struct ast_node_t* node)
+enum eEmitStatus
 {
+	EMIT_OK = 0,
+	EMIT_EOF,
+	EMIT_ERR_ON_STACK,
+	EMIT_OUT_OF_MEM
+};
+
+static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_info_t* vars, struct ast_node_t* node)
+{
+	enum eEmitStatus status = EMIT_OK;
 	if (node->m_type == AST_TYPE_VAR)
 	{
 		uint64_t var_count = ((struct var_info_t*)stack_top_ptr(context->m_exec_stack) - vars);
@@ -2112,17 +2117,17 @@ static int emit_node_vars(struct context_t* context, struct var_info_t* vars, st
 
 		if (i == var_count)
 		{
-			if (var_count == ~BOX_TAG_MASK)
+			if (var_count >= ~BOX_TAG_MASK)
 			{
 				/* There is not an ISO standard error for 'too many vars'
 				 * but we will be out of memory soon anyway, so that will do */
-				return -1;
+				return EMIT_OUT_OF_MEM;
 			}
 			else
 			{
 				struct var_info_t* var = stack_malloc(&context->m_exec_stack,sizeof(struct var_info_t));
 				if (!var)
-					return -1;
+					return EMIT_OUT_OF_MEM;
 
 				var->m_name = node->m_boxed;
 				var->m_value = NULL;
@@ -2131,44 +2136,43 @@ static int emit_node_vars(struct context_t* context, struct var_info_t* vars, st
 	}
 	else if (node->m_type == AST_TYPE_COMPOUND)
 	{
-		int err = 0;
 		uint64_t i;
-		for (i = 0; !err && i < node->m_arity; ++i)
-			err = emit_node_vars(context,vars,node->m_params[i]);
+		for (i = 0; !status && i < node->m_arity; ++i)
+			status = emit_node_vars(context,vars,node->m_params[i]);
 	}
 
-	return 0;
+	return status;
 }
-static int emit_compound(struct context_t* context, union box_t* functor, uint64_t arity)
+static enum eEmitStatus emit_compound(struct context_t* context, union box_t* functor, uint64_t arity)
 {
-	int err = (stack_push(&context->m_exec_stack,BOX_TAG_COMPOUND | arity) == -1 ? -1 : 0);
-	if (!err)
-		err = (stack_push(&context->m_exec_stack,functor->m_uval) == -1 ? -1 : 0);
-	return err;
+	enum eEmitStatus status = (stack_push(&context->m_exec_stack,BOX_TAG_COMPOUND | arity) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+	if (!status)
+		status = (stack_push(&context->m_exec_stack,functor->m_uval) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+	return status;
 }
 
-static int emit_node_value(struct context_t* context, struct var_info_t* vars, struct ast_node_t* node)
+static enum eEmitStatus emit_node_value(struct context_t* context, struct var_info_t* vars, struct ast_node_t* node)
 {
-	int err = 0;
+	enum eEmitStatus status = EMIT_OK;
 	if (node->m_type == AST_TYPE_VAR)
-		err = (stack_push(&context->m_exec_stack,BOX_TAG_VAR | node->m_arity) == -1 ? -1 : 0);
+		status = (stack_push(&context->m_exec_stack,BOX_TAG_VAR | node->m_arity) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 	else if (node->m_type == AST_TYPE_COMPOUND)
 	{
-		err = emit_compound(context,&node->m_boxed,node->m_arity);
-		if (!err)
+		status = emit_compound(context,&node->m_boxed,node->m_arity);
+		if (!status)
 		{
 			uint64_t i;
-			for (i = 0; !err && i < node->m_arity; ++i)
-				err = emit_node_value(context,vars,node->m_params[i]);
+			for (i = 0; !status && i < node->m_arity; ++i)
+				status = emit_node_value(context,vars,node->m_params[i]);
 		}
 	}
 	else
-		err = (stack_push(&context->m_exec_stack,node->m_boxed.m_uval) == -1 ? -1 : 0);
+		status = (stack_push(&context->m_exec_stack,node->m_boxed.m_uval) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 
-	return err;
+	return status;
 }
 
-static int emit_builtin_atom(struct context_t* context, const unsigned char* atom, size_t alen)
+static enum eEmitStatus emit_builtin_atom(struct context_t* context, const unsigned char* atom, size_t alen)
 {
 	union box_t b;
 	b.m_uval = BOX_TAG_ATOM;
@@ -2177,10 +2181,10 @@ static int emit_builtin_atom(struct context_t* context, const unsigned char* ato
 #else
 	assert(box_string_builtin(&b,atom,alen) == 1);
 #endif
-	return (stack_push(&context->m_exec_stack,b.m_uval) == -1 ? -1 : 0);
+	return (stack_push(&context->m_exec_stack,b.m_uval) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 }
 
-static int emit_builtin_compound(struct context_t* context, const unsigned char* functor, size_t flen, uint64_t arity)
+static enum eEmitStatus emit_builtin_compound(struct context_t* context, const unsigned char* functor, size_t flen, uint64_t arity)
 {
 	union box_t b;
 	b.m_uval = BOX_TAG_ATOM;
@@ -2192,111 +2196,107 @@ static int emit_builtin_compound(struct context_t* context, const unsigned char*
 	return emit_compound(context,&b,arity);
 }
 
-#define STR_AND_LEN(s) (const unsigned char*)(s),sizeof(s)
+#define STRING_AND_LEN(s) (const unsigned char*)(s),sizeof(s)
 
-static int emit_error(struct context_t* context, enum eASTError ast_err, struct parser_t* parser, struct term_t* term)
+static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast_err, struct parser_t* parser, struct term_t* term)
 {
-	int err = 0;
-	if (ast_err == AST_ERR_OUTOFMEMORY)
+	enum eEmitStatus status = EMIT_OUT_OF_MEM;
+	if (ast_err > AST_ERR_OUTOFMEMORY)
 	{
-		err = emit_builtin_compound(context,STR_AND_LEN("system_error"),1);
-		if (!err)
-			err = emit_builtin_atom(context,STR_AND_LEN("out_of_memory"));
-	}
-	else
-	{
-		err = emit_builtin_compound(context,STR_AND_LEN("syntax_error"),1);
-		if (!err)
+		status = emit_builtin_compound(context,STRING_AND_LEN("syntax_error"),1);
+		if (!status)
 		{
 			if (ast_err <= AST_SYNTAX_ERR_MAX_ARITY)
-				err = emit_builtin_compound(context,STR_AND_LEN("representation_error"),1);
+				status = emit_builtin_compound(context,STRING_AND_LEN("representation_error"),1);
 			else if (ast_err <= AST_SYNTAX_ERR_MISSING_BQ)
-				err = emit_builtin_compound(context,STR_AND_LEN("missing"),1);
+				status = emit_builtin_compound(context,STRING_AND_LEN("missing"),1);
 
-			switch (ast_err)
+			if (!status)
 			{
-			case AST_SYNTAX_ERR_FLOAT_OVERFLOW:
-				err = emit_builtin_atom(context,STR_AND_LEN("float_overflow"));
-				break;
+				switch (ast_err)
+				{
+				case AST_SYNTAX_ERR_FLOAT_OVERFLOW:
+					status = emit_builtin_atom(context,STRING_AND_LEN("float_overflow"));
+					break;
 
-			case AST_SYNTAX_ERR_FLOAT_UNDERFLOW:
-				err = emit_builtin_atom(context,STR_AND_LEN("underflow"));
-				break;
+				case AST_SYNTAX_ERR_FLOAT_UNDERFLOW:
+					status = emit_builtin_atom(context,STRING_AND_LEN("underflow"));
+					break;
 
-			case AST_SYNTAX_ERR_MAX_INTEGER:
-				err = emit_builtin_atom(context,STR_AND_LEN("max_integer"));
-				break;
+				case AST_SYNTAX_ERR_MAX_INTEGER:
+					status = emit_builtin_atom(context,STRING_AND_LEN("max_integer"));
+					break;
 
-			case AST_SYNTAX_ERR_MIN_INTEGER:
-				err = emit_builtin_atom(context,STR_AND_LEN("min_integer"));
-				break;
+				case AST_SYNTAX_ERR_MIN_INTEGER:
+					status = emit_builtin_atom(context,STRING_AND_LEN("min_integer"));
+					break;
 
-			case AST_SYNTAX_ERR_MAX_ARITY:
-				err = emit_builtin_atom(context,STR_AND_LEN("max_arity"));
-				break;
+				case AST_SYNTAX_ERR_MAX_ARITY:
+					status = emit_builtin_atom(context,STRING_AND_LEN("max_arity"));
+					break;
 
-			case AST_SYNTAX_ERR_MISSING_DOT:
-				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('.')) == -1 ? -1 : 0);
-				break;
+				case AST_SYNTAX_ERR_MISSING_CLOSE:
+					status = (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_1(')')) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+					break;
 
-			case AST_SYNTAX_ERR_MISSING_CLOSE:
-				err = (stack_push(&context->m_exec_stack,STR_1_EMBED(')')) == -1 ? -1 : 0);
-				break;
+				case AST_SYNTAX_ERR_MISSING_CLOSE_L:
+					status = (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_1(']')) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+					break;
 
-			case AST_SYNTAX_ERR_MISSING_CLOSE_L:
-				err = (stack_push(&context->m_exec_stack,STR_1_EMBED(']')) == -1 ? -1 : 0);
-				break;
+				case AST_SYNTAX_ERR_MISSING_CLOSE_C:
+					status = (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_1('}')) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+					break;
 
-			case AST_SYNTAX_ERR_MISSING_CLOSE_C:
-				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('}')) == -1 ? -1 : 0);
-				break;
+				case AST_SYNTAX_ERR_MISSING_SQ:
+					status = (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_1('\'')) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+					break;
 
-			case AST_SYNTAX_ERR_MISSING_SQ:
-				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('\'')) == -1 ? -1 : 0);
-				break;
+				case AST_SYNTAX_ERR_MISSING_DQ:
+					status = (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_1('"')) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+					break;
 
-			case AST_SYNTAX_ERR_MISSING_DQ:
-				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('"')) == -1 ? -1 : 0);
-				break;
+				case AST_SYNTAX_ERR_MISSING_BQ:
+					status = (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_1('`')) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+					break;
 
-			case AST_SYNTAX_ERR_MISSING_BQ:
-				err = (stack_push(&context->m_exec_stack,STR_1_EMBED('`')) == -1 ? -1 : 0);
-				break;
+				case AST_SYNTAX_ERR_INVALID_ARG:
+					status = emit_builtin_atom(context,STRING_AND_LEN("invalid_argument"));
+					break;
 
-			case AST_SYNTAX_ERR_INVALID_ARG:
-				err = emit_builtin_atom(context,STR_AND_LEN("invalid_argument"));
-				break;
+				case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
+					status = emit_builtin_atom(context,STRING_AND_LEN("unexpected_token"));
+					break;
 
-			case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
-				err = emit_builtin_atom(context,STR_AND_LEN("unexpected_token"));
-				break;
+				case AST_SYNTAX_ERR_INVALID_CHAR:
+					status = emit_builtin_atom(context,STRING_AND_LEN("invalid_character"));
+					break;
 
-			case AST_SYNTAX_ERR_INVALID_CHAR:
-				err = emit_builtin_atom(context,STR_AND_LEN("invalid_character"));
-				break;
+				case AST_SYNTAX_ERR_INVALID_ESCAPE:
+					status = emit_builtin_atom(context,STRING_AND_LEN("invalid_escape"));
+					break;
 
-			case AST_SYNTAX_ERR_INVALID_ESCAPE:
-				err = emit_builtin_atom(context,STR_AND_LEN("invalid_escape"));
-				break;
+				case AST_SYNTAX_ERR_INVALID_UTF8:
+					status = emit_builtin_atom(context,STRING_AND_LEN("invalid_utf8"));
+					break;
 
-			case AST_SYNTAX_ERR_INVALID_UTF8:
-				err = emit_builtin_atom(context,STR_AND_LEN("invalid_utf8"));
-				break;
+				default:
+					break;
+				}
 
-			default:
-				break;
+				/* TODO: line info? */
 			}
-
-			/* TODO: line info? */
 		}
 	}
 
-	return err;
+	if (!status)
+		status = EMIT_ERR_ON_STACK;
+
+	return status;
 }
 
-static int emit_term(struct context_t* context, struct term_t* term, struct parser_t* parser, int skip)
+static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term, struct parser_t* parser)
 {
-	int err = 0;
+	enum eEmitStatus status = EMIT_OK;
 	enum eASTError ast_err = AST_ERR_NONE;
 	uint64_t stack_base = stack_top(context->m_exec_stack);
 	uint64_t scratch_base = stack_top(context->m_scratch_stack);
@@ -2305,12 +2305,6 @@ static int emit_term(struct context_t* context, struct term_t* term, struct pars
 	struct token_t next = {0};
 	enum eTokenType next_type = token_next(context,parser,&next);
 	struct ast_node_t* node = parse_term(context,parser,1201,&next_type,&next,&ast_err);
-	if (node && next_type != tokEnd)
-	{
-		/* Missing . */
-		node = syntax_error(AST_SYNTAX_ERR_MISSING_DOT,&ast_err);
-	}
-
 	if (!node)
 	{
 		/* Reset exec stack */
@@ -2318,92 +2312,122 @@ static int emit_term(struct context_t* context, struct term_t* term, struct pars
 		stack_reset(&context->m_exec_stack,stack_base);
 
 		if (next_type != tokEOF)
-			err = emit_error(context,ast_err,parser,term);
+			status = emit_error(context,ast_err,parser,term);
+		else
+			status = EMIT_EOF;
+	}
+	else if (next_type != tokEnd)
+	{
+		/* Missing . */
+		status = emit_builtin_compound(context,STRING_AND_LEN("syntax_error"),1);
+		if (!status)
+			status = emit_builtin_compound(context,STRING_AND_LEN("missing"),1);
+		if (!status)
+			status = (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_1('.')) == -1 ? EMIT_OUT_OF_MEM : EMIT_ERR_ON_STACK);
 	}
 	else
 	{
 		/* Emit the node */
 		term->m_vars = stack_top_ptr(context->m_exec_stack);
-		err = emit_node_vars(context,term->m_vars,node);
-		if (!err)
+		status = emit_node_vars(context,term->m_vars,node);
+		if (!status)
 		{
 			term->m_value = stack_top_ptr(context->m_exec_stack);
-			err = emit_node_value(context,term->m_vars,node);
-		}
-
-		if (err)
-		{
-			/* Reset exec stack */
-			context->m_strings = prev_strings;
-			stack_reset(&context->m_exec_stack,stack_base);
-
-			err = emit_error(context,AST_ERR_OUTOFMEMORY,parser,term);
+			status = emit_node_value(context,term->m_vars,node);
 		}
 	}
 
-	if (skip)
+	/* Skip to what looks like a complete term */
+	while (next_type != tokEnd && next_type != tokEOF)
+		next_type = token_next(context,parser,&next);
+
+	/* Emit out of memory last */
+	if (status == EMIT_OUT_OF_MEM)
 	{
-		while (next_type != tokEnd && next_type != tokEOF)
-			next_type = token_next(context,parser,&next);
+		/* Reset exec stack */
+		context->m_strings = prev_strings;
+		stack_reset(&context->m_exec_stack,stack_base);
+
+		status = emit_builtin_compound(context,STRING_AND_LEN("system_error"),1);
+		if (!status)
+			status = emit_builtin_atom(context,STRING_AND_LEN("out_of_memory"));
+
+		if (!status)
+			status = EMIT_ERR_ON_STACK;
 	}
 
 	/* Reset scratch stack */
 	stack_reset(&context->m_scratch_stack,scratch_base);
-	return err;
+
+	return status;
 }
 
 int read_term(struct context_t* context, struct stream_t* s)
 {
 	struct parser_t parser = {0};
 	struct term_t new_term = {0};
-	int err;
+	enum eEmitStatus status = EMIT_OK;
 
 	parser.m_s = s;
 	parser.m_info.m_line = 1;
 
-	/* TODO: Check for stream eof */
+	/* TODO: Check for permission errors first */
 
-	err = emit_term(context,&new_term,&parser,0);
-	if (err)
+	status = emit_term(context,&new_term,&parser);
+	if (status == EMIT_EOF)
+	{
+		status = emit_builtin_compound(context,STRING_AND_LEN("syntax_error"),1);
+		if (!status)
+			status = emit_builtin_atom(context,STRING_AND_LEN("past_end_of_stream"));
+		if (!status)
+			status = EMIT_ERR_ON_STACK;
+	}
+
+	if (status == EMIT_ERR_ON_STACK)
 	{
 		/* TODO: Throw the error term */
 
-
+		return 1;
 	}
+
+	if (status == EMIT_OUT_OF_MEM)
+		return -1;
 
 	return 0;
 }
 
-int compile(struct context_t* context, struct stream_t* s)
+int load_file(struct context_t* context, struct stream_t* s)
 {
 	struct parser_t parser = {0};
 	uint64_t scratch_base = stack_top(context->m_scratch_stack);
-	int final_err = 0;
+	int failed = 0;
 	
 	parser.m_s = s;
 	parser.m_info.m_line = 1;
 
-	while (!final_err)
+	while (failed != -1)
 	{
 		struct term_t new_term = {0};
-		int err = emit_term(context,&new_term,&parser,1);
-		if (err)
+		enum eEmitStatus status = emit_term(context,&new_term,&parser);
+		if (status == EMIT_EOF)
+			break;
+
+		if (status == EMIT_ERR_ON_STACK)
 		{
 			/* TODO: Report the error term */
 
-			if (!final_err)
-				final_err = err;
+			failed = 1;
 		}
-
-		if (!final_err)
+		else if (status == EMIT_OK && !failed)
 		{
 			/* TODO: Assert the term */
 		}
 
-		/* TODO: Check for stream eof */
+		if (status == EMIT_OUT_OF_MEM)
+			failed = -1;
 	}
 
 	stack_reset_hard(&context->m_scratch_stack,scratch_base);
 
-	return final_err;
+	return failed ? -1 : 0;
 }
