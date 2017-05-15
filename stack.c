@@ -12,16 +12,33 @@ static const uint64_t PAGE_SIZE = 4096 * sizeof(uint64_t);
 static struct stack_t* stack_push_page(size_t size, struct stack_t* prev)
 {
 	size_t align_size = ALIGN(size,PAGE_SIZE);
-	struct stack_t* stack = malloc(align_size);
-	if (stack)
+	size_t count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
+
+	struct stack_t* stack;
+	if (prev && prev->m_next->m_count >= count)
+		stack = prev->m_next;
+	else
 	{
-		stack->m_top = 0;
-		stack->m_count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
-		stack->m_prev = prev;
-		if (stack->m_prev)
-			stack->m_base = stack->m_prev->m_base + stack->m_prev->m_top;
-		else
+		stack = malloc(align_size);
+		if (stack)
+		{
+			stack->m_top = 0;
+			stack->m_count = count;
+			stack->m_prev = prev;
+			stack->m_next = NULL;
 			stack->m_base = 0;
+
+			if (stack->m_prev)
+			{
+				if (stack->m_prev->m_next)
+				{
+					stack->m_next = stack->m_prev->m_next;
+					stack->m_next->m_prev = stack;
+				}
+				stack->m_prev->m_next = stack;
+				stack->m_base = stack->m_prev->m_base + stack->m_prev->m_top;
+			}
+		}
 	}
 	return stack;
 }
@@ -54,7 +71,10 @@ uint64_t stack_push(struct stack_t** stack, uint64_t val)
 
 void stack_reset(struct stack_t** stack, uint64_t pos)
 {
-	if (!(*stack) || (*stack)->m_base + (*stack)->m_top <= pos)
+	while ((*stack) && (*stack)->m_base + (*stack)->m_top < pos)
+		*stack = (*stack)->m_next;
+
+	if (!(*stack))
 		return;
 
 	pos = ((*stack)->m_base + (*stack)->m_top) - pos;
@@ -63,15 +83,43 @@ void stack_reset(struct stack_t** stack, uint64_t pos)
 		if (pos < (*stack)->m_top)
 		{
 			(*stack)->m_top -= pos;
-			return;
+			break;
 		}
 
 		pos -= (*stack)->m_top;
 
-		struct stack_t* p = (*stack)->m_prev;
-		free(*stack);
-		*stack = p;
+		(*stack)->m_top = 0;
+		*stack = (*stack)->m_prev;
 	}
+}
+
+void stack_reset_hard(struct stack_t** stack, uint64_t pos)
+{
+	while ((*stack) && (*stack)->m_base + (*stack)->m_top < pos)
+		*stack = (*stack)->m_next;
+
+	if (!(*stack))
+		return;
+
+	pos = ((*stack)->m_base + (*stack)->m_top) - pos;
+	while (pos)
+	{
+		if (pos < (*stack)->m_top)
+		{
+			(*stack)->m_top -= pos;
+			break;
+		}
+		else
+		{
+			struct stack_t* p = (*stack)->m_prev;
+
+			pos -= (*stack)->m_top;
+			free(*stack);
+			*stack = p;
+		}
+	}
+
+	(*stack)->m_next = NULL;
 }
 
 void* stack_malloc(struct stack_t** stack, size_t len)
@@ -79,14 +127,7 @@ void* stack_malloc(struct stack_t** stack, size_t len)
 	void* ptr = NULL;
 	uint32_t align_len = ALIGN_DIV(len,sizeof(uint64_t));
 
-	if (!(*stack))
-	{
-		*stack = stack_push_page(len,NULL);
-		if (!(*stack))
-			return NULL;
-	}
-
-	if ((*stack)->m_top + align_len > (*stack)->m_count)
+	if (!(*stack) || (*stack)->m_top + align_len > (*stack)->m_count)
 	{
 		struct stack_t* s = stack_push_page(len,*stack);
 		if (!s)
@@ -103,13 +144,13 @@ void* stack_malloc(struct stack_t** stack, size_t len)
 
 void stack_free(struct stack_t* stack, void* ptr, size_t len)
 {
-	uint32_t align_len = ALIGN_DIV(len,sizeof(uint64_t));
+	if (stack)
+	{
+		uint32_t align_len = ALIGN_DIV(len,sizeof(uint64_t));
 
-	if (!stack)
-		return;
-
-	if (stack->m_top >= align_len && ptr == &stack->m_data[stack->m_top - align_len])
-		stack->m_top -= align_len;
+		if (stack->m_top >= align_len && ptr == &stack->m_data[stack->m_top - align_len])
+			stack->m_top -= align_len;
+	}
 }
 
 void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t new_len)

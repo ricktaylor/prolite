@@ -8,6 +8,7 @@
 struct stack_t
 {
 	struct stack_t* m_prev;
+	struct stack_t* m_next;
 	uint32_t        m_count;
 	uint32_t        m_top;
 	uint64_t        m_base;
