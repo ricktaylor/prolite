@@ -48,52 +48,47 @@ static uint64_t directive_atom(const unsigned char* atom, const size_t alen)
 /* 'Do' a directive */
 int directive(struct context_t* context, struct term_t* term)
 {
-	static uint64_t dynamic = directive_atom(STRING_AND_LEN("dynamic"));
-	static uint64_t multifile = directive_atom(STRING_AND_LEN("multifile"));
-	static uint64_t discontiguous = directive_atom(STRING_AND_LEN("discontiguous"));
-	static uint64_t initialization= directive_atom(STRING_AND_LEN("initialization"));
-	static uint64_t include = directive_atom(STRING_AND_LEN("include"));
-	static uint64_t ensure_loaded = directive_atom(STRING_AND_LEN("ensure_loaded"));
-	static uint64_t char_conversion = directive_atom(STRING_AND_LEN("char_conversion"));
-	static uint64_t set_prolog_flag = directive_atom(STRING_AND_LEN("set_prolog_flag"));
-
-	switch (term->m_value->m_uval)
-	{
-	case BOX_COMPOUND_EMBED_2(3,'o','p'):  /* op/3 */
+	if (term->m_value->m_uval == BOX_COMPOUND_EMBED_2(3,'o','p'))
 		return define_op(context,term);
+	else if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 1))
+	{
+		static uint64_t dynamic = directive_atom(STRING_AND_LEN("dynamic"));
+		static uint64_t multifile = directive_atom(STRING_AND_LEN("multifile"));
+		static uint64_t discontiguous = directive_atom(STRING_AND_LEN("discontiguous"));
+		static uint64_t initialization= directive_atom(STRING_AND_LEN("initialization"));
+		static uint64_t include = directive_atom(STRING_AND_LEN("include"));
+		static uint64_t ensure_loaded = directive_atom(STRING_AND_LEN("ensure_loaded"));
 
-	case (UINT64_C(0xFFF6) << 48 | 1):
-		if (term->m_value->m_uval == dynamic)
+		if (term->m_value[1].m_uval == dynamic)
 		{
 		}
-		if (term->m_value->m_uval == multifile)
+		if (term->m_value[1].m_uval == multifile)
 		{
 		}
-		if (term->m_value->m_uval == discontiguous)
+		if (term->m_value[1].m_uval == discontiguous)
 		{
 		}
-		if (term->m_value->m_uval == initialization)
+		if (term->m_value[1].m_uval == initialization)
 		{
 		}
-		if (term->m_value->m_uval == include)
+		if (term->m_value[1].m_uval == include)
 		{
 		}
-		if (term->m_value->m_uval == ensure_loaded)
+		if (term->m_value[1].m_uval == ensure_loaded)
 		{
 		}
-		break;
+	}
+	else if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 2))
+	{
+		static uint64_t char_conversion = directive_atom(STRING_AND_LEN("char_conversion"));
+		static uint64_t set_prolog_flag = directive_atom(STRING_AND_LEN("set_prolog_flag"));
 
-	case (UINT64_C(0xFFF6) << 48 | 2):
-		if (term->m_value->m_uval == char_conversion)
+		if (term->m_value[1].m_uval == char_conversion)
 		{
 		}
-		if (term->m_value->m_uval == set_prolog_flag)
+		if (term->m_value[1].m_uval == set_prolog_flag)
 		{
 		}
-		break;
-
-	default:
-		break;
 	}
 
 	/* TODO: push error */
