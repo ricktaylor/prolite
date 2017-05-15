@@ -30,7 +30,7 @@ union box_t
 #define BOX_TAG_CODES       (UINT64_C(0xFFF2) << 48)
 #define BOX_TAG_OBJECT      (UINT64_C(0xFFF1) << 48)
 
-#define BOX_TAG_COMPOUND_EMBED   (UINT64_C(0xFFF68) << 48)
+#define BOX_TAG_COMPOUND_EMBED   (UINT64_C(0xFFF68) << 44)
 
 #define BOX_COMPOUND_EMBED_1(a,c)              (BOX_TAG_COMPOUND_EMBED | ((uint64_t)1 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c) << 32))
 #define BOX_COMPOUND_EMBED_2(a,c1,c2)          (BOX_TAG_COMPOUND_EMBED | ((uint64_t)2 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24))
@@ -109,5 +109,7 @@ int box_string(struct context_t* context, union box_t* b, const unsigned char* s
 int box_string_builtin(union box_t* b, const unsigned char* str, size_t len);
 
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len);
+
+const unsigned char* unbox_compound(struct context_t* context, const union box_t* b, uint64_t* arity, size_t* flen);
 
 #endif /* BOX_TYPES_H_ */

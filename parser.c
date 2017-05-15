@@ -2143,6 +2143,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 
 	return status;
 }
+
 static enum eEmitStatus emit_compound(struct context_t* context, union box_t* functor, uint64_t arity)
 {
 	enum eEmitStatus status;

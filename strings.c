@@ -110,6 +110,7 @@ static int builtin_string_compare(const void* p1, const void* p2)
 	return memcmp(s1->m_str,s2->m_str,s1->m_len);
 }
 
+/* TODO: Make this much smarter, i.e. use offsets into s_builtin_strings rather than pointers */
 int box_string_builtin(union box_t* b, const unsigned char* str, size_t len)
 {
 	if (len <= 5)
@@ -146,6 +147,18 @@ const unsigned char* unbox_string(struct context_t* context, const union box_t* 
 		return s->m_str;
 	}
 
-	*len = (size_t)(b->m_uval & (UINT64_C(0xF) << 40));
+	*len = (size_t)((b->m_uval & (UINT64_C(0x7) << 40)) >> 40);
 	return ((const unsigned char*)b) + 3;
+}
+
+const unsigned char* unbox_compound(struct context_t* context, const union box_t* b, uint64_t* arity, size_t* flen)
+{
+	if ((b->m_uval & BOX_TAG_COMPOUND_EMBED) == BOX_TAG_COMPOUND_EMBED)
+	{
+		*flen = (size_t)((b->m_uval & (UINT64_C(0x7) << 44)) >> 44);
+		*arity = (b->m_uval & (UINT64_C(0xF) << 40)) >> 40;
+		return ((const unsigned char*)b) + 3;
+	}
+	*arity = (b->m_uval & ~(UINT64_C(0xFFFF8) << 44));
+	return unbox_string(context,b+1,flen);
 }
