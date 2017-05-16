@@ -31,63 +31,37 @@ static int define_op(struct context_t* context, struct term_t* term)
 	return -1;
 }
 
-static uint64_t directive_atom(const unsigned char* atom, const size_t alen)
-{
-	union box_t b;
-	b.m_uval = BOX_TAG_ATOM;
-#if defined(NDEBUG)
-	box_string_builtin(&b,atom,alen);
-#else
-	assert(box_string_builtin(&b,atom,alen) == 1);
-#endif
-	return b.m_uval;
-}
-
-#define STRING_AND_LEN(s) (const unsigned char*)(s),sizeof(s)
-
 /* 'Do' a directive */
 int directive(struct context_t* context, struct term_t* term)
 {
 	if (term->m_value->m_uval == BOX_COMPOUND_EMBED_2(3,'o','p'))
-		return define_op(context,term);
-	else if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 1))
 	{
-		static uint64_t dynamic = directive_atom(STRING_AND_LEN("dynamic"));
-		static uint64_t multifile = directive_atom(STRING_AND_LEN("multifile"));
-		static uint64_t discontiguous = directive_atom(STRING_AND_LEN("discontiguous"));
-		static uint64_t initialization= directive_atom(STRING_AND_LEN("initialization"));
-		static uint64_t include = directive_atom(STRING_AND_LEN("include"));
-		static uint64_t ensure_loaded = directive_atom(STRING_AND_LEN("ensure_loaded"));
+		++term->m_value;
+		return define_op(context,term);
+	}
 
-		if (term->m_value[1].m_uval == dynamic)
+	if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 1))
+	{
+		switch (term->m_value[1].m_uval)
 		{
-		}
-		if (term->m_value[1].m_uval == multifile)
-		{
-		}
-		if (term->m_value[1].m_uval == discontiguous)
-		{
-		}
-		if (term->m_value[1].m_uval == initialization)
-		{
-		}
-		if (term->m_value[1].m_uval == include)
-		{
-		}
-		if (term->m_value[1].m_uval == ensure_loaded)
-		{
+		case BUILTIN_ATOM(dynamic):
+		case BUILTIN_ATOM(multifile):
+		case BUILTIN_ATOM(discontiguous):
+		case BUILTIN_ATOM(initialization):
+		case BUILTIN_ATOM(include):
+		case BUILTIN_ATOM(ensure_loaded):
+		default:
+			break;
 		}
 	}
 	else if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 2))
 	{
-		static uint64_t char_conversion = directive_atom(STRING_AND_LEN("char_conversion"));
-		static uint64_t set_prolog_flag = directive_atom(STRING_AND_LEN("set_prolog_flag"));
-
-		if (term->m_value[1].m_uval == char_conversion)
+		switch (term->m_value[1].m_uval)
 		{
-		}
-		if (term->m_value[1].m_uval == set_prolog_flag)
-		{
+		case BUILTIN_ATOM(char_conversion):
+		case BUILTIN_ATOM(set_prolog_flag):
+		default:
+			break;
 		}
 	}
 

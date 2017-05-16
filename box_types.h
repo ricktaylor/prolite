@@ -106,10 +106,18 @@ static inline int32_t unbox_int32(const union box_t* b)
 struct context_t;
 
 int box_string(struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
-int box_string_builtin(union box_t* b, const unsigned char* str, size_t len);
 
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len);
 
 const unsigned char* unbox_compound(struct context_t* context, const union box_t* b, uint64_t* arity, size_t* flen);
+
+/* Macro magic to declare the builtin string constants */
+#define DECLARE_BUILTIN_STRING(name) BUILTIN_ATOM_##name,
+enum builtin_atoms_t
+{
+#include "builtin_strings.h"
+};
+
+#define BUILTIN_ATOM(name) (BOX_TAG_ATOM_BUILTIN | (uint32_t)BUILTIN_ATOM_##name)
 
 #endif /* BOX_TYPES_H_ */

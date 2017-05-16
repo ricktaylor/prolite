@@ -11,37 +11,26 @@ struct builtin_string_t
 	const unsigned char* m_str;
 };
 
-#define BUILTIN_STRING(s) { sizeof(s),(const unsigned char*)(s) }
+#define DECLARE_BUILTIN_STRING(s) { sizeof(#s),(const unsigned char*)(#s) },
 
-/* These MUST be sorted by length then text */
-struct builtin_string_t s_builtin_strings[] =
+const struct builtin_string_t s_builtin_strings[] =
 {
-	BUILTIN_STRING("dynamic"),
-	BUILTIN_STRING("include"),
-	BUILTIN_STRING("missing"),
-	BUILTIN_STRING("max_arity"),
-	BUILTIN_STRING("multifile"),
-	BUILTIN_STRING("underflow"),
-	BUILTIN_STRING("max_integer"),
-	BUILTIN_STRING("min_integer"),
-	BUILTIN_STRING("invalid_utf8"),
-	BUILTIN_STRING("syntax_error"),
-	BUILTIN_STRING("system_error"),
-	BUILTIN_STRING("discontiguous"),
-	BUILTIN_STRING("ensure_loaded"),
-	BUILTIN_STRING("out_of_memory"),
-	BUILTIN_STRING("float_overflow"),
-	BUILTIN_STRING("initialization"),
-	BUILTIN_STRING("invalid_escape"),
-	BUILTIN_STRING("char_conversion"),
-	BUILTIN_STRING("set_prolog_flag"),
-	BUILTIN_STRING("evaluation_error"),
-	BUILTIN_STRING("invalid_argument"),
-	BUILTIN_STRING("unexpected_token"),
-	BUILTIN_STRING("invalid_character"),
-	BUILTIN_STRING("past_end_of_stream"),
-	BUILTIN_STRING("representation_error"),
+#include "builtin_strings.h"
 };
+
+static int box_string_builtin(union box_t* b, const unsigned char* str, size_t len)
+{
+	struct builtin_string_t f, *s;
+	f.m_len = len;
+	f.m_str = str;
+
+	s = bsearch(&f,s_builtin_strings,sizeof(s_builtin_strings) / sizeof(s_builtin_strings[0]),sizeof(s_builtin_strings),&builtin_string_compare);
+	if (!s)
+		return 0;
+
+	b->m_uval |= (UINT64_C(0x4) << 44) | (uint32_t)(s - s_builtin_strings);
+	return 1;
+}
 
 static int box_string_ptr(struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
 {
@@ -110,27 +99,6 @@ static int builtin_string_compare(const void* p1, const void* p2)
 	return memcmp(s1->m_str,s2->m_str,s1->m_len);
 }
 
-/* TODO: Make this much smarter, i.e. use offsets into s_builtin_strings rather than pointers */
-int box_string_builtin(union box_t* b, const unsigned char* str, size_t len)
-{
-	if (len <= 5)
-		return box_string_embed(b,str,len);
-	else
-	{
-		struct builtin_string_t f, *s;
-		f.m_len = len;
-		f.m_str = str;
-
-		s = bsearch(&f,s_builtin_strings,sizeof(s_builtin_strings) / sizeof(s_builtin_strings[0]),sizeof(s_builtin_strings),&builtin_string_compare);
-		if (!s)
-			return 0;
-
-		b->m_uval |= (UINT64_C(0x4) << 44);
-		box_pointer(b,s);
-	}
-	return 1;
-}
-
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len)
 {
 	unsigned int mask = ((b->m_uval >> 44) & 0xC);
@@ -142,7 +110,7 @@ const unsigned char* unbox_string(struct context_t* context, const union box_t* 
 	}
 	else if (mask == 4)
 	{
-		struct builtin_string_t const* s = unbox_pointer(b);
+		const struct builtin_string_t* s = s_builtin_strings[(uint32_t)b->m_uval];
 		*len = s->m_len;
 		return s->m_str;
 	}

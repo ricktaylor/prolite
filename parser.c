@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <assert.h>
 
 /* TODO: Bring these out to "stream.h" */
@@ -2144,20 +2145,20 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 	return status;
 }
 
-static enum eEmitStatus emit_compound(struct context_t* context, union box_t* functor, uint64_t arity)
+static enum eEmitStatus emit_compound(struct context_t* context, uint64_t functor, uint64_t arity)
 {
 	enum eEmitStatus status;
-	if (arity < 16 && (functor->m_uval & BOX_TAG_ATOM_EMBED) == BOX_TAG_ATOM_EMBED)
+	if (arity < 16 && (functor & BOX_TAG_ATOM_EMBED) == BOX_TAG_ATOM_EMBED)
 	{
-		uint64_t len = (functor->m_uval & ((uint64_t)7 << 40)) << 4;
-		uint64_t val = BOX_TAG_COMPOUND_EMBED | (functor->m_uval & ~(UINT64_C(0xFFFFFF) << 40)) | len | (arity << 40);
+		uint64_t len = (functor & ((uint64_t)7 << 40)) << 4;
+		uint64_t val = BOX_TAG_COMPOUND_EMBED | (functor & ~(UINT64_C(0xFFFFFF) << 40)) | len | (arity << 40);
 		status = (stack_push(&context->m_exec_stack,val) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 	}
 	else
 	{
 		status = (stack_push(&context->m_exec_stack,BOX_TAG_COMPOUND | arity) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 		if (!status)
-			status = (stack_push(&context->m_exec_stack,functor->m_uval) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+			status = (stack_push(&context->m_exec_stack,functor) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 	}
 	return status;
 }
@@ -2183,67 +2184,41 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct var_in
 	return status;
 }
 
-static enum eEmitStatus emit_builtin_atom(struct context_t* context, const unsigned char* atom, size_t alen)
-{
-	union box_t b;
-	b.m_uval = BOX_TAG_ATOM;
-#if defined(NDEBUG)
-	box_string_builtin(&b,atom,alen);
-#else
-	assert(box_string_builtin(&b,atom,alen) == 1);
-#endif
-	return (stack_push(&context->m_exec_stack,b.m_uval) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
-}
-
-static enum eEmitStatus emit_builtin_compound(struct context_t* context, const unsigned char* functor, size_t flen, uint64_t arity)
-{
-	union box_t b;
-	b.m_uval = BOX_TAG_ATOM;
-#if defined(NDEBUG)
-	box_string_builtin(&b,functor,flen);
-#else
-	assert(box_string_builtin(&b,functor,flen) == 1);
-#endif
-	return emit_compound(context,&b,arity);
-}
-
-#define STRING_AND_LEN(s) (const unsigned char*)(s),sizeof(s)
-
 static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast_err, struct parser_t* parser, struct term_t* term)
 {
 	enum eEmitStatus status = EMIT_OUT_OF_MEM;
 	if (ast_err > AST_ERR_OUTOFMEMORY)
 	{
-		status = emit_builtin_compound(context,STRING_AND_LEN("syntax_error"),1);
+		status = emit_compound(context,BUILTIN_ATOM(syntax_error),1);
 		if (!status)
 		{
 			if (ast_err <= AST_SYNTAX_ERR_MAX_ARITY)
-				status = emit_builtin_compound(context,STRING_AND_LEN("representation_error"),1);
+				status = emit_compound(context,BUILTIN_ATOM(representation_error),1);
 			else if (ast_err <= AST_SYNTAX_ERR_MISSING_BQ)
-				status = emit_builtin_compound(context,STRING_AND_LEN("missing"),1);
+				status = emit_compound(context,BUILTIN_ATOM(missing),1);
 
 			if (!status)
 			{
 				switch (ast_err)
 				{
 				case AST_SYNTAX_ERR_FLOAT_OVERFLOW:
-					status = emit_builtin_atom(context,STRING_AND_LEN("float_overflow"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(float_overflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				case AST_SYNTAX_ERR_FLOAT_UNDERFLOW:
-					status = emit_builtin_atom(context,STRING_AND_LEN("underflow"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(underflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				case AST_SYNTAX_ERR_MAX_INTEGER:
-					status = emit_builtin_atom(context,STRING_AND_LEN("max_integer"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(max_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				case AST_SYNTAX_ERR_MIN_INTEGER:
-					status = emit_builtin_atom(context,STRING_AND_LEN("min_integer"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(min_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				case AST_SYNTAX_ERR_MAX_ARITY:
-					status = emit_builtin_atom(context,STRING_AND_LEN("max_arity"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(max_arity)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				case AST_SYNTAX_ERR_MISSING_CLOSE:
@@ -2271,23 +2246,23 @@ static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast
 					break;
 
 				case AST_SYNTAX_ERR_INVALID_ARG:
-					status = emit_builtin_atom(context,STRING_AND_LEN("invalid_argument"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(invalid_argument)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
-					status = emit_builtin_atom(context,STRING_AND_LEN("unexpected_token"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(unexpected_token)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				case AST_SYNTAX_ERR_INVALID_CHAR:
-					status = emit_builtin_atom(context,STRING_AND_LEN("invalid_character"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(invalid_character)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				case AST_SYNTAX_ERR_INVALID_ESCAPE:
-					status = emit_builtin_atom(context,STRING_AND_LEN("invalid_escape"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(invalid_escape)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				case AST_SYNTAX_ERR_INVALID_UTF8:
-					status = emit_builtin_atom(context,STRING_AND_LEN("invalid_utf8"));
+					status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(invalid_utf8)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 					break;
 
 				default:
@@ -2330,9 +2305,9 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	else if (next_type != tokEnd)
 	{
 		/* Missing . */
-		status = emit_builtin_compound(context,STRING_AND_LEN("syntax_error"),1);
+		status = emit_compound(context,BUILTIN_ATOM(syntax_error),1);
 		if (!status)
-			status = emit_builtin_compound(context,STRING_AND_LEN("missing"),1);
+			status = emit_compound(context,BUILTIN_ATOM(missing),1);
 		if (!status)
 			status = (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_1('.')) == -1 ? EMIT_OUT_OF_MEM : EMIT_ERR_ON_STACK);
 	}
@@ -2359,9 +2334,9 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		context->m_strings = prev_strings;
 		stack_reset(&context->m_exec_stack,stack_base);
 
-		status = emit_builtin_compound(context,STRING_AND_LEN("system_error"),1);
+		status = emit_compound(context,BUILTIN_ATOM(system_error),1);
 		if (!status)
-			status = emit_builtin_atom(context,STRING_AND_LEN("out_of_memory"));
+			status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(out_of_memory)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 
 		if (!status)
 			status = EMIT_ERR_ON_STACK;
@@ -2458,9 +2433,9 @@ int read_term(struct context_t* context, struct stream_t* s)
 	status = emit_term(context,&new_term,&parser);
 	if (status == EMIT_EOF)
 	{
-		status = emit_builtin_compound(context,STRING_AND_LEN("syntax_error"),1);
+		status = emit_compound(context,BUILTIN_ATOM(syntax_error),1);
 		if (!status)
-			status = emit_builtin_atom(context,STRING_AND_LEN("past_end_of_stream"));
+			status = (stack_push(&context->m_exec_stack,BUILTIN_ATOM(past_end_of_stream)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 		if (!status)
 			status = EMIT_ERR_ON_STACK;
 	}
