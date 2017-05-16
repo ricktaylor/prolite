@@ -137,17 +137,12 @@ int op_3(struct context_t* context, struct term_t* term)
 	}
 	else if (term->m_value[2].m_uval == BOX_COMPOUND_EMBED_1(2,'.'))
 	{
-		uint64_t scratch_base = stack_top(context->m_scratch_stack);
-
 		const union box_t* list = term->m_value + 2;
 		do
 		{
 			/* List - enumerate */
 			if ((list[1].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
-			{
-				stack_reset(&context->m_scratch_stack,scratch_base);
 				return throw_instantiation_error(context);
-			}
 
 			if ((list[1].m_uval & BOX_TAG_MASK) == BOX_TAG_ATOM)
 			{
@@ -160,10 +155,7 @@ int op_3(struct context_t* context, struct term_t* term)
 					return err;
 			}
 			else
-			{
-				stack_reset(&context->m_scratch_stack,scratch_base);
 				return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),&list[1]);
-			}
 
 			if (list[2].m_uval == BOX_ATOM_EMBED_2('[',']'))
 				return 0;
@@ -171,8 +163,6 @@ int op_3(struct context_t* context, struct term_t* term)
 			list += 2;
 		}
 		while (list->m_uval == BOX_COMPOUND_EMBED_1(2,'.'));
-
-		stack_reset(&context->m_scratch_stack,scratch_base);
 
 		if ((list->m_uval & BOX_TAG_MASK) == BOX_TAG_VAR ||
 				list->m_uval == BOX_COMPOUND_EMBED_1(2,'|'))
