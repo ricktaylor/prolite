@@ -109,6 +109,8 @@ int box_string(struct context_t* context, union box_t* b, const unsigned char* s
 
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len);
 
+uint32_t embed_string_code(const union box_t* b);
+
 const unsigned char* unbox_compound(struct context_t* context, const union box_t* b, uint64_t* arity, size_t* flen);
 
 /* Macro magic to declare the builtin string constants */

@@ -224,8 +224,6 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 	}
 	else if (c[0] >= 0xC2 && c[0] <= 0xF4)
 	{
-		unsigned int i;
-
 		if ((c[0] & 0xE0) == 0xC0)
 		{
 			count = 2;
@@ -279,17 +277,20 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 
 			return char_more;
 		}
-
-		for (i=1;i<count;++i)
+		else
 		{
-			if ((c[i] & 0xC0) != 0x80)
+			unsigned int i;
+			for (i=1;i<count;++i)
 			{
-				*p += i;
-				*col += i;
-				return char_ilseq;
-			}
+				if ((c[i] & 0xC0) != 0x80)
+				{
+					*p += i;
+					*col += i;
+					return char_ilseq;
+				}
 
-			val = (val << 6) | (c[i] & 0x3F);
+				val = (val << 6) | (c[i] & 0x3F);
+			}
 		}
 	}
 	else
@@ -1804,6 +1805,24 @@ static struct ast_node_t* parse_name(struct context_t* context, struct parser_t*
 	return node;
 }
 
+static struct ast_node_t* parse_chars_and_codes(struct context_t* context, int chars, struct token_t* token, enum eASTError* ast_err)
+{
+	/* TODO: Check for utf8 chars token and split into multiple lists */
+
+	struct ast_node_t* node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
+	if (!node)
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+
+	node->m_type = chars ? AST_TYPE_CHARS : AST_TYPE_CODES;
+	node->m_arity = 0;
+
+	node->m_boxed.m_uval = (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS : BOX_TAG_CODES);
+	if (!box_string(context,&node->m_boxed,token->m_str,token->m_len))
+		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+
+	return node;
+}
+
 static struct ast_node_t* parse_term_base(struct context_t* context, struct parser_t* parser, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
 	struct ast_node_t* node = NULL;
@@ -1842,32 +1861,14 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 			return parse_name(context,parser,max_prec,next_type,next,ast_err);
 		}
 
-		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
-		if (!node)
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
-
-		node->m_type = context->m_module->m_flags.double_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
-		node->m_arity = 0;
-
-		node->m_boxed.m_uval = (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS : BOX_TAG_CODES);
-		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		node = parse_chars_and_codes(context,context->m_module->m_flags.double_quotes == 1 ? 1 : 0,next,ast_err);
 		break;
 
 	case tokBackQuote:
 		if (context->m_module->m_flags.back_quotes == 0 /* atom */)
 			return parse_name(context,parser,max_prec,next_type,next,ast_err);
 
-		node = stack_malloc(&context->m_scratch_stack,sizeof(struct ast_node_t));
-		if (!node)
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
-
-		node->m_type = context->m_module->m_flags.back_quotes == 1 /* chars */ ? AST_TYPE_CHARS : AST_TYPE_CODES;
-		node->m_arity = 0;
-
-		node->m_boxed.m_uval = (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS : BOX_TAG_CODES);
-		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		node = parse_chars_and_codes(context,context->m_module->m_flags.back_quotes == 1 ? 1 : 0,next,ast_err);
 		break;
 
 	case tokOpen:
@@ -2163,7 +2164,7 @@ static enum eEmitStatus emit_compound(struct context_t* context, uint64_t functo
 	return status;
 }
 
-static enum eEmitStatus emit_node_value(struct context_t* context, struct var_info_t* vars, struct ast_node_t* node)
+static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_node_t* node)
 {
 	enum eEmitStatus status = EMIT_OK;
 	if (node->m_type == AST_TYPE_VAR)
@@ -2175,7 +2176,7 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct var_in
 		{
 			uint64_t i;
 			for (i = 0; !status && i < node->m_arity; ++i)
-				status = emit_node_value(context,vars,node->m_params[i]);
+				status = emit_node_value(context,node->m_params[i]);
 		}
 	}
 	else
@@ -2319,7 +2320,7 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		if (!status)
 		{
 			term->m_value = stack_top_ptr(context->m_exec_stack);
-			status = emit_node_value(context,term->m_vars,node);
+			status = emit_node_value(context,node);
 		}
 	}
 
@@ -2387,7 +2388,7 @@ int load_file(struct context_t* context, struct stream_t* s)
 			}
 			else if (!failed)
 			{
-				/* TODO: Assert the term */
+				/* Assert the term */
 				int err = assert_clause(context,&term,1);
 				if (err == -1)
 					status = EMIT_OUT_OF_MEM;
@@ -2399,7 +2400,6 @@ int load_file(struct context_t* context, struct stream_t* s)
 		if (status == EMIT_ERR_ON_STACK)
 		{
 			/* TODO: Report the error term */
-
 			failed = 1;
 		}
 

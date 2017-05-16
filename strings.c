@@ -130,3 +130,69 @@ const unsigned char* unbox_compound(struct context_t* context, const union box_t
 	*arity = (b->m_uval & ~(UINT64_C(0xFFFF8) << 44));
 	return unbox_string(context,b+1,flen);
 }
+
+uint32_t embed_string_code(const union box_t* b)
+{
+	unsigned int len = (unsigned int)((b->m_uval & (UINT64_C(0x7) << 40)) >> 40);
+	const unsigned char* c = ((const unsigned char*)b) + 3;
+	unsigned int count = 0;
+	uint32_t val = 0;
+
+	if (c[0] <= 0x7f)
+		return c[0];
+
+	if (c[0] < 0xC2 || c[0] > 0xF4)
+		return -1;
+
+	if ((c[0] & 0xE0) == 0xC0)
+	{
+		count = 2;
+		val = (c[0] & 0x1F);
+	}
+	else if ((c[0] & 0xF0) == 0xE0)
+	{
+		if (len == 1)
+			return -1;
+
+		if ((c[0] == 0xE0 && c[1] >= 0x80 && c[1] <= 0x9F) ||
+			(c[0] == 0xED && c[1] >= 0xA0 && c[1] <= 0xBF))
+		{
+			return -1;
+		}
+
+		count = 3;
+		val = (c[0] & 0x0F);
+	}
+	else if ((c[0] & 0xF8) == 0xF0)
+	{
+		if (len == 1)
+			return -1;
+
+		if ((c[0] == 0xF0 && c[1] >= 0x80 && c[1] <= 0x8F) ||
+			(c[0] == 0xF4 && c[1] >= 0x90 && c[1] <= 0xBF))
+		{
+			return -1;
+		}
+
+		count = 4;
+		val = (c[0] & 0x7);
+	}
+	else
+		return -1;
+
+	if (len != count)
+		return -1;
+	else
+	{
+		unsigned int i;
+		for (i=1;i<count;++i)
+		{
+			if ((c[i] & 0xC0) != 0x80)
+				return -1;
+
+			val = (val << 6) | (c[i] & 0x3F);
+		}
+	}
+
+	return val;
+}
