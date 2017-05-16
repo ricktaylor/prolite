@@ -5,7 +5,7 @@
  *      Author: rick
  */
 
-#include "context.h"
+#include "throw.h"
 
 #include <assert.h>
 
@@ -21,29 +21,21 @@ int char_conversion_2(struct context_t* context, struct term_t* term)
 
 	/* Check value[0] first, otherwise we don't know what value[1] is! */
 	if ((term->m_value[0].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
-	{
-		/* TODO: instantiation_error */
-		return 1;
-	}
+		return throw_instantiation_error(context);
 
 	if ((term->m_value[0].m_uval & BOX_TAG_ATOM_EMBED) != BOX_TAG_ATOM_EMBED ||
 			(in_char = embed_string_code(&term->m_value[0])) == -1)
 	{
-		/* TODO: representation_error(character) */
-		return 1;
+		return throw_representation_error(context,BUILTIN_ATOM(character));
 	}
 
 	if ((term->m_value[1].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
-	{
-		/* TODO: instantiation_error */
-		return 1;
-	}
+		return throw_instantiation_error(context);
 
 	if ((term->m_value[1].m_uval & BOX_TAG_ATOM_EMBED) != BOX_TAG_ATOM_EMBED ||
 			(out_char = embed_string_code(&term->m_value[1])) == -1)
 	{
-		/* TODO: representation_error(character) */
-		return 1;
+		return throw_representation_error(context,BUILTIN_ATOM(character));
 	}
 
 	if (in_char == out_char)
@@ -89,35 +81,20 @@ int op_3(struct context_t* context, struct term_t* term)
 	enum eOpSpec op_spec;
 
 	if ((term->m_value[0].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
-	{
-		/* TODO: instantiation_error */
-		return 1;
-	}
+		return throw_instantiation_error(context);
 
 	if ((term->m_value[0].m_uval & BOX_TAG_INT32) != BOX_TAG_INT32)
-	{
-		/* TODO: type_error(integer,value[0]) */
-		return 1;
-	}
+		return throw_type_error(context,BUILTIN_ATOM(integer),&term->m_value[0]);
 
 	priority = unbox_int32(&term->m_value[0]);
 	if (priority < 0 || priority > 1200)
-	{
-		/* TODO: domain_error(operator_priority,value[0]) */
-		return -1;
-	}
+		return throw_domain_error(context,BUILTIN_ATOM(operator_priority),&term->m_value[0]);
 
 	if ((term->m_value[1].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
-	{
-		/* TODO: instantiation_error */
-		return 1;
-	}
+		return throw_instantiation_error(context);
 
 	if ((term->m_value[1].m_uval & BOX_TAG_ATOM_EMBED) != BOX_TAG_ATOM_EMBED)
-	{
-		/* TODO: type_error(atom,value[1]) */
-		return 1;
-	}
+		return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),&term->m_value[1]);
 
 	switch (term->m_value[1].m_uval)
 	{
@@ -142,17 +119,14 @@ int op_3(struct context_t* context, struct term_t* term)
 	case BOX_ATOM_EMBED_2('y','f'):
 		op_spec = eYF;
 		break;
-
 	default:
-		/* TODO: domain_error(operator_specifier,value[1]) */
-		return 1;
+		return throw_domain_error(context,BUILTIN_ATOM(operator_specifier),&term->m_value[1]);
 	}
 
 	if ((term->m_value[2].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR ||
 			term->m_value[2].m_uval == BOX_COMPOUND_EMBED_1(2,'|'))
 	{
-		/* TODO: instantiation_error */
-		return 1;
+		return throw_instantiation_error(context);
 	}
 
 	if ((term->m_value[2].m_uval & BOX_TAG_MASK) == BOX_TAG_ATOM)
@@ -163,14 +137,16 @@ int op_3(struct context_t* context, struct term_t* term)
 	}
 	else if (term->m_value[2].m_uval == BOX_COMPOUND_EMBED_1(2,'.'))
 	{
+		uint64_t scratch_base = stack_top(context->m_scratch_stack);
+
 		const union box_t* list = term->m_value + 2;
 		do
 		{
 			/* List - enumerate */
 			if ((list[1].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
 			{
-				/* TODO: instantiation_error */
-				return 1;
+				stack_reset(&context->m_scratch_stack,scratch_base);
+				return throw_instantiation_error(context);
 			}
 
 			if ((list[1].m_uval & BOX_TAG_MASK) == BOX_TAG_ATOM)
@@ -185,8 +161,8 @@ int op_3(struct context_t* context, struct term_t* term)
 			}
 			else
 			{
-				/* TODO: type_error(atom,list[1]) */
-				return 1;
+				stack_reset(&context->m_scratch_stack,scratch_base);
+				return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),&list[1]);
 			}
 
 			if (list[2].m_uval == BOX_ATOM_EMBED_2('[',']'))
@@ -196,24 +172,36 @@ int op_3(struct context_t* context, struct term_t* term)
 		}
 		while (list->m_uval == BOX_COMPOUND_EMBED_1(2,'.'));
 
+		stack_reset(&context->m_scratch_stack,scratch_base);
+
 		if ((list->m_uval & BOX_TAG_MASK) == BOX_TAG_VAR ||
 				list->m_uval == BOX_COMPOUND_EMBED_1(2,'|'))
 		{
-			/* TODO: instantiation_error */
-			return 1;
+			return throw_instantiation_error(context);
 		}
 
-		/* TODO: type_error(atom,list->m_uval) */
-		return 1;
+		return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),list);
 	}
 
-	/* TODO: type_error(list,value[2]) */
-	return 1;
+	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),&term->m_value[2]);
 }
 
 /* 'Do' a directive */
 int directive(struct context_t* context, struct term_t* term)
 {
+	switch (term->m_value->m_uval & BOX_TAG_MASK)
+	{
+	case BOX_TAG_VAR:
+		return throw_instantiation_error(context);
+
+	case BOX_TAG_COMPOUND:
+	case BOX_TAG_ATOM:
+		break;
+
+	default:
+		return throw_type_error(context,BUILTIN_ATOM(callable_term),term->m_value);
+	}
+
 	if (term->m_value->m_uval == BOX_COMPOUND_EMBED_2(3,'o','p'))
 	{
 		++term->m_value;
@@ -248,12 +236,16 @@ int directive(struct context_t* context, struct term_t* term)
 		}
 	}
 
-	/* TODO: push error */
-	return 1;
+	if (context->m_module->m_flags.unknown == 2)
+		return throw_existence_error(context,BUILTIN_ATOM(procedure),term->m_value);
+
+	/* TODO: Warn? */
+
+	return 0;
 }
 
 /* Assert a clause */
 int assert_clause(struct context_t* context, struct term_t* term, int z)
 {
-
+	return -1;
 }

@@ -11,12 +11,24 @@ struct builtin_string_t
 	const unsigned char* m_str;
 };
 
+#undef DECLARE_BUILTIN_STRING
 #define DECLARE_BUILTIN_STRING(s) { sizeof(#s),(const unsigned char*)(#s) },
 
 const struct builtin_string_t s_builtin_strings[] =
 {
 #include "builtin_strings.h"
 };
+
+static int builtin_string_compare(const void* p1, const void* p2)
+{
+	const struct builtin_string_t* s1 = p1;
+	const struct builtin_string_t* s2 = p2;
+
+	if (s1->m_len != s2->m_len)
+		return s1->m_len - s2->m_len;
+
+	return memcmp(s1->m_str,s2->m_str,s1->m_len);
+}
 
 static int box_string_builtin(union box_t* b, const unsigned char* str, size_t len)
 {
@@ -88,17 +100,6 @@ int box_string(struct context_t* context, union box_t* b, const unsigned char* s
 	return box_string_embed(b,str,len);
 }
 
-static int builtin_string_compare(const void* p1, const void* p2)
-{
-	const struct builtin_string_t* s1 = p1;
-	const struct builtin_string_t* s2 = p2;
-
-	if (s1->m_len != s2->m_len)
-		return s1->m_len - s2->m_len;
-
-	return memcmp(s1->m_str,s2->m_str,s1->m_len);
-}
-
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len)
 {
 	unsigned int mask = ((b->m_uval >> 44) & 0xC);
@@ -110,7 +111,7 @@ const unsigned char* unbox_string(struct context_t* context, const union box_t* 
 	}
 	else if (mask == 4)
 	{
-		const struct builtin_string_t* s = s_builtin_strings[(uint32_t)b->m_uval];
+		const struct builtin_string_t* s = &s_builtin_strings[(uint32_t)b->m_uval];
 		*len = s->m_len;
 		return s->m_str;
 	}
