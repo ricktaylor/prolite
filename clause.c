@@ -43,7 +43,7 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 
 	default:
 		stack_reset(&context->m_exec_stack,stack_base);
-		return throw_type_error(context,BUILTIN_ATOM(callable_term),head);
+		return throw_type_error(context,BUILTIN_ATOM(callable),head);
 	}
 
 	/* TODO: Check for static procedure */
@@ -70,7 +70,7 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 
 	default:
 		stack_reset(&context->m_exec_stack,stack_base);
-		return throw_type_error(context,BUILTIN_ATOM(callable_term),body);
+		return throw_type_error(context,BUILTIN_ATOM(callable),body);
 	}
 
 	/* TODO Make a clause!! */

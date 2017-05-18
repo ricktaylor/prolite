@@ -2373,7 +2373,7 @@ static int directive(struct context_t* context, struct term_t* term)
 		break;
 
 	default:
-		return throw_type_error(context,BUILTIN_ATOM(callable_term),term->m_value);
+		return throw_type_error(context,BUILTIN_ATOM(callable),term->m_value);
 	}
 
 	if (term->m_value->m_uval == BOX_COMPOUND_EMBED_2(3,'o','p'))
