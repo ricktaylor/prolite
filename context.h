@@ -1,6 +1,7 @@
 
 #include "stack.h"
 #include "box_types.h"
+#include "clause.h"
 
 struct var_info_t
 {
@@ -44,7 +45,8 @@ struct module_t
 		unsigned colon_sets_calling_context : 1;
 	} m_flags;
 
-	struct operator_t* m_operators;
+	struct operator_t*        m_operators;
+	struct procedure_table_t* m_procedures;
 };
 
 struct string_ptr_t
@@ -71,8 +73,4 @@ struct operator_t* lookup_op(struct context_t* context, const union box_t* b);
 /* Try to find a prefix op, otherwise find infix/suffix */
 struct operator_t* lookup_prefix_op(struct context_t* context, const union box_t* b);
 
-/* 'Do' a directive */
-int directive(struct context_t* context, struct term_t* term);
-
-/* Assert a clause */
-int assert_clause(struct context_t* context, struct term_t* term, int z);
+int op_3(struct context_t* context, struct term_t* term);

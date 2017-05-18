@@ -132,6 +132,13 @@ const unsigned char* unbox_compound(struct context_t* context, const union box_t
 	return unbox_string(context,b+1,flen);
 }
 
+uint64_t compound_arity(const union box_t* b)
+{
+	if ((b->m_uval & BOX_TAG_COMPOUND_EMBED) == BOX_TAG_COMPOUND_EMBED)
+		return (b->m_uval & (UINT64_C(0xF) << 40)) >> 40;
+	return (b->m_uval & ~(UINT64_C(0xFFFF8) << 44));
+}
+
 uint32_t embed_string_code(const union box_t* b)
 {
 	unsigned int len = (unsigned int)((b->m_uval & (UINT64_C(0x7) << 40)) >> 40);

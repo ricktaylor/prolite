@@ -112,6 +112,7 @@ const unsigned char* unbox_string(struct context_t* context, const union box_t* 
 uint32_t embed_string_code(const union box_t* b);
 
 const unsigned char* unbox_compound(struct context_t* context, const union box_t* b, uint64_t* arity, size_t* flen);
+uint64_t compound_arity(const union box_t* b);
 
 /* Macro magic to declare the builtin string constants */
 #define DECLARE_BUILTIN_STRING(name) BUILTIN_ATOM_##name,

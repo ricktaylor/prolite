@@ -53,6 +53,17 @@ void stack_delete(struct stack_t* s)
 	}
 }
 
+uint64_t stack_at(const struct stack_t* stack, uint64_t pos)
+{
+	while (stack && stack->m_base + stack->m_top < pos)
+		stack = stack->m_next;
+
+	if (!stack)
+		return 0;
+
+	return stack->m_data[pos - stack->m_base];
+}
+
 uint64_t stack_push(struct stack_t** stack, uint64_t val)
 {
 	if (!(*stack) || (*stack)->m_top == (*stack)->m_count)
@@ -65,8 +76,8 @@ uint64_t stack_push(struct stack_t** stack, uint64_t val)
 	}
 
 	/* No rounding, just pointer bump */
-	(*stack)->m_data[(*stack)->m_top++] = val;
-	return (*stack)->m_base + (*stack)->m_top;
+	(*stack)->m_data[(*stack)->m_top] = val;
+	return (*stack)->m_base + (*stack)->m_top++;
 }
 
 void stack_reset(struct stack_t** stack, uint64_t pos)

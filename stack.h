@@ -34,6 +34,8 @@ static inline uint64_t stack_pop(struct stack_t* stack)
 	return ((stack && stack->m_top) ? stack->m_data[stack->m_top--] : 0);
 }
 
+uint64_t stack_at(const struct stack_t* stack, uint64_t pos);
+
 void stack_reset(struct stack_t** stack, uint64_t pos);
 
 void stack_reset_hard(struct stack_t** stack, uint64_t pos);

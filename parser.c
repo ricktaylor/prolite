@@ -2328,7 +2328,110 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	return status;
 }
 
-int load_file(struct context_t* context, struct stream_t* s)
+/* Compile a term as an initialization query */
+static int initialization(struct context_t* context, struct term_t* term, uint64_t stack_base)
+{
+	uint64_t scratch_base = stack_top(context->m_scratch_stack);
+
+	/* Emit stock query to the scratch_stack */
+	int err = emit_query(context,term,&context->m_scratch_stack);
+	if (err)
+		return err;
+
+	/* TODO:  Emit 'Next' */
+
+
+	if (!err)
+	{
+		uint64_t scratch_top = stack_top(context->m_scratch_stack);
+		uint64_t i = scratch_base;
+
+		/* Reset the exec stack */
+		stack_reset(&context->m_exec_stack,stack_base);
+
+		/* TODO: Make this a faster stack function! */
+		/* Copy scratch to exec stack */
+		for (;!err && i < scratch_top;++i)
+			err = (stack_push(&context->m_exec_stack,stack_at(context->m_scratch_stack,i)) == -1 ? -1 : 0);
+
+		/* Reset the scratch stack */
+		stack_reset(&context->m_scratch_stack,scratch_base);
+	}
+	return err;
+}
+
+static int include(struct context_t* context, struct term_t* term);
+
+/* 'Do' a directive */
+static int directive(struct context_t* context, struct term_t* term)
+{
+	switch (term->m_value->m_uval & BOX_TAG_MASK)
+	{
+	case BOX_TAG_VAR:
+		return throw_instantiation_error(context);
+
+	case BOX_TAG_COMPOUND:
+	case BOX_TAG_ATOM:
+		break;
+
+	default:
+		return throw_type_error(context,BUILTIN_ATOM(callable_term),term->m_value);
+	}
+
+	if (term->m_value->m_uval == BOX_COMPOUND_EMBED_2(3,'o','p'))
+	{
+		++term->m_value;
+		return op_3(context,term);
+	}
+
+	if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 1))
+	{
+		switch (term->m_value[1].m_uval)
+		{
+		case BUILTIN_ATOM(dynamic):
+		case BUILTIN_ATOM(multifile):
+		case BUILTIN_ATOM(discontiguous):
+			++term->m_value;
+			return clause_directive(context,term);
+
+		case BUILTIN_ATOM(include):
+			term->m_value += 2;
+			return include(context,term);
+
+		case BUILTIN_ATOM(ensure_loaded):
+			term->m_value += 2;
+			return ensure_loaded(context,term);
+
+		default:
+			break;
+		}
+	}
+	else if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 2))
+	{
+		switch (term->m_value[1].m_uval)
+		{
+		case BUILTIN_ATOM(char_conversion):
+			term->m_value += 2;
+			return char_conversion_2(context,term);
+
+		case BUILTIN_ATOM(set_prolog_flag):
+			term->m_value += 2;
+			return set_prolog_flag_2(context,term);
+
+		default:
+			break;
+		}
+	}
+
+	if (context->m_module->m_flags.unknown == 2)
+		return throw_existence_error(context,BUILTIN_ATOM(procedure),term->m_value);
+
+	/* TODO: Warn? */
+
+	return 0;
+}
+
+static int load_file(struct context_t* context, struct stream_t* s)
 {
 	uint64_t original_stack_base = stack_top(context->m_exec_stack);
 	uint64_t stack_base = original_stack_base;
@@ -2349,20 +2452,35 @@ int load_file(struct context_t* context, struct stream_t* s)
 
 		if (status == EMIT_OK)
 		{
-			if (term.m_value->m_uval == BOX_COMPOUND_EMBED_2(1,':','-'))
+			stack_reset(&context->m_scratch_stack,scratch_base);
+
+			if (term.m_value[0].m_uval == BOX_COMPOUND_EMBED_2(1,':','-'))
 			{
-				/* Directive, skip to first arg */
-				++term.m_value;
-				int err = directive(context,&term);
-				if (err == -1)
-					status = EMIT_OUT_OF_MEM;
-				else if (err)
-					status = EMIT_THROW;
+				/* Check now for :- initialization/1 */
+				if (term->m_value[1].m_uval == (UINT64_C(0xFFF6) << 48 | 1) &&
+						term->m_value[2].m_uval == BUILTIN_ATOM(initialization))
+				{
+					term.m_value += 3;
+					int err = initialization(context,&term,stack_base);
+					if (err == -1)
+						status = EMIT_OUT_OF_MEM;
+					else if (err)
+						status = EMIT_THROW;
+					else
+					{
+						/* Initialization will write op codes to the exec stack, so don't pop them */
+						stack_base = original_stack_base = stack_top(context->m_exec_stack);
+					}
+				}
 				else
 				{
-					/* Update stack_base and strings as we may have pushed things */
-					stack_base = stack_top(context->m_exec_stack);
-					prev_strings = context->m_strings;
+					/* Directive, skip to first arg */
+					++term.m_value;
+					int err = directive(context,&term);
+					if (err == -1)
+						status = EMIT_OUT_OF_MEM;
+					else if (err)
+						status = EMIT_THROW;
 				}
 			}
 			else if (!failed)
@@ -2378,7 +2496,7 @@ int load_file(struct context_t* context, struct stream_t* s)
 
 		if (status == EMIT_THROW)
 		{
-			/* TODO: Report the error term */
+			/* TODO: Report the error term, or throw it? */
 			failed = 1;
 		}
 
@@ -2397,6 +2515,29 @@ int load_file(struct context_t* context, struct stream_t* s)
 	stack_reset_hard(&context->m_scratch_stack,scratch_base);
 
 	return failed ? -1 : 0;
+}
+
+static int include(struct context_t* context, struct term_t* term)
+{
+	int err = 0;
+	struct stream_t* s = NULL;
+
+	/* TODO: Open stream term->m_value[0] */
+
+	/* TODO: Twiddle with context */
+
+	err = load_file(context,s);
+	if (!err)
+	{
+		/* TODO: Untwiddle context */
+	}
+
+	return err;
+}
+
+int consult(struct context_t* context, struct stream_t* s)
+{
+	return load_file(context,s);
 }
 
 int read_term(struct context_t* context, struct stream_t* s)

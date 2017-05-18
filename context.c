@@ -176,64 +176,6 @@ int op_3(struct context_t* context, struct term_t* term)
 	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),&term->m_value[2]);
 }
 
-/* 'Do' a directive */
-int directive(struct context_t* context, struct term_t* term)
-{
-	switch (term->m_value->m_uval & BOX_TAG_MASK)
-	{
-	case BOX_TAG_VAR:
-		return throw_instantiation_error(context);
-
-	case BOX_TAG_COMPOUND:
-	case BOX_TAG_ATOM:
-		break;
-
-	default:
-		return throw_type_error(context,BUILTIN_ATOM(callable_term),term->m_value);
-	}
-
-	if (term->m_value->m_uval == BOX_COMPOUND_EMBED_2(3,'o','p'))
-	{
-		++term->m_value;
-		return op_3(context,term);
-	}
-
-	if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 1))
-	{
-		switch (term->m_value[1].m_uval)
-		{
-		case BUILTIN_ATOM(dynamic):
-		case BUILTIN_ATOM(multifile):
-		case BUILTIN_ATOM(discontiguous):
-		case BUILTIN_ATOM(initialization):
-		case BUILTIN_ATOM(include):
-		case BUILTIN_ATOM(ensure_loaded):
-		default:
-			break;
-		}
-	}
-	else if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 2))
-	{
-		switch (term->m_value[1].m_uval)
-		{
-		case BUILTIN_ATOM(char_conversion):
-			term->m_value += 2;
-			return char_conversion_2(context,term);
-
-		case BUILTIN_ATOM(set_prolog_flag):
-		default:
-			break;
-		}
-	}
-
-	if (context->m_module->m_flags.unknown == 2)
-		return throw_existence_error(context,BUILTIN_ATOM(procedure),term->m_value);
-
-	/* TODO: Warn? */
-
-	return 0;
-}
-
 /* Assert a clause */
 int assert_clause(struct context_t* context, struct term_t* term, int z)
 {
