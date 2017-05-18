@@ -2331,15 +2331,13 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 /* Compile a term as an initialization query */
 static int initialization(struct context_t* context, struct term_t* term, uint64_t stack_base)
 {
+	/* Emit goal  */
 	uint64_t scratch_base = stack_top(context->m_scratch_stack);
-
-	/* Emit stock query to the scratch_stack */
-	int err = emit_query(context,term,&context->m_scratch_stack);
+	int err = emit_goal(context,term);
 	if (err)
 		return err;
 
 	/* TODO:  Emit 'Next' */
-
 
 	if (!err)
 	{
@@ -2457,8 +2455,8 @@ static int load_file(struct context_t* context, struct stream_t* s)
 			if (term.m_value[0].m_uval == BOX_COMPOUND_EMBED_2(1,':','-'))
 			{
 				/* Check now for :- initialization/1 */
-				if (term->m_value[1].m_uval == (UINT64_C(0xFFF6) << 48 | 1) &&
-						term->m_value[2].m_uval == BUILTIN_ATOM(initialization))
+				if (term.m_value[1].m_uval == (UINT64_C(0xFFF6) << 48 | 1) &&
+						term.m_value[2].m_uval == BUILTIN_ATOM(initialization))
 				{
 					term.m_value += 3;
 					int err = initialization(context,&term,stack_base);

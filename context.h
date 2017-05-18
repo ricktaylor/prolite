@@ -1,4 +1,7 @@
 
+#ifndef CONTEXT_H_INCLUDED_
+#define CONTEXT_H_INCLUDED_
+
 #include "stack.h"
 #include "box_types.h"
 #include "clause.h"
@@ -74,3 +77,6 @@ struct operator_t* lookup_op(struct context_t* context, const union box_t* b);
 struct operator_t* lookup_prefix_op(struct context_t* context, const union box_t* b);
 
 int op_3(struct context_t* context, struct term_t* term);
+int char_conversion_2(struct context_t* context, struct term_t* term);
+
+#endif /* CONTEXT_H_INCLUDED_ */

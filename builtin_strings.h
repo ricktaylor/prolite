@@ -1,3 +1,5 @@
+#ifndef BUILTIN_STRINGS_H_INCLUDED_
+#define BUILTIN_STRINGS_H_INCLUDED_
 
 /* DO NOT INCLUDE THIS FILE DIRECTLY */
 
@@ -46,3 +48,5 @@ DECLARE_BUILTIN_STRING(instantiation_error)
 DECLARE_BUILTIN_STRING(representation_error)
 
 #endif
+
+#endif /* BUILTIN_STRINGS_H_INCLUDED_ */

@@ -1,4 +1,7 @@
 
+#ifndef STACK_H_INCLUDED_
+#define STACK_H_INCLUDED_
+
 #include <stdint.h>
 
 #if defined(_MSC_VER)
@@ -45,3 +48,5 @@ void* stack_malloc(struct stack_t** stack, size_t len);
 void stack_free(struct stack_t* stack, void* ptr, size_t len);
 
 void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t new_len);
+
+#endif /* STACK_H_INCLUDED_ */

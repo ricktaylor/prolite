@@ -1,5 +1,5 @@
 
-#include "clause.h"
+#include "throw.h"
 
 static union box_t* next_value(union box_t* v)
 {
@@ -19,15 +19,16 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 {
 	union box_t* head;
 	union box_t* body;
+	union box_t t;
 	uint64_t stack_base = stack_top(context->m_exec_stack);
 
-	if (term.m_value->m_uval == BOX_COMPOUND_EMBED_2(2,':','-'))
-		head = term.m_value + 1;
+	if (term->m_value->m_uval == BOX_COMPOUND_EMBED_2(2,':','-'))
+		head = term->m_value + 1;
 	else
 	{
 		if (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_4('t','r','u','e')) == -1)
 			return -1;
-		head = term.m_value;
+		head = term->m_value;
 	}
 
 	switch (head->m_uval & BOX_TAG_MASK)
@@ -53,12 +54,13 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 	{
 	case BOX_TAG_VAR:
 		/* Convert to call(V) */
-		if (stack_push(&context->m_exec_stack,*body) == -1)
+		if (stack_push(&context->m_exec_stack,body->m_uval) == -1)
 		{
 			stack_reset(&context->m_exec_stack,stack_base);
 			return -1;
 		}
-		*body = BOX_COMPOUND_EMBED_4(1,'c','a','l','l');
+		t.m_uval = BOX_COMPOUND_EMBED_4(1,'c','a','l','l');
+		body = &t;
 		++body;
 		break;
 

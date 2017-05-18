@@ -1,5 +1,11 @@
 
+#ifndef CLAUSE_H_INCLUDED_
+#define CLAUSE_H_INCLUDED_
+
 #include "box_types.h"
+
+struct term_t;
+struct procedure_t;
 
 struct procedure_prototype_t
 {
@@ -34,9 +40,12 @@ struct user_procedure_t
 struct procedure_table_t
 {
 	// Housekeeping
+	int blah;
 
 	struct procedure_t* m_procedures[];
 };
 
 /* Assert a clause */
 int assert_clause(struct context_t* context, struct term_t* term, int z);
+
+#endif /* CLAUSE_H_INCLUDED_ */
