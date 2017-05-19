@@ -2328,36 +2328,6 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	return status;
 }
 
-/* Compile a term as an initialization query */
-static int initialization(struct context_t* context, struct term_t* term, uint64_t stack_base)
-{
-	/* Emit goal  */
-	uint64_t scratch_base = stack_top(context->m_scratch_stack);
-	int err = emit_goal(context,term);
-	if (err)
-		return err;
-
-	/* TODO:  Emit 'Next' */
-
-	if (!err)
-	{
-		uint64_t scratch_top = stack_top(context->m_scratch_stack);
-		uint64_t i = scratch_base;
-
-		/* Reset the exec stack */
-		stack_reset(&context->m_exec_stack,stack_base);
-
-		/* TODO: Make this a faster stack function! */
-		/* Copy scratch to exec stack */
-		for (;!err && i < scratch_top;++i)
-			err = (stack_push(&context->m_exec_stack,stack_at(context->m_scratch_stack,i)) == -1 ? -1 : 0);
-
-		/* Reset the scratch stack */
-		stack_reset(&context->m_scratch_stack,scratch_base);
-	}
-	return err;
-}
-
 static int include(struct context_t* context, struct term_t* term);
 
 /* 'Do' a directive */
@@ -2459,14 +2429,14 @@ static int load_file(struct context_t* context, struct stream_t* s)
 						term.m_value[2].m_uval == BUILTIN_ATOM(initialization))
 				{
 					term.m_value += 3;
-					int err = initialization(context,&term,stack_base);
+					int err = add_query(context,&term,stack_base);
 					if (err == -1)
 						status = EMIT_OUT_OF_MEM;
 					else if (err)
 						status = EMIT_THROW;
 					else
 					{
-						/* Initialization will write op codes to the exec stack, so don't pop them */
+						/* add_query will write op codes to the exec stack, so don't pop them */
 						stack_base = original_stack_base = stack_top(context->m_exec_stack);
 					}
 				}
@@ -2509,8 +2479,9 @@ static int load_file(struct context_t* context, struct stream_t* s)
 
 	/* Hard reset the stacks because we may have allocated a lot */
 	context->m_strings = original_prev_strings;
-	stack_reset_hard(&context->m_exec_stack,original_stack_base);
-	stack_reset_hard(&context->m_scratch_stack,scratch_base);
+	stack_reset(&context->m_exec_stack,original_stack_base);
+	stack_compact(context->m_exec_stack);
+	stack_compact(context->m_scratch_stack);
 
 	return failed ? -1 : 0;
 }

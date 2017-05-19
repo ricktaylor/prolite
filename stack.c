@@ -9,14 +9,18 @@ static const uint64_t PAGE_SIZE = 4096 * sizeof(uint64_t);
 #define ALIGN(x,y) (((x)+((y)-1)) & ~(y))
 #define ALIGN_DIV(x,y) (((x)+((y)-1)) / (y))
 
-static struct stack_t* stack_push_page(size_t size, struct stack_t* prev)
+static struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
 {
 	size_t align_size = ALIGN(size,PAGE_SIZE);
 	size_t count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
 
 	struct stack_t* stack;
-	if (prev && prev->m_next->m_count >= count)
-		stack = prev->m_next;
+	if (after && after->m_next->m_count >= count)
+	{
+		stack = after->m_next;
+		stack->m_top = 0;
+		stack->m_base = after->m_base + after->m_top;
+	}
 	else
 	{
 		stack = malloc(align_size);
@@ -24,7 +28,7 @@ static struct stack_t* stack_push_page(size_t size, struct stack_t* prev)
 		{
 			stack->m_top = 0;
 			stack->m_count = count;
-			stack->m_prev = prev;
+			stack->m_prev = after;
 			stack->m_next = NULL;
 			stack->m_base = 0;
 
@@ -68,7 +72,7 @@ uint64_t stack_push(struct stack_t** stack, uint64_t val)
 {
 	if (!(*stack) || (*stack)->m_top == (*stack)->m_count)
 	{
-		struct stack_t* s = stack_push_page(sizeof(val),*stack);
+		struct stack_t* s = stack_insert_page(sizeof(val),*stack);
 		if (!s)
 			return (uint64_t)-1;
 
@@ -82,10 +86,7 @@ uint64_t stack_push(struct stack_t** stack, uint64_t val)
 
 void stack_reset(struct stack_t** stack, uint64_t pos)
 {
-	while ((*stack) && (*stack)->m_base + (*stack)->m_top < pos)
-		*stack = (*stack)->m_next;
-
-	if (!(*stack))
+	if (pos >= stack_top(*stack))
 		return;
 
 	pos = ((*stack)->m_base + (*stack)->m_top) - pos;
@@ -98,39 +99,23 @@ void stack_reset(struct stack_t** stack, uint64_t pos)
 		}
 
 		pos -= (*stack)->m_top;
-
-		(*stack)->m_top = 0;
 		*stack = (*stack)->m_prev;
 	}
 }
 
-void stack_reset_hard(struct stack_t** stack, uint64_t pos)
+void stack_compact(struct stack_t* stack)
 {
-	while ((*stack) && (*stack)->m_base + (*stack)->m_top < pos)
-		*stack = (*stack)->m_next;
-
-	if (!(*stack))
+	if (!stack)
 		return;
 
-	pos = ((*stack)->m_base + (*stack)->m_top) - pos;
-	while (pos)
+	for (struct stack_t* next = stack->m_next;next;)
 	{
-		if (pos < (*stack)->m_top)
-		{
-			(*stack)->m_top -= pos;
-			break;
-		}
-		else
-		{
-			struct stack_t* p = (*stack)->m_prev;
-
-			pos -= (*stack)->m_top;
-			free(*stack);
-			*stack = p;
-		}
+		struct stack_t* s = next->m_next;
+		free(next);
+		next = s;
 	}
 
-	(*stack)->m_next = NULL;
+	stack->m_next = NULL;
 }
 
 void* stack_malloc(struct stack_t** stack, size_t len)
@@ -140,7 +125,7 @@ void* stack_malloc(struct stack_t** stack, size_t len)
 
 	if (!(*stack) || (*stack)->m_top + align_len > (*stack)->m_count)
 	{
-		struct stack_t* s = stack_push_page(len,*stack);
+		struct stack_t* s = stack_insert_page(len,*stack);
 		if (!s)
 			return NULL;
 
@@ -184,7 +169,7 @@ void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t ne
 
 		(*stack)->m_top -= align_old_len;
 
-		s = stack_push_page(new_len,*stack);
+		s = stack_insert_page(new_len,*stack);
 		if (!s)
 		{
 			(*stack)->m_top += align_old_len;
@@ -196,7 +181,7 @@ void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t ne
 		if (old_len >= new_len)
 			return ptr;
 
-		s = stack_push_page(new_len,*stack);
+		s = stack_insert_page(new_len,*stack);
 		if (!s)
 			return NULL;
 	}
@@ -207,4 +192,47 @@ void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t ne
 
 	memcpy(new_ptr,ptr,old_len);
 	return new_ptr;
+}
+
+int stack_copy(struct stack_t** dest, struct stack_t** src, size_t start)
+{
+	/* Bulk copy without extra splitting */
+
+	uint64_t top = stack_top(*src);
+	if (start < top)
+	{
+		/* Rewind the start */
+		struct stack_t* n;
+		struct stack_t* s = *src;
+		while (start < s->m_base)
+			s = s->m_prev;
+
+		/* Copy the first scrap off s */
+		if (start == s->m_base)
+			s = s->m_prev;
+		else
+		{
+			uint64_t offset = start - s->m_base;
+			uint64_t count = s->m_top - offset;
+			void* p = stack_malloc(dest,count * sizeof(uint64_t));
+			if (!p)
+				return -1;
+
+			memcpy(p,&(*src)->m_data[offset],count * sizeof(uint64_t));
+			s->m_top = offset;
+		}
+
+		/* Swap the rest of the stacks */
+		n = (*dest)->m_next;
+		(*dest)->m_next = s->m_next;
+		if ((*dest)->m_next)
+			(*dest)->m_next->m_prev = *dest;
+
+		s->m_next = n;
+		if (s->m_next)
+			s->m_next->m_prev = s;
+		*src = s;
+	}
+
+	return 0;
 }

@@ -45,6 +45,9 @@ struct procedure_table_t
 	struct procedure_t* m_procedures[];
 };
 
+/* Convert a term into a query */
+int add_query(struct context_t* context, struct term_t* term, uint64_t stack_base);
+
 /* Assert a clause */
 int assert_clause(struct context_t* context, struct term_t* term, int z);
 
