@@ -21,7 +21,7 @@ struct procedure_prototype_t
 
 struct clause_t
 {
-
+	struct term_t m_term;
 };
 
 struct procedure_t
@@ -33,7 +33,7 @@ struct user_procedure_t
 {
 	struct procedure_t m_base;
 
-	// Housekeeping
+	size_t m_clause_count;
 	struct clause_t m_clauses[];
 };
 

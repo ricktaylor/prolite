@@ -22,19 +22,22 @@ void stack_delete(struct stack_t* s);
 
 static inline uint64_t stack_top(const struct stack_t* stack)
 {
-	return (!stack ? 0 : stack->m_base + stack->m_top);
+	return (!stack ? 0 : stack->m_base + stack->m_top - 1);
 }
 
 static inline uint64_t* stack_top_ptr(struct stack_t* stack)
 {
-	return (!stack ? NULL : &stack->m_data[stack->m_top]);
+	return (!stack ? NULL : &stack->m_data[stack->m_top - 1]);
 }
 
 uint64_t stack_push(struct stack_t** stack, uint64_t val);
 
-static inline uint64_t stack_pop(struct stack_t* stack)
+static inline uint64_t stack_pop(struct stack_t** stack)
 {
-	return ((stack && stack->m_top) ? stack->m_data[stack->m_top--] : 0);
+	if ((*stack)->m_top == 0)
+		(*stack) = (*stack)->m_prev;
+
+	return (((*stack) && (*stack)->m_top) ? (*stack)->m_data[--(*stack)->m_top] : 0);
 }
 
 uint64_t stack_at(const struct stack_t* stack, uint64_t pos);

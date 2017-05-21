@@ -18,7 +18,7 @@ static union box_t* next_value(union box_t* v)
 }
 
 /* Returns -1 on instantiation error, 1 on callable error, 0 ok */
-static int check_callable_term(const union box_t* v)
+static int check_callable_term(union box_t* v)
 {
 	switch (v->m_uval & BOX_TAG_MASK)
 	{
@@ -60,7 +60,7 @@ int add_query(struct context_t* context, struct term_t* term, uint64_t stack_bas
 	}
 
 	/* Emit goal  */
-	err = emit_goal(context,term);
+	err = compile_goal(context,term);
 	if (!err)
 	{
 		/* Reset the exec stack */
