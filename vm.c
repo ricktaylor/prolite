@@ -6,8 +6,8 @@ union instruction_t
 {
 	enum eOpCode
 	{
-		OP_SET_CP,
-		OP_SET_CUT,
+		OP_CHOICEPOINT,
+		OP_CUTPOINT,
 		OP_SET_CATCH,
 
 		OP_REDO,
@@ -60,11 +60,11 @@ static void dispatch(struct exec_state_t* exec, struct context_t* context)
 	{
 		switch ((exec->m_ip++)->m_op)
 		{
-		case OP_SET_CP:
+		case OP_CHOICEPOINT:
 			exec->m_choice_point = exec_push(exec,context);
 			break;
 
-		case OP_SET_CUT:
+		case OP_CUTPOINT:
 			exec->m_cut_point = exec->m_choice_point = exec_push(exec,context);
 			break;
 
@@ -93,39 +93,56 @@ static void dispatch(struct exec_state_t* exec, struct context_t* context)
 
 static int compile_and(struct context_t* context, struct term_t* goal)
 {
-	uint64_t scratch_base = stack_top(context->m_scratch_stack);
-	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 11);
+	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 7);
 	if (!op_codes)
 		return -1;
 
-	op_codes[0].m_op = OP_SET_CP;
-	op_codes[1].m_op = OP_JMP_REL;
-	op_codes[2].m_offset = 1;
-	op_codes[3].m_op = OP_REDO; /* The fail handler */
-
-	op_codes[4].m_op = OP_COPY_GOAL;
-	op_codes[5].m_op = OP_FIRST_ARG;
-	op_codes[6].m_op = OP_PUSH_GOAL;
-	op_codes[7].m_op = OP_NEXT_ARG;
-	op_codes[8].m_op = OP_PUSH_GOAL;
-	op_codes[9].m_op = OP_SWAP;
-	op_codes[10].m_op = OP_POP_GOAL;
+	op_codes[0].m_op = OP_COPY_GOAL;
+	op_codes[1].m_op = OP_FIRST_ARG;
+	op_codes[2].m_op = OP_PUSH_GOAL;
+	op_codes[3].m_op = OP_NEXT_ARG;
+	op_codes[4].m_op = OP_PUSH_GOAL;
+	op_codes[5].m_op = OP_SWAP;
+	op_codes[6].m_op = OP_POP_GOAL;
 
 	compile_goal(context,goal);
 
-	op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * NN);
-	if (!op_codes)
-		return -1;
+	THIS NEEDS A REDO NOT A POP_GOAL
 
-	op_codes[0].m_op = OP_POP_GOAL;
-	op_codes[0].m_op = OP_SET_CP;
-	op_codes[1].m_op = OP_JMP_REL;
-	op_codes[2].m_offset = XX;
-	op_codes[3].m_op = OP_JMP_REL;
+	stack_push(&context->m_scratch_stack,OP_POP_GOAL);
 
 	compile_goal(context,next_value(goal));
 
+	return 0;
+}
 
+static int compile_or(struct context_t* context, struct term_t* goal)
+{
+	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * NN);
+	if (!op_codes)
+		return -1;
+
+	op_codes[1].m_op = OP_FIRST_ARG;
+	op_codes[2].m_op = OP_PUSH_GOAL;
+	op_codes[3].m_op = OP_NEXT_ARG;
+	op_codes[4].m_op = OP_PUSH_GOAL;
+	op_codes[5].m_op = OP_SWAP;
+	op_codes[6].m_op = OP_POP_GOAL;
+	op_codes[0].m_op = OP_COPY_GOAL; /* Copy of Either */
+
+	op_codes[0].m_op = OP_CHOICEPOINT;
+	op_codes[1].m_op = OP_JMP_REL;
+	op_codes[1].m_offset = XX;  // Either
+	op_codes[1].m_op = OP_POP_GOAL;
+	op_codes[0].m_op = OP_COPY_GOAL; /* Copy of Or */
+	op_codes[1].m_op = OP_JMP_REL;
+	op_codes[1].m_offset = XX;  // OR
+
+	compile_goal(context,goal);
+
+	stack_push(&context->m_scratch_stack,OP_REDO);
+
+	compile_goal(context,next_value(goal));
 }
 
 /* Emit the opcode for a goal on the scratch stack */
