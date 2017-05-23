@@ -16,9 +16,7 @@ union instruction_t
 		OP_JMP_REL,
 
 	}           m_op;
-	void*       m_ptr;
-	uint64_t    m_uval;
-	double      m_dval;
+	ptrdiff_t   m_offset;
 };
 
 struct exec_state_t
@@ -28,7 +26,33 @@ struct exec_state_t
 	uint64_t m_catch_point;
 	uint64_t m_cut_point;
 	uint64_t m_choice_point;
+
+	struct term_t* m_goal;
 };
+
+static inline uint64_t exec_push(struct exec_state_t* exec, struct context_t* context)
+{
+	uint64_t r = stack_push(&context->m_exec_stack,(uintptr_t)(exec->m_ip+2));
+	if (r != -1)
+		r = stack_push(&context->m_exec_stack,exec->m_catch_point);
+	if (r != -1)
+		r = stack_push(&context->m_exec_stack,exec->m_cut_point);
+	if (r != -1)
+		r = stack_push(&context->m_exec_stack,exec->m_choice_point);
+	if (r != -1)
+		r = stack_push(&context->m_exec_stack,(uintptr_t)exec->m_goal);
+	return r;
+}
+
+static inline void exec_pop(struct exec_state_t* exec, struct context_t* context, uint64_t base)
+{
+	stack_reset(&context->m_exec_stack,base);
+	exec->m_goal = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
+	exec->m_choice_point = stack_pop(&context->m_exec_stack);
+	exec->m_cut_point = stack_pop(&context->m_exec_stack);
+	exec->m_catch_point = stack_pop(&context->m_exec_stack);
+	exec->m_ip = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
+}
 
 static void dispatch(struct exec_state_t* exec, struct context_t* context)
 {
@@ -37,91 +61,69 @@ static void dispatch(struct exec_state_t* exec, struct context_t* context)
 		switch ((exec->m_ip++)->m_op)
 		{
 		case OP_SET_CP:
-			stack_push(&context->m_exec_stack,(uintptr_t)(exec->m_ip+1));
-			stack_push(&context->m_exec_stack,exec->m_catch_point);
-			stack_push(&context->m_exec_stack,exec->m_cut_point);
-			stack_push(&context->m_exec_stack,exec->m_choice_point);
-			exec->m_choice_point = stack_top(context->m_exec_stack);
+			exec->m_choice_point = exec_push(exec,context);
 			break;
 
 		case OP_SET_CUT:
-			stack_push(&context->m_exec_stack,(uintptr_t)(exec->m_ip+1));
-			stack_push(&context->m_exec_stack,exec->m_catch_point);
-			stack_push(&context->m_exec_stack,exec->m_cut_point);
-			stack_push(&context->m_exec_stack,exec->m_choice_point);
-			exec->m_cut_point = exec->m_choice_point = stack_top(context->m_exec_stack);
+			exec->m_cut_point = exec->m_choice_point = exec_push(exec,context);
 			break;
 
 		case OP_SET_CATCH:
-			stack_push(&context->m_exec_stack,(uintptr_t)(exec->m_ip+1));
-			stack_push(&context->m_exec_stack,exec->m_catch_point);
-			stack_push(&context->m_exec_stack,exec->m_cut_point);
-			stack_push(&context->m_exec_stack,exec->m_choice_point);
-			exec->m_catch_point = stack_top(context->m_exec_stack);
+			exec->m_catch_point = exec_push(exec,context);
 			break;
 
 		case OP_REDO:
-			stack_reset(&context->m_exec_stack,exec->m_choice_point);
-			exec->m_choice_point = stack_pop(&context->m_exec_stack);
-			exec->m_cut_point = stack_pop(&context->m_exec_stack);
-			exec->m_catch_point = stack_pop(&context->m_exec_stack);
-			exec->m_ip = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
+			exec_pop(exec,context,exec->m_choice_point);
 			break;
 
 		case OP_CUT:
-			stack_reset(&context->m_exec_stack,exec->m_cut_point);
-			exec->m_choice_point = stack_pop(&context->m_exec_stack);
-			exec->m_cut_point = stack_pop(&context->m_exec_stack);
-			exec->m_catch_point = stack_pop(&context->m_exec_stack);
-			exec->m_ip = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
+			exec_pop(exec,context,exec->m_cut_point);
 			break;
 
 		case OP_THROW:
-			stack_reset(&context->m_exec_stack,exec->m_catch_point);
-			exec->m_choice_point = stack_pop(&context->m_exec_stack);
-			exec->m_cut_point = stack_pop(&context->m_exec_stack);
-			exec->m_catch_point = stack_pop(&context->m_exec_stack);
-			exec->m_ip = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
+			exec_pop(exec,context,exec->m_catch_point);
 			break;
 
 		case OP_JMP_REL:
-			exec->m_ip += (exec->m_ip++)->m_uval;
+			exec->m_ip += (exec->m_ip++)->m_offset;
 			break;
 		}
 	}
 }
 
-static int compile_call(struct context_t* context, struct term_t* goal)
-{
-
-}
-
 static int compile_and(struct context_t* context, struct term_t* goal)
 {
-	uint64_t stack_base = stack_top(&context->m_exec_stack);
+	uint64_t scratch_base = stack_top(context->m_scratch_stack);
+	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 11);
+	if (!op_codes)
+		return -1;
 
-	struct term_t* local = copy_term(goal);
+	op_codes[0].m_op = OP_SET_CP;
+	op_codes[1].m_op = OP_JMP_REL;
+	op_codes[2].m_offset = 1;
+	op_codes[3].m_op = OP_REDO; /* The fail handler */
 
-label_1:
-	if (!solve(context,local))
-	{
-		stack_reset(&context->m_exec_stack,stack_base);
-		return 0;
-	}
+	op_codes[4].m_op = OP_COPY_GOAL;
+	op_codes[5].m_op = OP_FIRST_ARG;
+	op_codes[6].m_op = OP_PUSH_GOAL;
+	op_codes[7].m_op = OP_NEXT_ARG;
+	op_codes[8].m_op = OP_PUSH_GOAL;
+	op_codes[9].m_op = OP_SWAP;
+	op_codes[10].m_op = OP_POP_GOAL;
 
-	local->m_value = next_value(local->m_value);
+	compile_goal(context,goal);
 
-	solve(context,local);
+	op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * NN);
+	if (!op_codes)
+		return -1;
 
-	goto label_1;
+	op_codes[0].m_op = OP_POP_GOAL;
+	op_codes[0].m_op = OP_SET_CP;
+	op_codes[1].m_op = OP_JMP_REL;
+	op_codes[2].m_offset = XX;
+	op_codes[3].m_op = OP_JMP_REL;
 
-
-
-	union instruction_t* op_codes = stack_alloc();
-
-	op_codes[0].m_op = OP_PUSH_CP;
-	op_codes[1].m_op = OP_SET_CP;
-	op_codes[2].m_uval = 0; // New CP value;
+	compile_goal(context,next_value(goal));
 
 
 }
