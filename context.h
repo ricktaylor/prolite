@@ -38,7 +38,7 @@ struct operator_t
 
 struct module_t
 {
-	struct context_flags_t
+	struct module_flags_t
 	{
 		unsigned char_conversion : 1;
 		unsigned double_quotes : 2;

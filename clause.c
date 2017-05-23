@@ -45,33 +45,6 @@ static int check_callable_term(union box_t* v)
 	}
 }
 
-/* Convert a term into a query */
-int add_query(struct context_t* context, struct term_t* term, uint64_t stack_base)
-{
-	uint64_t scratch_base = stack_top(context->m_scratch_stack);
-	int err = check_callable_term(term->m_value);
-	switch (err)
-	{
-	case -1:
-		return throw_instantiation_error(context);
-
-	case 1:
-		return throw_type_error(context,BUILTIN_ATOM(callable),term->m_value);
-	}
-
-	/* Emit goal  */
-	err = compile_goal(context,term);
-	if (!err)
-	{
-		/* Reset the exec stack */
-		stack_reset(&context->m_exec_stack,stack_base);
-
-		/* Copy into exec stack from scratch stack */
-		err = stack_copy(&context->m_exec_stack,&context->m_scratch_stack,scratch_base);
-	}
-	return err;
-}
-
 /* Assert a clause */
 int assert_clause(struct context_t* context, struct term_t* term, int z)
 {

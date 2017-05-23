@@ -2429,7 +2429,7 @@ static int load_file(struct context_t* context, struct stream_t* s)
 						term.m_value[2].m_uval == BUILTIN_ATOM(initialization))
 				{
 					term.m_value += 3;
-					int err = add_query(context,&term,stack_base);
+					int err = compile_initializer(context,&term,stack_base);
 					if (err == -1)
 						status = EMIT_OUT_OF_MEM;
 					else if (err)

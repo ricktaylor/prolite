@@ -7,31 +7,24 @@
 struct term_t;
 struct procedure_t;
 
-struct procedure_prototype_t
-{
-	int (*m_get_static)(const struct procedure_t* proc);
-	int (*m_set_static)(struct procedure_t* proc, int s);
-	int (*m_get_public)(const struct procedure_t* proc);
-	int (*m_set_public)(struct procedure_t* proc, int p);
-	int (*m_get_multifile)(const struct procedure_t* proc);
-	int (*m_set_multifile)(struct procedure_t* proc, int m);
-	int (*m_get_discontiguous)(const struct procedure_t* proc);
-	int (*m_set_discontiguous)(struct procedure_t* proc, int d);
-};
-
 struct clause_t
 {
 	struct term_t m_term;
+
+	uint64_t* m_opcodes;
 };
 
 struct procedure_t
 {
-	struct procedure_prototype_t const* m_proto;
-};
+	struct procedure_flags_t
+	{
+		unsigned dynamic : 1;
+		unsigned multifile : 1;
+		unsigned discontiguous : 1;
+		unsigned public : 1;
+	} m_flags;
 
-struct user_procedure_t
-{
-	struct procedure_t m_base;
+	uint64_t* m_opcodes;
 
 	size_t m_clause_count;
 	struct clause_t m_clauses[];
@@ -39,9 +32,9 @@ struct user_procedure_t
 
 struct procedure_table_t
 {
-	// Housekeeping
-	int blah;
+	int fast_hash_table;
 
+	size_t m_procedure_count;
 	struct procedure_t* m_procedures[];
 };
 
