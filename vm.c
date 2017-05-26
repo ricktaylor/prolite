@@ -9,11 +9,16 @@ union instruction_t
 		OP_CHOICEPOINT,
 		OP_CUTPOINT,
 		OP_SET_CATCH,
+		OP_POP_CP,
 
 		OP_REDO,
 		OP_CUT,
 		OP_THROW,
 		OP_JMP_REL,
+
+		OP_PUSH_GOAL,
+		OP_POP_GOAL,
+		OP_SWAP,
 
 	}           m_op;
 	ptrdiff_t   m_offset;
@@ -39,18 +44,20 @@ static inline uint64_t exec_push(struct exec_state_t* exec, struct context_t* co
 		r = stack_push(&context->m_exec_stack,exec->m_cut_point);
 	if (r != -1)
 		r = stack_push(&context->m_exec_stack,exec->m_choice_point);
-	if (r != -1)
-		r = stack_push(&context->m_exec_stack,(uintptr_t)exec->m_goal);
 	return r;
+}
+
+static inline void pop_cp(struct exec_state_t* exec, struct context_t* context)
+{
+	exec->m_choice_point = stack_pop(&context->m_exec_stack);
+	exec->m_cut_point = stack_pop(&context->m_exec_stack);
+	exec->m_catch_point = stack_pop(&context->m_exec_stack);
 }
 
 static inline void exec_pop(struct exec_state_t* exec, struct context_t* context, uint64_t base)
 {
 	stack_reset(&context->m_exec_stack,base);
-	exec->m_goal = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
-	exec->m_choice_point = stack_pop(&context->m_exec_stack);
-	exec->m_cut_point = stack_pop(&context->m_exec_stack);
-	exec->m_catch_point = stack_pop(&context->m_exec_stack);
+	pop_cp(exec,context);
 	exec->m_ip = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
 }
 
@@ -72,6 +79,10 @@ static void dispatch(struct exec_state_t* exec, struct context_t* context)
 			exec->m_catch_point = exec_push(exec,context);
 			break;
 
+		case OP_POP_CP:
+			pop_cp(exec,context,exec->m_choice_point);
+			break;
+
 		case OP_REDO:
 			exec_pop(exec,context,exec->m_choice_point);
 			break;
@@ -85,7 +96,24 @@ static void dispatch(struct exec_state_t* exec, struct context_t* context)
 			break;
 
 		case OP_JMP_REL:
-			exec->m_ip += (exec->m_ip++)->m_offset;
+			exec->m_ip += exec->m_ip->m_offset;
+			break;
+
+		case OP_PUSH_GOAL:
+			stack_push(&context->m_exec_stack,(uintptr_t)(exec->m_goal));
+			break;
+
+		case OP_POP_GOAL:
+			exec->m_goal = (void*)(uintptr_t)
+			break;
+
+		case OP_SWAP:
+			{
+				uint64_t t1 = stack_pop(&context->m_exec_stack);
+				uint64_t t2 = stack_pop(&context->m_exec_stack);
+				stack_push(&context->m_exec_stack,t1);
+				stack_push(&context->m_exec_stack,t2);
+			}
 			break;
 		}
 	}
@@ -97,55 +125,132 @@ static int compile_and(struct context_t* context, struct term_t* goal)
 	if (!op_codes)
 		return -1;
 
-	op_codes[0].m_op = OP_COPY_GOAL;
-	op_codes[1].m_op = OP_FIRST_ARG;
-	op_codes[2].m_op = OP_PUSH_GOAL;
-	op_codes[3].m_op = OP_NEXT_ARG;
-	op_codes[4].m_op = OP_PUSH_GOAL;
+	/* Goal = ','(First,Second) */
+	op_codes[0].m_op = OP_COPY_GOAL; /* Copy Goal */
+	op_codes[1].m_op = OP_FIRST_ARG; /* Goal = First */
+	op_codes[2].m_op = OP_PUSH_GOAL; /* Push First */
+	op_codes[3].m_op = OP_NEXT_ARG;  /* Goal = Second */
+	op_codes[4].m_op = OP_PUSH_GOAL; /* Push Second */
 	op_codes[5].m_op = OP_SWAP;
-	op_codes[6].m_op = OP_POP_GOAL;
+	op_codes[6].m_op = OP_POP_GOAL;  /* Pop First */
 
+	/* Solve(First) */
 	compile_goal(context,goal);
 
-	THIS NEEDS A REDO NOT A POP_GOAL
-
+	/* Pop Second */
 	stack_push(&context->m_scratch_stack,OP_POP_GOAL);
 
-	compile_goal(context,next_value(goal));
-
-	return 0;
+	/* Solve Second */
+	return compile_goal(context,next_value(goal));
 }
 
 static int compile_or(struct context_t* context, struct term_t* goal)
 {
-	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * NN);
+	uint64_t bp,sp;
+	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 14);
 	if (!op_codes)
 		return -1;
 
-	op_codes[1].m_op = OP_FIRST_ARG;
-	op_codes[2].m_op = OP_PUSH_GOAL;
-	op_codes[3].m_op = OP_NEXT_ARG;
-	op_codes[4].m_op = OP_PUSH_GOAL;
+	/* Goal = ';'(Either,Or) */
+	op_codes[0].m_op = OP_FIRST_ARG; /* Goal = Either */
+	op_codes[1].m_op = OP_PUSH_GOAL; /* Push Either */
+	op_codes[2].m_op = OP_NEXT_ARG;  /* Goal = Or */
+	op_codes[3].m_op = OP_PUSH_GOAL; /* Push Or */
+	op_codes[4].m_op = OP_SWAP;
+	op_codes[5].m_op = OP_POP_GOAL;  /* Pop Either */
+	op_codes[6].m_op = OP_COPY_GOAL; /* Copy Either */
+	op_codes[7].m_op = OP_CHOICEPOINT;
+	op_codes[8].m_op = OP_JMP_REL;   /* Jump to Solve(Either) */
+	op_codes[9].m_offset = 5;
+	op_codes[10].m_op = OP_POP_GOAL;  /* Pop Or */
+	op_codes[11].m_op = OP_COPY_GOAL; /* Copy Or */
+	op_codes[12].m_op = OP_JMP_REL;   /* Jump to Solve(Or) */
+	op_codes[13].m_offset = 0;        /* ...Fix up after emitting */
+
+	bp = stack_top(context->m_scratch_stack);
+
+	/* Solve(Either) */
+	if (compile_goal(context,goal) != 0)
+		return -1;
+
+	sp = stack_push(&context->m_scratch_stack,OP_REDO);
+	if (sp == -1)
+		return -1;
+
+	op_codes[13].m_offset = sp - bp;
+
+	/* Solve(Or) */
+	return compile_goal(context,next_value(goal));
+}
+
+static int compile_if_then(struct context_t* context, struct term_t* goal)
+{
+	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 11);
+	if (!op_codes)
+		return -1;
+
+	/* Goal = '->'(If,Then) */
+	op_codes[0].m_op = OP_COPY_GOAL; /* Copy Goal */
+	op_codes[1].m_op = OP_FIRST_ARG; /* Goal = If */
+	op_codes[2].m_op = OP_PUSH_GOAL; /* Push If */
+	op_codes[3].m_op = OP_NEXT_ARG;  /* Goal = Then */
+	op_codes[4].m_op = OP_PUSH_GOAL; /* Push Then */
 	op_codes[5].m_op = OP_SWAP;
-	op_codes[6].m_op = OP_POP_GOAL;
-	op_codes[0].m_op = OP_COPY_GOAL; /* Copy of Either */
+	op_codes[6].m_op = OP_POP_GOAL;  /* Pop If */
+
+	/* Set a cut */
+	op_codes[7].m_op = OP_CUTPOINT;
+	op_codes[8].m_op = OP_JMP_REL;
+	op_codes[9].m_offset = 1;
+	op_codes[10].m_op = OP_REDO;
+
+	/* Solve(If) */
+	if (compile_goal(context,goal) != 0)
+		return -1;
+
+	op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 2);
+	if (!op_codes)
+		return -1;
+
+	op_codes[0].m_op = OP_POP_CP;    /* Restore CP */
+	op_codes[1].m_op = OP_POP_GOAL;  /* Pop Then */
+
+	/* Solve(Then) */
+	return compile_goal(context,next_value(goal));
+}
+
+static int compile_cut(struct context_t* context)
+{
+	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 4);
+	if (!op_codes)
+		return -1;
 
 	op_codes[0].m_op = OP_CHOICEPOINT;
 	op_codes[1].m_op = OP_JMP_REL;
-	op_codes[1].m_offset = XX;  // Either
-	op_codes[1].m_op = OP_POP_GOAL;
-	op_codes[0].m_op = OP_COPY_GOAL; /* Copy of Or */
-	op_codes[1].m_op = OP_JMP_REL;
-	op_codes[1].m_offset = XX;  // OR
+	op_codes[2].m_offset = 1;
+	op_codes[3].m_op = OP_CUT;
 
-	compile_goal(context,goal);
-
-	stack_push(&context->m_scratch_stack,OP_REDO);
-
-	compile_goal(context,next_value(goal));
+	return 0;
 }
 
-/* Emit the opcode for a goal on the scratch stack */
+static int compile_call(struct context_t* context, struct term_t* goal)
+{
+	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 5);
+	if (!op_codes)
+		return -1;
+
+	/* Goal = call(G) */
+	op_codes[0].m_op = OP_CUTPOINT;
+	op_codes[1].m_op = OP_JMP_REL;
+	op_codes[2].m_offset = 1;
+	op_codes[3].m_op = OP_REDO;
+	op_codes[4].m_op = OP_FIRST_ARG; /* Goal = G */
+
+	/* Solve(G) */
+	return compile_goal(context,goal);
+}
+
+/* Emit the opcodes for a goal on the scratch stack */
 int compile_goal(struct context_t* context, struct term_t* goal)
 {
 	switch (goal->m_value->m_uval & BOX_TAG_MASK)
@@ -156,11 +261,16 @@ int compile_goal(struct context_t* context, struct term_t* goal)
 
 	case BOX_COMPOUND_EMBED_1(2,';'):
 		goal->m_value++;
+		if ((goal->m_value->m_uval & BOX_TAG_MASK) == BOX_COMPOUND_EMBED_2(2,'-','>'))
+		{
+			goal->m_value++;
+			return compile_if_then_else(context,goal);
+		}
 		return compile_or(context,goal);
 
 	case BOX_COMPOUND_EMBED_2(2,'-','>'):
 		goal->m_value++;
-		return compile_if(context,goal);
+		return compile_if_then(context,goal);
 
 	case BOX_ATOM_EMBED_1('!'):
 		return compile_cut(context);
@@ -170,10 +280,10 @@ int compile_goal(struct context_t* context, struct term_t* goal)
 		return compile_call(context,goal);
 
 	case BOX_ATOM_EMBED_4('t','r','u','e'):
-		return compile_true(context);
+		return 0;
 
 	case BOX_ATOM_EMBED_4('f','a','i','l'):
-		return compile_fail(context);
+		return (stack_push(&context->m_scratch_stack,OP_REDO) == -1 ? -1 : 0);
 
 	case BOX_COMPOUND_EMBED_5(3,'c','a','t','c','h'):
 		goal->m_value++;
@@ -190,7 +300,7 @@ int compile_goal(struct context_t* context, struct term_t* goal)
 	/* TODO: Check for builtins */
 
 	/* Emit user defined */
-	return compile_dynamic_user_defined(context,goal);
+	return compile_dynamic(context,goal);
 }
 
 /* Convert a term into an initializer */
