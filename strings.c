@@ -1,6 +1,5 @@
 
-#include "box_types.h"
-#include "context.h"
+#include "types.h"
 
 #include <stdlib.h>
 #include <string.h>

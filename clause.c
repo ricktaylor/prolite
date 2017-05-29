@@ -1,4 +1,5 @@
 
+#include "clause.h"
 #include "throw.h"
 
 static union box_t* next_value(union box_t* v)
@@ -18,7 +19,7 @@ static union box_t* next_value(union box_t* v)
 }
 
 /* Returns -1 on instantiation error, 1 on callable error, 0 ok */
-static int check_callable_term(union box_t* v)
+int check_callable_term(union box_t* v)
 {
 	switch (v->m_uval & BOX_TAG_MASK)
 	{

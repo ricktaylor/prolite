@@ -25,7 +25,7 @@ static inline uint64_t stack_top(const struct stack_t* stack)
 	return (!stack ? 0 : stack->m_base + stack->m_top - 1);
 }
 
-static inline uint64_t* stack_top_ptr(struct stack_t* stack)
+static inline void* stack_top_ptr(struct stack_t* stack)
 {
 	return (!stack ? NULL : &stack->m_data[stack->m_top - 1]);
 }

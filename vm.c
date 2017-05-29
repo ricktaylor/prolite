@@ -20,6 +20,10 @@ union instruction_t
 		OP_POP_GOAL,
 		OP_SWAP,
 
+		OP_COPY_GOAL,
+		OP_SPLIT_1,
+		OP_SPLIT_2,
+
 	}           m_op;
 	ptrdiff_t   m_offset;
 };
@@ -61,6 +65,22 @@ static inline void exec_pop(struct exec_state_t* exec, struct context_t* context
 	exec->m_ip = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
 }
 
+static struct term_t* next_arg(struct term_t* v)
+{
+	if ((v->m_value->m_uval & BOX_TAG_MASK) == BOX_TAG_COMPOUND)
+	{
+		uint64_t arity = compound_arity(v->m_value);
+		if ((v->m_value->m_uval & BOX_TAG_COMPOUND_EMBED) != BOX_TAG_COMPOUND_EMBED)
+			++v->m_value;
+
+		while (arity--)
+			v = next_arg(v);
+	}
+	else
+		++v->m_value;
+	return v;
+}
+
 static void dispatch(struct exec_state_t* exec, struct context_t* context)
 {
 	for (;;)
@@ -80,7 +100,7 @@ static void dispatch(struct exec_state_t* exec, struct context_t* context)
 			break;
 
 		case OP_POP_CP:
-			pop_cp(exec,context,exec->m_choice_point);
+			pop_cp(exec,context);
 			break;
 
 		case OP_REDO:
@@ -104,7 +124,7 @@ static void dispatch(struct exec_state_t* exec, struct context_t* context)
 			break;
 
 		case OP_POP_GOAL:
-			exec->m_goal = (void*)(uintptr_t)
+			exec->m_goal = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
 			break;
 
 		case OP_SWAP:
@@ -119,20 +139,17 @@ static void dispatch(struct exec_state_t* exec, struct context_t* context)
 	}
 }
 
+static int compile_goal(struct context_t* context, struct term_t* goal);
+
 static int compile_and(struct context_t* context, struct term_t* goal)
 {
-	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 7);
+	union instruction_t* op_codes = stack_malloc(&context->m_scratch_stack,sizeof(union instruction_t) * 2);
 	if (!op_codes)
 		return -1;
 
 	/* Goal = ','(First,Second) */
 	op_codes[0].m_op = OP_COPY_GOAL; /* Copy Goal */
-	op_codes[1].m_op = OP_FIRST_ARG; /* Goal = First */
-	op_codes[2].m_op = OP_PUSH_GOAL; /* Push First */
-	op_codes[3].m_op = OP_NEXT_ARG;  /* Goal = Second */
-	op_codes[4].m_op = OP_PUSH_GOAL; /* Push Second */
-	op_codes[5].m_op = OP_SWAP;
-	op_codes[6].m_op = OP_POP_GOAL;  /* Pop First */
+	op_codes[1].m_op = OP_SPLIT_2;
 
 	/* Solve(First) */
 	compile_goal(context,goal);
@@ -141,31 +158,26 @@ static int compile_and(struct context_t* context, struct term_t* goal)
 	stack_push(&context->m_scratch_stack,OP_POP_GOAL);
 
 	/* Solve Second */
-	return compile_goal(context,next_value(goal));
+	return compile_goal(context,next_arg(goal));
 }
 
 static int compile_or(struct context_t* context, struct term_t* goal)
 {
 	uint64_t bp,sp;
-	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 14);
+	union instruction_t* op_codes = stack_malloc(&context->m_scratch_stack,sizeof(union instruction_t) * 10);
 	if (!op_codes)
 		return -1;
 
 	/* Goal = ';'(Either,Or) */
-	op_codes[0].m_op = OP_FIRST_ARG; /* Goal = Either */
-	op_codes[1].m_op = OP_PUSH_GOAL; /* Push Either */
-	op_codes[2].m_op = OP_NEXT_ARG;  /* Goal = Or */
-	op_codes[3].m_op = OP_PUSH_GOAL; /* Push Or */
-	op_codes[4].m_op = OP_SWAP;
-	op_codes[5].m_op = OP_POP_GOAL;  /* Pop Either */
-	op_codes[6].m_op = OP_COPY_GOAL; /* Copy Either */
-	op_codes[7].m_op = OP_CHOICEPOINT;
-	op_codes[8].m_op = OP_JMP_REL;   /* Jump to Solve(Either) */
-	op_codes[9].m_offset = 5;
-	op_codes[10].m_op = OP_POP_GOAL;  /* Pop Or */
-	op_codes[11].m_op = OP_COPY_GOAL; /* Copy Or */
-	op_codes[12].m_op = OP_JMP_REL;   /* Jump to Solve(Or) */
-	op_codes[13].m_offset = 0;        /* ...Fix up after emitting */
+	op_codes[1].m_op = OP_SPLIT_2;
+	op_codes[2].m_op = OP_COPY_GOAL; /* Copy Either */
+	op_codes[3].m_op = OP_CHOICEPOINT;
+	op_codes[4].m_op = OP_JMP_REL;   /* Jump to Solve(Either) */
+	op_codes[5].m_offset = 5;
+	op_codes[6].m_op = OP_POP_GOAL;  /* Pop Or */
+	op_codes[7].m_op = OP_COPY_GOAL; /* Copy Or */
+	op_codes[8].m_op = OP_JMP_REL;   /* Jump to Solve(Or) */
+	op_codes[9].m_offset = 0;        /* ...Fix up after emitting */
 
 	bp = stack_top(context->m_scratch_stack);
 
@@ -177,38 +189,34 @@ static int compile_or(struct context_t* context, struct term_t* goal)
 	if (sp == -1)
 		return -1;
 
+
 	op_codes[13].m_offset = sp - bp;
 
 	/* Solve(Or) */
-	return compile_goal(context,next_value(goal));
+	return compile_goal(context,next_arg(goal));
 }
 
 static int compile_if_then(struct context_t* context, struct term_t* goal)
 {
-	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 11);
+	union instruction_t* op_codes = stack_malloc(&context->m_scratch_stack,sizeof(union instruction_t) * 6);
 	if (!op_codes)
 		return -1;
 
 	/* Goal = '->'(If,Then) */
 	op_codes[0].m_op = OP_COPY_GOAL; /* Copy Goal */
-	op_codes[1].m_op = OP_FIRST_ARG; /* Goal = If */
-	op_codes[2].m_op = OP_PUSH_GOAL; /* Push If */
-	op_codes[3].m_op = OP_NEXT_ARG;  /* Goal = Then */
-	op_codes[4].m_op = OP_PUSH_GOAL; /* Push Then */
-	op_codes[5].m_op = OP_SWAP;
-	op_codes[6].m_op = OP_POP_GOAL;  /* Pop If */
+	op_codes[1].m_op = OP_SPLIT_2; /* Goal = If */
 
 	/* Set a cut */
-	op_codes[7].m_op = OP_CUTPOINT;
-	op_codes[8].m_op = OP_JMP_REL;
-	op_codes[9].m_offset = 1;
-	op_codes[10].m_op = OP_REDO;
+	op_codes[2].m_op = OP_CUTPOINT;
+	op_codes[3].m_op = OP_JMP_REL;
+	op_codes[4].m_offset = 1;
+	op_codes[5].m_op = OP_REDO;
 
 	/* Solve(If) */
 	if (compile_goal(context,goal) != 0)
 		return -1;
 
-	op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 2);
+	op_codes = stack_malloc(&context->m_scratch_stack,sizeof(union instruction_t) * 2);
 	if (!op_codes)
 		return -1;
 
@@ -216,12 +224,12 @@ static int compile_if_then(struct context_t* context, struct term_t* goal)
 	op_codes[1].m_op = OP_POP_GOAL;  /* Pop Then */
 
 	/* Solve(Then) */
-	return compile_goal(context,next_value(goal));
+	return compile_goal(context,next_arg(goal));
 }
 
 static int compile_cut(struct context_t* context)
 {
-	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 4);
+	union instruction_t* op_codes = stack_malloc(&context->m_scratch_stack,sizeof(union instruction_t) * 4);
 	if (!op_codes)
 		return -1;
 
@@ -235,7 +243,7 @@ static int compile_cut(struct context_t* context)
 
 static int compile_call(struct context_t* context, struct term_t* goal)
 {
-	union instruction_t* op_codes = stack_alloc(&context->m_scratch_stack,sizeof(union instruction_t) * 5);
+	union instruction_t* op_codes = stack_malloc(&context->m_scratch_stack,sizeof(union instruction_t) * 5);
 	if (!op_codes)
 		return -1;
 
@@ -244,14 +252,14 @@ static int compile_call(struct context_t* context, struct term_t* goal)
 	op_codes[1].m_op = OP_JMP_REL;
 	op_codes[2].m_offset = 1;
 	op_codes[3].m_op = OP_REDO;
-	op_codes[4].m_op = OP_FIRST_ARG; /* Goal = G */
+	op_codes[4].m_op = OP_SPLIT_1; /* Goal = G */
 
 	/* Solve(G) */
 	return compile_goal(context,goal);
 }
 
 /* Emit the opcodes for a goal on the scratch stack */
-int compile_goal(struct context_t* context, struct term_t* goal)
+static int compile_goal(struct context_t* context, struct term_t* goal)
 {
 	switch (goal->m_value->m_uval & BOX_TAG_MASK)
 	{

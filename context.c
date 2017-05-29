@@ -5,6 +5,7 @@
  *      Author: rick
  */
 
+#include "context.h"
 #include "throw.h"
 
 #include <assert.h>
@@ -174,10 +175,4 @@ int op_3(struct context_t* context, struct term_t* term)
 	}
 
 	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),&term->m_value[2]);
-}
-
-/* Assert a clause */
-int assert_clause(struct context_t* context, struct term_t* term, int z)
-{
-	return -1;
 }

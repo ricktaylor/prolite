@@ -8,7 +8,7 @@
 #ifndef THROW_H_
 #define THROW_H_
 
-#include "context.h"
+#include "types.h"
 
 int throw_instantiation_error(struct context_t* context);
 
