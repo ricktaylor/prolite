@@ -2,6 +2,8 @@
 #include "stack.h"
 #include "clause.h"
 
+#include <stddef.h>
+
 union instruction_t
 {
 	enum eOpCode
@@ -41,7 +43,7 @@ struct exec_state_t
 
 static inline uint64_t exec_push(struct exec_state_t* exec, struct context_t* context)
 {
-	uint64_t r = stack_push(&context->m_exec_stack,(uintptr_t)(exec->m_ip+2));
+	uint64_t r = stack_push_ptr(&context->m_exec_stack,exec->m_ip+2);
 	if (r != -1)
 		r = stack_push(&context->m_exec_stack,exec->m_catch_point);
 	if (r != -1)
@@ -62,7 +64,7 @@ static inline void exec_pop(struct exec_state_t* exec, struct context_t* context
 {
 	stack_reset(&context->m_exec_stack,base);
 	pop_cp(exec,context);
-	exec->m_ip = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
+	exec->m_ip = stack_pop_ptr(&context->m_exec_stack);
 }
 
 static struct term_t* next_arg(struct term_t* v)
@@ -124,7 +126,7 @@ static void dispatch(struct exec_state_t* exec, struct context_t* context)
 			break;
 
 		case OP_POP_GOAL:
-			exec->m_goal = (void*)(uintptr_t)stack_pop(&context->m_exec_stack);
+			exec->m_goal = stack_pop_ptr(&context->m_exec_stack);
 			break;
 
 		case OP_SWAP:

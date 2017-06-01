@@ -11,6 +11,8 @@
 #include "stack.h"
 #include "box_types.h"
 
+union box_t* next_value(union box_t* v);
+
 struct var_info_t
 {
 	union box_t* m_value;
@@ -103,5 +105,16 @@ struct procedure_table_t
 	size_t m_procedure_count;
 	struct procedure_t* m_procedures[];
 };
+
+enum eSolveResult
+{
+	SOLVE_TRUE = 0,
+	SOLVE_FAIL,
+	SOLVE_CUT,
+	SOLVE_THROW,
+	SOLVE_NOMEM
+};
+
+typedef enum eSolveResult(*solve_fn_t)(struct context_t*);
 
 #endif /* TYPES_H_ */

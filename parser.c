@@ -1,15 +1,10 @@
 
 #include "context.h"
 #include "throw.h"
+#include "stream.h"
 
-#include <stdlib.h>
-#include <string.h>
 #include <errno.h>
 #include <assert.h>
-
-/* TODO: Bring these out to "stream.h" */
-struct stream_t;
-int64_t stream_read(struct stream_t* s, void* dest, size_t len);
 
 enum eTokenType
 {
@@ -2510,9 +2505,8 @@ int consult(struct context_t* context, struct stream_t* s)
 	return load_file(context,s);
 }
 
-int read_term(struct context_t* context, struct stream_t* s)
+int read_term(struct context_t* context, struct stream_t* s, struct term_t* term)
 {
-	struct term_t new_term = {0};
 	enum eEmitStatus status = EMIT_OK;
 	struct parser_t parser = {0};
 	parser.m_s = s;
@@ -2520,7 +2514,7 @@ int read_term(struct context_t* context, struct stream_t* s)
 
 	/* TODO: Check for permission errors first */
 
-	status = emit_term(context,&new_term,&parser);
+	status = emit_term(context,term,&parser);
 	if (status == EMIT_EOF)
 	{
 		status = emit_compound(&context->m_scratch_stack,BUILTIN_ATOM(syntax_error),1);

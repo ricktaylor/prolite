@@ -2,7 +2,7 @@
 #include "clause.h"
 #include "throw.h"
 
-static union box_t* next_value(union box_t* v)
+union box_t* next_value(union box_t* v)
 {
 	if ((v->m_uval & BOX_TAG_MASK) == BOX_TAG_COMPOUND)
 	{

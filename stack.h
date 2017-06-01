@@ -3,6 +3,7 @@
 #define STACK_H_INCLUDED_
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #if defined(_MSC_VER)
 #define inline __inline
@@ -32,12 +33,22 @@ static inline void* stack_top_ptr(struct stack_t* stack)
 
 uint64_t stack_push(struct stack_t** stack, uint64_t val);
 
+static inline uint64_t stack_push_ptr(struct stack_t** stack, const void* ptr)
+{
+	return stack_push(stack,(uintptr_t)ptr);
+}
+
 static inline uint64_t stack_pop(struct stack_t** stack)
 {
 	if ((*stack)->m_top == 0)
 		(*stack) = (*stack)->m_prev;
 
 	return (((*stack) && (*stack)->m_top) ? (*stack)->m_data[--(*stack)->m_top] : 0);
+}
+
+static inline void* stack_pop_ptr(struct stack_t** stack)
+{
+	return (void*)(uintptr_t)stack_pop(stack);
 }
 
 uint64_t stack_at(const struct stack_t* stack, uint64_t pos);
