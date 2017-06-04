@@ -3,6 +3,7 @@
 #include "throw.h"
 #include "stream.h"
 
+#include <string.h>
 #include <errno.h>
 #include <assert.h>
 
@@ -2097,16 +2098,16 @@ enum eEmitStatus
 	EMIT_OUT_OF_MEM
 };
 
-static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_info_t* vars, struct ast_node_t* node)
+static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_info_t** varinfo, struct ast_node_t* node)
 {
 	enum eEmitStatus status = EMIT_OK;
 	if (node->m_type == AST_TYPE_VAR)
 	{
-		uint64_t var_count = ((struct var_info_t*)stack_top_ptr(context->m_exec_stack) - vars);
-		uint64_t i;
+		size_t var_count = (*varinfo) ? (*varinfo)->m_count : 0;
+		size_t i;
 		for (i = 0; i < var_count; ++i)
 		{
-			if (node->m_boxed.m_uval == vars[i].m_name.m_uval)
+			if (node->m_boxed.m_uval == (*varinfo)->m_vars[i].m_name.m_uval)
 			{
 				node->m_arity = i;
 				break;
@@ -2121,22 +2122,34 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 				 * but we will be out of memory soon anyway, so that will do */
 				return EMIT_OUT_OF_MEM;
 			}
-			else
+
+			if (*varinfo)
 			{
-				struct var_info_t* var = stack_malloc(&context->m_exec_stack,sizeof(struct var_info_t));
-				if (!var)
+				struct var_info_t* new_varinfo = stack_realloc(&context->m_exec_stack,*varinfo,sizeof(struct var_info_t) + (var_count * sizeof(struct var_t)),sizeof(struct var_info_t) + ((var_count+1) * sizeof(struct var_t)));
+				if (!new_varinfo)
 					return EMIT_OUT_OF_MEM;
 
-				var->m_name = node->m_boxed;
-				var->m_value = NULL;
+				*varinfo = new_varinfo;
 			}
+			else
+			{
+				*varinfo = stack_malloc(&context->m_exec_stack,sizeof(struct var_info_t) + sizeof(struct var_t));
+				if (!(*varinfo))
+					return EMIT_OUT_OF_MEM;
+
+				(*varinfo)->m_count = 0;
+			}
+
+			(*varinfo)->m_vars[var_count].m_name = node->m_boxed;
+			(*varinfo)->m_vars[var_count].m_value = NULL;
+			++(*varinfo)->m_count;
 		}
 	}
 	else if (node->m_type == AST_TYPE_COMPOUND)
 	{
 		uint64_t i;
 		for (i = 0; !status && i < node->m_arity; ++i)
-			status = emit_node_vars(context,vars,node->m_params[i]);
+			status = emit_node_vars(context,varinfo,node->m_params[i]);
 	}
 
 	return status;
@@ -2299,8 +2312,8 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	else
 	{
 		/* Emit the node */
-		term->m_vars = stack_top_ptr(context->m_exec_stack);
-		status = emit_node_vars(context,term->m_vars,node);
+		term->m_vars = NULL;
+		status = emit_node_vars(context,&term->m_vars,node);
 		if (!status)
 		{
 			term->m_value = stack_top_ptr(context->m_exec_stack);

@@ -13,10 +13,16 @@
 
 union box_t* next_value(union box_t* v);
 
-struct var_info_t
+struct var_t
 {
 	union box_t* m_value;
 	union box_t  m_name;
+};
+
+struct var_info_t
+{
+	size_t       m_count;
+	struct var_t m_vars[];
 };
 
 struct term_t

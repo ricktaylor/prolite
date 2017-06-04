@@ -4,30 +4,41 @@
 
 static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal);
 
+static int copy_term(struct context_t* context, struct term_t* src, struct term_t* dest)
+{
+
+}
+
+static void clear_vars(struct var_info_t* vars)
+{
+
+}
+
 static enum eSolveResult redo_and(struct context_t* context)
 {
-	struct term_t second;
+	struct term_t second_goal;
 	solve_fn_t* fn;
 	enum eSolveResult result;
-	second.m_value = stack_pop_ptr(&context->m_exec_stack);
-	second.m_vars = stack_pop_ptr(&context->m_exec_stack);
 
-	/* Redo solve_goal(second) */
+	second_goal.m_value = stack_pop_ptr(&context->m_exec_stack);
+	second_goal.m_vars = stack_pop_ptr(&context->m_exec_stack);
+
+	/* Redo solve_goal(second_goal) */
 	fn = stack_pop_ptr(&context->m_exec_stack);
 	result = (*fn)(context);
 
 	if (result == SOLVE_FAIL)
 	{
 redo:
-		/* Redo solve_goal(first) */
+		/* Redo solve_goal(first_goal) */
 		fn = stack_pop_ptr(&context->m_exec_stack);
-
-		clear_vars(second.m_vars);
-
+		
+		clear_vars(second_goal.m_vars);
+		
 		result = (*fn)(context);
 		if (result == SOLVE_TRUE)
 		{
-			result = solve_goal(context,&second);
+			result = solve_goal(context,&second_goal);
 			if (result == SOLVE_FAIL)
 				goto redo;
 		}
@@ -35,8 +46,8 @@ redo:
 
 	if (result == SOLVE_TRUE)
 	{
-		if (stack_push_ptr(&context->m_exec_stack,second.m_vars) == -1 ||
-			stack_push_ptr(&context->m_exec_stack,second.m_value) == -1 ||
+		if (stack_push_ptr(&context->m_exec_stack,second_goal.m_vars) == -1 ||
+			stack_push_ptr(&context->m_exec_stack,second_goal.m_value) == -1 ||
 			stack_push_ptr(&context->m_exec_stack,&redo_and) == -1)
 		{
 			result = SOLVE_NOMEM;
@@ -50,26 +61,27 @@ static enum eSolveResult solve_and(struct context_t* context, struct term_t* ori
 {
 	enum eSolveResult result;
 	struct term_t fresh_goal;
+
 	if (copy_term(context,orig_goal,&fresh_goal) != 0)
 		result = SOLVE_NOMEM;
 	else
 	{
-		struct term_t first;
-		first.m_vars = fresh_goal.m_vars;
-		first.m_value = fresh_goal.m_value + 1;
+		struct term_t first_goal;
+		first_goal.m_vars = fresh_goal.m_vars;
+		first_goal.m_value = fresh_goal.m_value + 1;
 
-		result = solve_goal(context,&first);
+		result = solve_goal(context,&first_goal);
 		if (result == SOLVE_TRUE)
 		{
-			struct term_t second;
-			second.m_vars = fresh_goal.m_vars;
-			second.m_value = next_value(first.m_value);
+			struct term_t second_goal;
+			second_goal.m_vars = fresh_goal.m_vars;
+			second_goal.m_value = next_value(first_goal.m_value);
 redo:
-			result = solve_goal(context,&second);
+			result = solve_goal(context,&second_goal);
 			if (result == SOLVE_TRUE)
 			{
-				if (stack_push_ptr(&context->m_exec_stack,second.m_vars) == -1 ||
-					stack_push_ptr(&context->m_exec_stack,second.m_value) == -1 ||
+				if (stack_push_ptr(&context->m_exec_stack,second_goal.m_vars) == -1 ||
+					stack_push_ptr(&context->m_exec_stack,second_goal.m_value) == -1 ||
 					stack_push_ptr(&context->m_exec_stack,&redo_and) == -1)
 				{
 					result = SOLVE_NOMEM;
@@ -77,7 +89,7 @@ redo:
 			}
 			else if (result == SOLVE_FAIL)
 			{
-				/* Redo solve_goal(first) */
+				/* Redo solve_goal(first_goal) */
 				solve_fn_t* fn = stack_pop_ptr(&context->m_exec_stack);
 
 				clear_vars(fresh_goal.m_vars);
@@ -94,12 +106,69 @@ redo:
 
 static enum eSolveResult redo_or(struct context_t* context)
 {
+	struct term_t or_goal;
+	solve_fn_t* fn;
+	enum eSolveResult result;
 
+	or_goal.m_value = stack_pop_ptr(&context->m_exec_stack);
+	or_goal.m_vars = stack_pop_ptr(&context->m_exec_stack);
+
+	/* Redo solve_goal(first_goal) */
+	fn = stack_pop_ptr(&context->m_exec_stack);
+	result = (*fn)(context);
+	if (result == SOLVE_TRUE)
+	{
+		if (stack_push_ptr(&context->m_exec_stack,or_goal.m_vars) == -1 ||
+			stack_push_ptr(&context->m_exec_stack,or_goal.m_value) == -1 ||
+			stack_push_ptr(&context->m_exec_stack,&redo_or) == -1)
+		{
+			result = SOLVE_NOMEM;
+		}
+	}
+	else if (result == SOLVE_FAIL)
+	{
+		if (copy_term(context,&or_goal,&or_goal) != 0)
+			result = SOLVE_NOMEM;
+		else
+			result = solve_goal(context,&or_goal);
+	}
+
+	return result;
 }
 
 static enum eSolveResult solve_or(struct context_t* context, struct term_t* orig_goal)
 {
+	enum eSolveResult result;
+	struct term_t either_goal,or_goal;
 
+	or_goal.m_vars = either_goal.m_vars = orig_goal->m_vars;
+	either_goal.m_value = orig_goal->m_value + 1;
+	or_goal.m_value = next_value(either_goal.m_value);
+
+	if (copy_term(context,&either_goal,&either_goal) != 0)
+		result = SOLVE_NOMEM;
+	else
+	{
+		result = solve_goal(context,&either_goal);
+		if (result == SOLVE_TRUE)
+		{
+			if (stack_push_ptr(&context->m_exec_stack,or_goal.m_vars) == -1 ||
+				stack_push_ptr(&context->m_exec_stack,or_goal.m_value) == -1 ||
+				stack_push_ptr(&context->m_exec_stack,&redo_or) == -1)
+			{
+				result = SOLVE_NOMEM;
+			}
+		}
+		else if (result == SOLVE_FAIL)
+		{
+			if (copy_term(context,&or_goal,&or_goal) != 0)
+				result = SOLVE_NOMEM;
+			else
+				result = solve_goal(context,&or_goal);
+		}
+	}
+
+	return result;
 }
 
 static enum eSolveResult redo_cut(struct context_t* context)
