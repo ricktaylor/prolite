@@ -2,6 +2,8 @@
 
 #include "types.h"
 
+#include <assert.h>
+
 static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal);
 
 static int copy_term(struct context_t* context, struct term_t* src, struct term_t* dest, size_t* stack_pos)
@@ -285,6 +287,26 @@ static enum eSolveResult solve_true(struct context_t* context)
 		return SOLVE_NOMEM;
 
 	return SOLVE_TRUE;
+}
+
+static enum eSolveResult solve_if_then_else(struct context_t* context, struct term_t* orig_goal)
+{
+	assert(0);
+}
+
+static enum eSolveResult solve_if_then(struct context_t* context, struct term_t* orig_goal)
+{
+	assert(0);
+}
+
+static enum eSolveResult solve_catch(struct context_t* context, struct term_t* orig_goal)
+{
+	assert(0);
+}
+
+static enum eSolveResult solve_throw(struct context_t* context, struct term_t* orig_goal)
+{
+	assert(0);
 }
 
 static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal)
