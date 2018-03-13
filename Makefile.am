@@ -15,15 +15,17 @@ libprolite_la_SOURCES = \
 				
 libprolite_la_LDFLAGS = -pthread
 
-#check_PROGRAMS = prolite test_libprolite
+#check_PROGRAMS = test_libprolite
 
 #test_libprolite_SOURCES = 
 
 #test_libprolite_LDADD = libprolite.la -lcunit
 #test_libprolite_LDFLAGS = -pthread -no-install -static
 
-#prolite_SOURCES = \
-#	test/server/main.c
+bin_PROGRAMS = prolite 
+
+prolite_SOURCES = \
+	src/main.c
 	
-#prolite_LDADD = libprolite.la
-#prolite_LDFLAGS = -pthread -no-install -static
+prolite_LDADD = libprolite.la
+prolite_LDFLAGS = -pthread -static
