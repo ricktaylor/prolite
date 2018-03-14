@@ -2412,7 +2412,6 @@ static int load_file(struct context_t* context, struct stream_t* s)
 {
 	uint64_t original_stack_base = stack_top(context->m_exec_stack);
 	uint64_t stack_base = original_stack_base;
-	uint64_t scratch_base = stack_top(context->m_scratch_stack);
 	struct string_ptr_t* original_prev_strings = context->m_strings;
 	struct string_ptr_t* prev_strings = original_prev_strings;
 	int failed = 0;
@@ -2429,8 +2428,6 @@ static int load_file(struct context_t* context, struct stream_t* s)
 
 		if (status == EMIT_OK)
 		{
-			stack_reset(&context->m_scratch_stack,scratch_base);
-
 			if (term.m_value[0].m_uval == BOX_COMPOUND_EMBED_2(1,':','-'))
 			{
 				/* Check now for :- initialization/1 */
@@ -2445,7 +2442,7 @@ static int load_file(struct context_t* context, struct stream_t* s)
 						status = EMIT_THROW;
 					else
 					{
-						/* add_query will write op codes to the exec stack, so don't pop them */
+						/* compile_initializer will write op codes to the exec stack, so don't pop them */
 						stack_base = original_stack_base = stack_top(context->m_exec_stack);
 					}
 				}
@@ -2483,7 +2480,6 @@ static int load_file(struct context_t* context, struct stream_t* s)
 		/* Reset exec and scratch stack */
 		context->m_strings = prev_strings;
 		stack_reset(&context->m_exec_stack,stack_base);
-		stack_reset(&context->m_scratch_stack,scratch_base);
 	}
 
 	/* Hard reset the stacks because we may have allocated a lot */

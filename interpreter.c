@@ -141,8 +141,9 @@ static enum eSolveResult solve_or(struct context_t* context, struct term_t* orig
 	enum eSolveResult result;
 	struct term_t either_goal,or_goal;
 
-	or_goal.m_vars = either_goal.m_vars = orig_goal->m_vars;
+	either_goal.m_vars = orig_goal->m_vars;
 	either_goal.m_value = orig_goal->m_value + 1;
+	or_goal.m_vars = either_goal.m_vars;
 	or_goal.m_value = next_value(either_goal.m_value);
 
 	if (copy_term(context,&either_goal,&either_goal) != 0)
