@@ -1,7 +1,8 @@
 
 #include "types.h"
-#include "prolite.h"
 #include "stream.h"
+
+#include "../include/prolite.h"
 
 #include <string.h>
 
@@ -39,7 +40,7 @@ static enum eProliteResult prolite_error(struct query_t* q, enum eSolveResult er
 	return PROLITE_ERROR;
 }
 
-int prolite_finalize(prolite_query_t* query)
+int prolite_finalize(prolite_query_t query)
 {
 	struct query_t* q = (struct query_t*)query;
 
@@ -50,7 +51,7 @@ int prolite_finalize(prolite_query_t* query)
 	return PROLITE_TRUE;
 }
 
-int prolite_prepare(prolite_env_t* env, const char* query_text, size_t query_len, prolite_query_t** query, const char** tail)
+int prolite_prepare(prolite_env_t env, const char* query_text, size_t query_len, prolite_query_t* query, const char** tail)
 {
 	enum eSolveResult err = 0;
 	struct query_t* q = malloc(sizeof(struct query_t));
@@ -100,19 +101,19 @@ int prolite_prepare(prolite_env_t* env, const char* query_text, size_t query_len
 
 		if (err)
 		{
-			prolite_finalize((prolite_query_t*)q);
+			prolite_finalize((prolite_query_t)q);
 			q = NULL;
 		}
 	}
 
-	*query = (prolite_query_t*)q;
+	*query = (prolite_query_t)q;
 	if (q)
 		return prolite_error(q,err);
 
 	return PROLITE_ERROR;
 }
 
-int prolite_step(prolite_query_t* query)
+int prolite_step(prolite_query_t query)
 {
 	struct query_t* q = (struct query_t*)query;
 	solve_fn_t* fn = stack_pop_ptr(&q->m_context.m_exec_stack);
@@ -121,7 +122,7 @@ int prolite_step(prolite_query_t* query)
 	return prolite_error(q,err);
 }
 
-int prolite_reset(prolite_query_t* query)
+int prolite_reset(prolite_query_t query)
 {
 	struct query_t* q = (struct query_t*)query;
 	int err = SOLVE_TRUE;
