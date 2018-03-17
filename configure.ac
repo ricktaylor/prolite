@@ -1,7 +1,7 @@
 AC_PREREQ(2.61)
 
 AC_INIT(libprolite,[0.0.1])
-AC_CONFIG_SRCDIR([interpreter.c])
+AC_CONFIG_SRCDIR([lib/interpreter.c])
 AC_CONFIG_HEADERS([autoheader_dummy.h])
 
 AC_CONFIG_AUX_DIR([build-aux])
