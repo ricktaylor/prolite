@@ -2333,6 +2333,7 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	else
 	{
 		/* Emit the node */
+		term->m_vars = NULL;
 		status = emit_node_vars(context,&term->m_vars,node);
 		if (!status)
 		{

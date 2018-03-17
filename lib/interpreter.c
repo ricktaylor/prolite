@@ -14,7 +14,9 @@ static int copy_term(struct context_t* context, struct term_t* src, struct term_
 
 	// Copy vars into exec
 
+	assert(0);
 
+	return -1;
 }
 
 static void clear_vars(struct var_info_t* vars)
