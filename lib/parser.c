@@ -2182,6 +2182,7 @@ static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, 
 static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_node_t* node)
 {
 	enum eEmitStatus status = EMIT_OK;
+
 	if (node->m_type == AST_TYPE_VAR)
 		status = (stack_push(&context->m_exec_stack,BOX_TAG_VAR | node->m_arity) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 	else if (node->m_type == AST_TYPE_COMPOUND)
@@ -2200,7 +2201,7 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 	return status;
 }
 
-static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast_err, struct parser_t* parser, struct term_t* term)
+static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast_err, struct parser_t* parser)
 {
 	if (ast_err >= AST_SYNTAX_ERR_MISSING_CLOSE)
 	{
@@ -2300,14 +2301,28 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		if (node)
 		{
 			/* Missing . */
+			union box_t* top = stack_top_ptr(context->m_exec_stack);
 			status = emit_compound(&context->m_scratch_stack,BUILTIN_ATOM(syntax_error),1);
 			if (!status)
 				status = emit_compound(&context->m_scratch_stack,BUILTIN_ATOM(missing),1);
 			if (!status)
 				status = (stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_1('.')) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+			if (!status)
+			{
+				term->m_vars = NULL;
+				term->m_value = top+1;
+			}
 		}
 		else if (next_type != tokEOF)
-			status = emit_error(context,ast_err,parser,term);
+		{
+			union box_t* top = stack_top_ptr(context->m_exec_stack);
+			status = emit_error(context,ast_err,parser);
+			if (!status)
+			{
+				term->m_vars = NULL;
+				term->m_value = top+1;
+			}
+		}
 		else
 			status = EMIT_EOF;
 
@@ -2318,12 +2333,13 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	else
 	{
 		/* Emit the node */
-		term->m_vars = NULL;
 		status = emit_node_vars(context,&term->m_vars,node);
 		if (!status)
 		{
-			term->m_value = stack_top_ptr(context->m_exec_stack);
+			union box_t* top = stack_top_ptr(context->m_exec_stack);
 			status = emit_node_value(context,node);
+			if (!status)
+				term->m_value = top+1;
 		}
 	}
 

@@ -7,7 +7,7 @@
 #include <string.h>
 
 int read_term(struct context_t* context, struct stream_t* s, struct term_t* term);
-enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal);
+int solve_prepare(struct context_t* context, struct term_t* goal);
 
 struct query_t
 {
@@ -76,7 +76,8 @@ int prolite_prepare(prolite_env_t env, const char* query_text, size_t query_len,
 				break;
 
 			case 0:
-				err = solve_goal(&q->m_context,&term);
+				if (solve_prepare(&q->m_context,&term) == -1)
+					err = SOLVE_NOMEM;
 				break;
 
 			default:
@@ -104,7 +105,7 @@ int prolite_prepare(prolite_env_t env, const char* query_text, size_t query_len,
 int prolite_step(prolite_query_t query)
 {
 	struct query_t* q = (struct query_t*)query;
-	solve_fn_t* fn = stack_pop_ptr(&q->m_context.m_exec_stack);
+	solve_fn_t fn = stack_pop_ptr(&q->m_context.m_exec_stack);
 	enum eSolveResult err = (*fn)(&q->m_context);
 
 	return prolite_error(q,err);

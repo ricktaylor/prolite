@@ -4,7 +4,7 @@
 
 #include <assert.h>
 
-enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal);
+static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal);
 
 static int copy_term(struct context_t* context, struct term_t* src, struct term_t* dest, size_t* stack_pos)
 {
@@ -45,7 +45,7 @@ static inline void stack_pop_term(struct context_t* context, struct term_t* t)
 static enum eSolveResult redo_and(struct context_t* context)
 {
 	struct term_t second_goal;
-	solve_fn_t* fn;
+	solve_fn_t fn;
 	enum eSolveResult result;
 
 	stack_pop_term(context,&second_goal);
@@ -115,7 +115,7 @@ redo:
 			else if (result == SOLVE_FAIL)
 			{
 				/* Redo solve_goal(first_goal) */
-				solve_fn_t* fn = stack_pop_ptr(&context->m_exec_stack);
+				solve_fn_t fn = stack_pop_ptr(&context->m_exec_stack);
 
 				clear_vars(fresh_goal.m_vars);
 
@@ -135,7 +135,7 @@ redo:
 static enum eSolveResult redo_or(struct context_t* context)
 {
 	struct term_t or_goal;
-	solve_fn_t* fn;
+	solve_fn_t fn;
 	enum eSolveResult result;
 
 	stack_pop_term(context,&or_goal);
@@ -232,7 +232,7 @@ static enum eSolveResult solve_cut(struct context_t* context)
 
 static enum eSolveResult redo_call(struct context_t* context)
 {
-	solve_fn_t* fn;
+	solve_fn_t fn;
 	enum eSolveResult result;
 
 	/* Redo solve_goal() */
@@ -323,7 +323,7 @@ static enum eSolveResult solve_halt(struct context_t* context, struct term_t* or
 	return result;
 }
 
-enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal)
+static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal)
 {
 	switch (goal->m_value->m_uval)
 	{
@@ -369,4 +369,21 @@ enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal)
 	/* Emit user defined */
 
 	return SOLVE_FAIL;
+}
+
+static enum eSolveResult solve_start(struct context_t* context)
+{
+	struct term_t goal;
+	stack_pop_term(context,&goal);
+	return solve_goal(context,&goal);
+}
+
+int solve_prepare(struct context_t* context, struct term_t* goal)
+{
+	if (stack_push_term(context,goal) == -1 ||
+		stack_push_ptr(&context->m_exec_stack,&solve_start) == -1)
+	{
+		return -1;
+	}
+	return 0;
 }

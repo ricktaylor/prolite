@@ -7,6 +7,8 @@
 
 #include "throw.h"
 
+// TODO: These are all wrong!
+
 static int emit_compound(struct context_t* context, uint64_t functor, uint64_t arity)
 {
 	if (arity < 16 && (functor & BOX_TAG_ATOM_EMBED) == BOX_TAG_ATOM_EMBED)
