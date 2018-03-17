@@ -4,7 +4,7 @@
 
 #include <assert.h>
 
-static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal);
+enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal);
 
 static int copy_term(struct context_t* context, struct term_t* src, struct term_t* dest, size_t* stack_pos)
 {
@@ -323,7 +323,7 @@ static enum eSolveResult solve_halt(struct context_t* context, struct term_t* or
 	return result;
 }
 
-static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal)
+enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal)
 {
 	switch (goal->m_value->m_uval)
 	{
@@ -369,22 +369,4 @@ static enum eSolveResult solve_goal(struct context_t* context, struct term_t* go
 	/* Emit user defined */
 
 	return SOLVE_FAIL;
-}
-
-static enum eSolveResult solve_start(struct context_t* context)
-{
-	struct term_t goal;
-	stack_pop_term(context,&goal);
-	return solve_goal(context,&goal);
-}
-
-int interpreter_setup_stack(struct context_t* context, struct term_t* goal)
-{
-	if (stack_push_term(context,goal) == -1 ||
-		stack_push_ptr(&context->m_exec_stack,&solve_start) == -1)
-	{
-		return -1;
-	}
-
-	return 0;
 }

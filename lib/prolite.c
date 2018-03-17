@@ -6,8 +6,8 @@
 
 #include <string.h>
 
-int interpreter_setup_stack(struct context_t* context, struct term_t* term);
 int read_term(struct context_t* context, struct stream_t* s, struct term_t* term);
+enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal);
 
 struct query_t
 {
@@ -54,55 +54,43 @@ int prolite_finalize(prolite_query_t query)
 int prolite_prepare(prolite_env_t env, const char* query_text, size_t query_len, prolite_query_t* query, const char** tail)
 {
 	enum eSolveResult err = 0;
-	struct query_t* q = malloc(sizeof(struct query_t));
-	if (q)
+	struct query_t* q = calloc(1,sizeof(struct query_t));
+	if (!q)
 		err = SOLVE_NOMEM;
 	else
 	{
-		struct term_t term = {0};
-		struct text_stream_t ts;
+		struct stream_t* s = new_text_stream(&query_text,query_len);
+		if (tail)
+			*tail = query_text;
 
-		// Init the context
-		memset(q,0,sizeof(struct query_t));
-
-		// Build a stream around query
-
-		text_stream_init(&ts);
-
-		// Read a term
-
-		switch (read_term(&q->m_context,&ts.m_proto,&term))
-		{
-		case 1:
-			err = SOLVE_THROW;
-			break;
-
-		case 0:
-			err = SOLVE_TRUE;
-			break;
-
-		default:
+		if (!s)
 			err = SOLVE_NOMEM;
-			break;
-		}
-
-		// Set tail to the remainder of the stream
-
-		if (!err)
+		else
 		{
-			// Setup first call
-			if (interpreter_setup_stack(&q->m_context,&term) == -1)
-				err = SOLVE_NOMEM;
-			else
+			// Read a term
+			struct term_t term = {0};
+			switch (read_term(&q->m_context,s,&term))
 			{
-				q->m_start = stack_top(q->m_context.m_exec_stack);
-			}
-		}
+			case 1:
+				err = SOLVE_THROW;
+				break;
 
-		if (err)
-		{
-			prolite_finalize((prolite_query_t)q);
-			q = NULL;
+			case 0:
+				err = solve_goal(&q->m_context,&term);
+				break;
+
+			default:
+				err = SOLVE_NOMEM;
+				break;
+			}
+
+			if (err)
+			{
+				prolite_finalize((prolite_query_t)q);
+				q = NULL;
+			}
+
+			stream_close(s);
 		}
 	}
 

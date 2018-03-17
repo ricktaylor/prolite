@@ -6,7 +6,7 @@
 
 static const uint64_t PAGE_SIZE = 4096 * sizeof(uint64_t);
 
-#define ALIGN(x,y) (((x)+((y)-1)) & ~(y))
+#define ALIGN(x,y) (((x)+((y)-1)) & ~((y)-1))
 #define ALIGN_DIV(x,y) (((x)+((y)-1)) / (y))
 
 static struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
@@ -15,7 +15,7 @@ static struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
 	size_t count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
 
 	struct stack_t* stack;
-	if (after && after->m_next->m_count >= count)
+	if (after && after->m_next && after->m_next->m_count >= count)
 	{
 		stack = after->m_next;
 		stack->m_top = 0;

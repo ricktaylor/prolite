@@ -308,6 +308,11 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 static uint32_t token_get_char_conv(struct context_t* context, const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
 {
 	uint32_t c = token_get_char(p,pe,eof,line,col);
+
+	// TODO: Remove me when module work
+	if (!context->m_module)
+		return c;
+
 	if (context->m_module->m_flags.char_conversion && c <= char_max)
 		c = convert_char(context,c);
 	return c;
@@ -2070,12 +2075,11 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 			if (!next_node)
 				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
-			node->m_type = AST_TYPE_COMPOUND;
-			node->m_boxed = name;
-			node->m_arity = 1 + binary;
+			next_node->m_type = AST_TYPE_COMPOUND;
+			next_node->m_boxed = name;
+			next_node->m_arity = 1 + binary;
 			next_node->m_params[0] = node;
-			node = next_node;
-		
+
 			*next_type = token_next(context,parser,next);
 
 			if (binary)
@@ -2084,6 +2088,8 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 				if (!next_node->m_params[1])
 					return NULL;
 			}
+
+			node = next_node;
 		}
 	}
 
