@@ -11,3 +11,4 @@ aclocal.m4
 autoheader_dummy.*
 configure
 Makefile.in
+/x64/
