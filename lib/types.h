@@ -118,7 +118,8 @@ enum eSolveResult
 	SOLVE_FAIL,
 	SOLVE_CUT,
 	SOLVE_THROW,
-	SOLVE_NOMEM
+	SOLVE_NOMEM,
+	SOLVE_HALT
 };
 
 typedef enum eSolveResult(*solve_fn_t)(struct context_t*);
