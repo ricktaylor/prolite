@@ -72,22 +72,24 @@ static int box_string_ptr(struct context_t* context, union box_t* b, const unsig
 
 static int box_string_embed(union box_t* b, const unsigned char* str, size_t len)
 {
-	switch (len)
-	{
-	case 5:
-		b->m_uval |= (uint64_t)(*str++) << 32;
-	case 4:
-		b->m_uval |= (*str++) << 24;
-	case 3:
-		b->m_uval |= (*str++) << 16;
-	case 2:
-		b->m_uval |= (*str++) << 8;
-	case 1:
-		b->m_uval |= *str;
-	default:
-		b->m_uval |= (UINT64_C(0x8) << 44) | ((uint64_t)len << 40);
-		break;
-	}
+	uint64_t c[5] = {0};
+	if (len > 0)
+		c[4] = *str++;
+
+	if (len > 1)
+		c[3] = *str++;
+
+	if (len > 2)
+		c[2] = *str++;
+
+	if (len > 3)
+		c[1] = *str++;
+
+	if (len > 4)
+		c[0] = *str++;
+
+	b->m_uval = BOX_TYPE_EMBED(BOX_TAG_ATOM,0x10,len,c[4],c[3],c[2],c[1],c[0]);
+
 	return 1;
 }
 

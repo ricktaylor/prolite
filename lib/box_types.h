@@ -30,28 +30,27 @@ union box_t
 #define BOX_TAG_CODES       (UINT64_C(0xFFF2) << 48)
 #define BOX_TAG_OBJECT      (UINT64_C(0xFFF1) << 48)
 
-#define BOX_TAG_COMPOUND_EMBED   (UINT64_C(0xFFF68) << 44)
+#define BOX_TYPE_EMBED(type,flags,count,a,b,c,d,e)  ((type) | (((flags) & UINT64_C(0x1F)) << 43) | (((count) & UINT64_C(7)) << 40) | ((uint64_t)(a) << 32) | ((uint64_t)(b) << 24) | ((uint64_t)(c) << 16) | ((uint64_t)(d) << 8) | (uint64_t)(e))
 
-#define BOX_COMPOUND_EMBED_1(a,c)              (BOX_TAG_COMPOUND_EMBED | ((uint64_t)1 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c) << 32))
-#define BOX_COMPOUND_EMBED_2(a,c1,c2)          (BOX_TAG_COMPOUND_EMBED | ((uint64_t)2 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24))
-#define BOX_COMPOUND_EMBED_3(a,c1,c2,c3)       (BOX_TAG_COMPOUND_EMBED | ((uint64_t)3 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16))
-#define BOX_COMPOUND_EMBED_4(a,c1,c2,c3,c4)    (BOX_TAG_COMPOUND_EMBED | ((uint64_t)4 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c4) << 8))
-#define BOX_COMPOUND_EMBED_5(a,c1,c2,c3,c4,c5) (BOX_TAG_COMPOUND_EMBED | ((uint64_t)5 << 44) | ((uint64_t)(a) << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c4) << 8) | (uint64_t)(c5))
+#define BOX_TAG_TYPE_EMBED(type)  ((type) | (UINT64_C(0x10) << 43))
+
+#define BOX_COMPOUND_EMBED_1(a,c)              BOX_TYPE_EMBED(BOX_TAG_COMPOUND,0x10 | a,1,c,0,0,0,0)
+#define BOX_COMPOUND_EMBED_2(a,c1,c2)          BOX_TYPE_EMBED(BOX_TAG_COMPOUND,0x10 | a,2,c1,c2,0,0,0)
+#define BOX_COMPOUND_EMBED_3(a,c1,c2,c3)       BOX_TYPE_EMBED(BOX_TAG_COMPOUND,0x10 | a,3,c1,c2,c3,0,0)
+#define BOX_COMPOUND_EMBED_4(a,c1,c2,c3,c4)    BOX_TYPE_EMBED(BOX_TAG_COMPOUND,0x10 | a,4,c1,c2,c3,c4,0)
+#define BOX_COMPOUND_EMBED_5(a,c1,c2,c3,c4,c5) BOX_TYPE_EMBED(BOX_TAG_COMPOUND,0x10 | a,5,c1,c2,c3,c4,c5)
 
 #define MAX_ARITY ((UINT64_C(1) << 47) - 1)
 
-#define BOX_TAG_ATOM_EMBED       (UINT64_C(0xFFF48) << 44)
+#define BOX_TAG_COMPOUND_EMBED   BOX_TAG_TYPE_EMBED(BOX_TAG_COMPOUND)
+#define BOX_TAG_ATOM_EMBED       BOX_TAG_TYPE_EMBED(BOX_TAG_ATOM)
 #define BOX_TAG_ATOM_BUILTIN     (UINT64_C(0xFFF44) << 44)
-#define BOX_TAG_CHARS_EMBED      (UINT64_C(0xFFF38) << 44)
-#define BOX_TAG_CHARS_BUILTIN    (UINT64_C(0xFFF34) << 44)
-#define BOX_TAG_CODES_EMBED      (UINT64_C(0xFFF28) << 44)
-#define BOX_TAG_CODES_BUILTIN    (UINT64_C(0xFFF24) << 44)
 
-#define BOX_ATOM_EMBED_1(c)              (BOX_TAG_ATOM_EMBED | ((uint64_t)1 << 40) | ((uint64_t)(c) << 32))
-#define BOX_ATOM_EMBED_2(c1,c2)          (BOX_TAG_ATOM_EMBED | ((uint64_t)2 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24))
-#define BOX_ATOM_EMBED_3(c1,c2,c3)       (BOX_TAG_ATOM_EMBED | ((uint64_t)3 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16))
-#define BOX_ATOM_EMBED_4(c1,c2,c3,c4)    (BOX_TAG_ATOM_EMBED | ((uint64_t)4 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c4) << 8))
-#define BOX_ATOM_EMBED_5(c1,c2,c3,c4,c5) (BOX_TAG_ATOM_EMBED | ((uint64_t)5 << 40) | ((uint64_t)(c1) << 32) | ((uint64_t)(c2) << 24) | ((uint64_t)(c3) << 16) | ((uint64_t)(c4) << 8) | (uint64_t)(c5))
+#define BOX_ATOM_EMBED_1(c)              BOX_TYPE_EMBED(BOX_TAG_ATOM,0x10,1,c,0,0,0,0)
+#define BOX_ATOM_EMBED_2(c1,c2)          BOX_TYPE_EMBED(BOX_TAG_ATOM,0x10,2,c1,c2,0,0,0)
+#define BOX_ATOM_EMBED_3(c1,c2,c3)       BOX_TYPE_EMBED(BOX_TAG_ATOM,0x10,3,c1,c2,c3,0,0)
+#define BOX_ATOM_EMBED_4(c1,c2,c3,c4)    BOX_TYPE_EMBED(BOX_TAG_ATOM,0x10,4,c1,c2,c3,c4,0)
+#define BOX_ATOM_EMBED_5(c1,c2,c3,c4,c5) BOX_TYPE_EMBED(BOX_TAG_ATOM,0x10,5,c1,c2,c3,c4,c5)
 
 static inline void box_pointer(union box_t* b, void* ptr)
 {
