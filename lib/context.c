@@ -21,20 +21,22 @@ int char_conversion_2(struct context_t* context, struct term_t* term)
 	uint32_t out_char = -1;
 
 	/* Check value[0] first, otherwise we don't know what value[1] is! */
-	if ((term->m_value[0].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
+	enum tag_type_t type = UNBOX_TYPE(term->m_value[0].m_u64val);
+	if (type == prolite_var)
 		return throw_instantiation_error(context);
 
-	if ((term->m_value[0].m_uval & BOX_TAG_ATOM_EMBED) != BOX_TAG_ATOM_EMBED ||
-			(in_char = embed_string_code(&term->m_value[0])) == -1)
+	if (type != prolite_atom ||
+		(in_char = embed_string_code(&term->m_value[0])) == -1)
 	{
 		return throw_representation_error(context,BUILTIN_ATOM(character));
 	}
 
-	if ((term->m_value[1].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
+	type = UNBOX_TYPE(term->m_value[1].m_u64val);
+	if (type == prolite_var)
 		return throw_instantiation_error(context);
 
-	if ((term->m_value[1].m_uval & BOX_TAG_ATOM_EMBED) != BOX_TAG_ATOM_EMBED ||
-			(out_char = embed_string_code(&term->m_value[1])) == -1)
+	if (type != prolite_atom ||
+		(out_char = embed_string_code(&term->m_value[1])) == -1)
 	{
 		return throw_representation_error(context,BUILTIN_ATOM(character));
 	}
@@ -80,24 +82,26 @@ int op_3(struct context_t* context, struct term_t* term)
 	/* Check value[0] first, otherwise we don't know what value[1 and 2] is! */
 	int priority;
 	enum eOpSpec op_spec;
+	enum tag_type_t type = UNBOX_TYPE(term->m_value[0].m_u64val);
 
-	if ((term->m_value[0].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
+	if (type == prolite_var)
 		return throw_instantiation_error(context);
 
-	if ((term->m_value[0].m_uval & BOX_TAG_INT32) != BOX_TAG_INT32)
+	if (type != prolite_int32)
 		return throw_type_error(context,BUILTIN_ATOM(integer),&term->m_value[0]);
 
 	priority = unbox_int32(&term->m_value[0]);
 	if (priority < 0 || priority > 1200)
 		return throw_domain_error(context,BUILTIN_ATOM(operator_priority),&term->m_value[0]);
 
-	if ((term->m_value[1].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
+	type = UNBOX_TYPE(term->m_value[1].m_u64val);
+	if (type == prolite_var)
 		return throw_instantiation_error(context);
 
-	if ((term->m_value[1].m_uval & BOX_TAG_ATOM_EMBED) != BOX_TAG_ATOM_EMBED)
+	if (type != prolite_atom)
 		return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),&term->m_value[1]);
 
-	switch (term->m_value[1].m_uval)
+	switch (term->m_value[1].m_u64val)
 	{
 	case BOX_ATOM_EMBED_2('f','x'):
 		op_spec = eFX;
@@ -124,49 +128,52 @@ int op_3(struct context_t* context, struct term_t* term)
 		return throw_domain_error(context,BUILTIN_ATOM(operator_specifier),&term->m_value[1]);
 	}
 
-	if ((term->m_value[2].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR ||
-			term->m_value[2].m_uval == BOX_COMPOUND_EMBED_1(2,'|'))
+	type = UNBOX_TYPE(term->m_value[2].m_u64val);
+	if (type == prolite_var ||
+		term->m_value[2].m_u64val == BOX_COMPOUND_EMBED_1(2,'|'))
 	{
 		return throw_instantiation_error(context);
 	}
 
-	if ((term->m_value[2].m_uval & BOX_TAG_MASK) == BOX_TAG_ATOM)
+	if (type == prolite_atom)
 	{
 		if (priority == 0)
-			return remove_op(context,op_spec,term->m_value[2].m_uval);
-		return add_op(context,priority,op_spec,term->m_value[2].m_uval);
+			return remove_op(context,op_spec,term->m_value[2].m_u64val);
+		return add_op(context,priority,op_spec,term->m_value[2].m_u64val);
 	}
-	else if (term->m_value[2].m_uval == BOX_COMPOUND_EMBED_1(2,'.'))
+	else if (term->m_value[2].m_u64val == BOX_COMPOUND_EMBED_1(2,'.'))
 	{
 		const union box_t* list = term->m_value + 2;
 		do
 		{
 			/* List - enumerate */
-			if ((list[1].m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
+			type = UNBOX_TYPE(list[1].m_u64val);
+			if (type == prolite_var)
 				return throw_instantiation_error(context);
 
-			if ((list[1].m_uval & BOX_TAG_MASK) == BOX_TAG_ATOM)
+			if (type == prolite_atom)
 			{
 				int err;
 				if (priority == 0)
-					err = remove_op(context,op_spec,term->m_value[2].m_uval);
+					err = remove_op(context,op_spec,term->m_value[2].m_u64val);
 				else
-					err = add_op(context,priority,op_spec,term->m_value[2].m_uval);
+					err = add_op(context,priority,op_spec,term->m_value[2].m_u64val);
 				if (err)
 					return err;
 			}
 			else
 				return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),&list[1]);
 
-			if (list[2].m_uval == BOX_ATOM_EMBED_2('[',']'))
+			if (list[2].m_u64val == BOX_ATOM_EMBED_2('[',']'))
 				return 0;
 
 			list += 2;
 		}
-		while (list->m_uval == BOX_COMPOUND_EMBED_1(2,'.'));
+		while (list->m_u64val == BOX_COMPOUND_EMBED_1(2,'.'));
 
-		if ((list->m_uval & BOX_TAG_MASK) == BOX_TAG_VAR ||
-				list->m_uval == BOX_COMPOUND_EMBED_1(2,'|'))
+		type = UNBOX_TYPE(list->m_u64val);
+		if (type == prolite_var ||
+			list->m_u64val == BOX_COMPOUND_EMBED_1(2,'|'))
 		{
 			return throw_instantiation_error(context);
 		}

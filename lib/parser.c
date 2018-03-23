@@ -1620,7 +1620,6 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
 
-	node->m_boxed.m_uval = BOX_TAG_ATOM;
 	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
 		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
@@ -1629,7 +1628,7 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 	if (*next_type == tokOpenCt)
 		return parse_compound_term(context,parser,node,next_type,next,ast_err);
 
-	if (node->m_boxed.m_uval == (BOX_ATOM_EMBED_1('-')))
+	if (node->m_boxed.m_u64val == BOX_ATOM_EMBED_1('-'))
 	{
 		if (*next_type >= tokInt && *next_type <= tokFloat)
 			return parse_negative(context,parser,node,next_type,next,ast_err);
@@ -1710,7 +1709,7 @@ static struct ast_node_t* parse_list_term(struct context_t* context, struct pars
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		(*tail)->m_type = AST_TYPE_COMPOUND;
-		(*tail)->m_boxed.m_uval = BOX_ATOM_EMBED_1('.');
+		(*tail)->m_boxed.m_u64val = BOX_ATOM_EMBED_1('.');
 		(*tail)->m_arity = 2;
 		(*tail)->m_params[1] = NULL;
 		
@@ -1742,7 +1741,7 @@ static struct ast_node_t* parse_list_term(struct context_t* context, struct pars
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		(*tail)->m_type = AST_TYPE_ATOM;
-		(*tail)->m_boxed.m_uval = BOX_ATOM_EMBED_2('[',']');
+		(*tail)->m_boxed.m_u64val = BOX_ATOM_EMBED_2('[',']');
 		(*tail)->m_arity = 0;
 	}
 	
@@ -1765,7 +1764,6 @@ static struct ast_node_t* parse_name(struct context_t* context, struct parser_t*
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
 
-	node->m_boxed.m_uval = BOX_TAG_ATOM;
 	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
 		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
@@ -1775,7 +1773,7 @@ static struct ast_node_t* parse_name(struct context_t* context, struct parser_t*
 	if (*next_type == tokOpenCt)
 		return parse_compound_term(context,parser,node,next_type,next,ast_err);
 
-	if (node->m_boxed.m_uval == (BOX_ATOM_EMBED_1('-')))
+	if (node->m_boxed.m_u64val == BOX_ATOM_EMBED_1('-'))
 	{
 		if (*next_type >= tokInt && *next_type <= tokFloat)
 			return parse_negative(context,parser,node,next_type,next,ast_err);
@@ -1842,7 +1840,6 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 		node->m_type = AST_TYPE_VAR;
 		node->m_arity = -1;
 
-		node->m_boxed.m_uval = BOX_TAG_ATOM;
 		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 		break;
@@ -1894,7 +1891,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_ATOM;
-		node->m_boxed.m_uval = BOX_ATOM_EMBED_2('[',']');
+		node->m_boxed.m_u64val = BOX_ATOM_EMBED_2('[',']');
 		node->m_arity = 0;
 		break;
 		
@@ -1904,7 +1901,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_COMPOUND;
-		node->m_boxed.m_uval = BOX_ATOM_EMBED_2('{','}');
+		node->m_boxed.m_u64val = BOX_ATOM_EMBED_2('{','}');
 		node->m_arity = 1;
 
 		*next_type = token_next(context,parser,next);
@@ -1977,7 +1974,6 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 		{
 			struct operator_t* op;
 
-			name.m_uval = BOX_TAG_ATOM;
 			if (!box_string(context,&name,next->m_str,next->m_len))
 				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
@@ -2026,13 +2022,13 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 			left_prec = 999;
 			right_prec = 1000;
 
-			name.m_uval = BOX_ATOM_EMBED_1(',');
+			name.m_u64val = BOX_ATOM_EMBED_1(',');
 		}
 		else if (*next_type == tokBar)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.2:2012 */
 			struct operator_t* op;
-			name.m_uval = BOX_ATOM_EMBED_1('|');
+			name.m_u64val = BOX_ATOM_EMBED_1('|');
 
 			op = lookup_op(context,&name);
 			if (!op || op->m_precedence > max_prec)
@@ -2113,7 +2109,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 		size_t i;
 		for (i = 0; i < var_count; ++i)
 		{
-			if (node->m_boxed.m_uval == (*varinfo)->m_vars[i].m_name.m_uval)
+			if (node->m_boxed.m_u64val == (*varinfo)->m_vars[i].m_name.m_u64val)
 			{
 				node->m_arity = i;
 				break;
@@ -2122,7 +2118,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 
 		if (i == var_count)
 		{
-			if (var_count >= ~BOX_TAG_MASK)
+			if (var_count >= (UINT64_C(1) << 48))
 			{
 				/* There is not an ISO standard error for 'too many vars'
 				 * but we will be out of memory soon anyway, so that will do */
@@ -2403,12 +2399,13 @@ static int directive(struct context_t* context, struct term_t* term)
 		return throw_type_error(context,BUILTIN_ATOM(callable),term->m_value);
 	}
 
-	if (term->m_value->m_uval == BOX_COMPOUND_EMBED_2(3,'o','p'))
+	if (term->m_value->m_u64val == BOX_COMPOUND_EMBED_2(3,'o','p'))
 	{
 		++term->m_value;
 		return op_3(context,term);
 	}
 
+	// TODO: GARBAGE!!
 	if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 1))
 	{
 		switch (term->m_value[1].m_uval)
@@ -2476,11 +2473,11 @@ static int load_file(struct context_t* context, struct stream_t* s)
 
 		if (status == EMIT_OK)
 		{
-			if (term.m_value[0].m_uval == BOX_COMPOUND_EMBED_2(1,':','-'))
+			if (term.m_value[0].m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
 			{
 				/* Check now for :- initialization/1 */
 				if (term.m_value[1].m_uval == (UINT64_C(0xFFF6) << 48 | 1) &&
-						term.m_value[2].m_uval == BUILTIN_ATOM(initialization))
+						term.m_value[2].m_u64val == BUILTIN_ATOM(initialization))
 				{
 					term.m_value += 3;
 					int err = compile_initializer(context,&term);

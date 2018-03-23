@@ -327,13 +327,13 @@ static enum eSolveResult solve_halt(struct context_t* context, struct term_t* or
 
 static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal)
 {
-	switch (goal->m_value->m_uval)
+	switch (goal->m_value->m_u64val)
 	{
 	case BOX_COMPOUND_EMBED_1(2,','):
 		return solve_and(context,goal);
 
 	case BOX_COMPOUND_EMBED_1(2,';'):
-		if ((goal->m_value->m_uval) == BOX_COMPOUND_EMBED_2(2,'-','>'))
+		if ((goal->m_value->m_u64val) == BOX_COMPOUND_EMBED_2(2,'-','>'))
 			return solve_if_then_else(context,goal);
 		return solve_or(context,goal);
 

@@ -4,10 +4,10 @@
 
 union box_t* next_value(union box_t* v)
 {
-	if ((v->m_uval & BOX_TAG_MASK) == BOX_TAG_COMPOUND)
+	if (UNBOX_TYPE(v->m_u64val) == prolite_compound)
 	{
 		uint64_t arity = compound_arity(v);
-		if ((v->m_uval & BOX_TAG_COMPOUND_EMBED) != BOX_TAG_COMPOUND_EMBED)
+		if (UNBOX_IS_TYPE_EMBED(v->m_u64val,prolite_compound))
 			++v;
 
 		while (arity--)
@@ -21,15 +21,15 @@ union box_t* next_value(union box_t* v)
 /* Returns -1 on instantiation error, 1 on callable error, 0 ok */
 int check_callable_term(union box_t* v)
 {
-	switch (v->m_uval & BOX_TAG_MASK)
+	switch (UNBOX_TYPE(v->m_u64val))
 	{
-	case BOX_TAG_VAR:
+	case prolite_var:
 		return -1;
 
-	case BOX_TAG_COMPOUND:
-		if (v->m_uval == BOX_COMPOUND_EMBED_1(2,',') ||
-				v->m_uval == BOX_COMPOUND_EMBED_1(2,';') ||
-				v->m_uval == BOX_COMPOUND_EMBED_2(2,'-','>'))
+	case prolite_compound:
+		if (v->m_u64val == BOX_COMPOUND_EMBED_1(2,',') ||
+				v->m_u64val == BOX_COMPOUND_EMBED_1(2,';') ||
+				v->m_u64val == BOX_COMPOUND_EMBED_2(2,'-','>'))
 		{
 			int r = check_callable_term(v + 1);
 			if (!r)
@@ -38,7 +38,7 @@ int check_callable_term(union box_t* v)
 		}
 		return 0;
 
-	case BOX_TAG_ATOM:
+	case prolite_atom:
 		return 0;
 
 	default:
@@ -54,19 +54,19 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 	union box_t t;
 	uint64_t stack_base = stack_top(context->m_exec_stack);
 
-	if (term->m_value->m_uval == BOX_COMPOUND_EMBED_2(2,':','-'))
+	if (term->m_value->m_u64val == BOX_COMPOUND_EMBED_2(2,':','-'))
 	{
 		head = term->m_value + 1;
 		body = next_value(head);
 	}
 
-	switch (head->m_uval & BOX_TAG_MASK)
+	switch (UNBOX_TYPE(head->m_u64val))
 	{
-	case BOX_TAG_VAR:
+	case prolite_var:
 		return throw_instantiation_error(context);
 
-	case BOX_TAG_COMPOUND:
-	case BOX_TAG_ATOM:
+	case prolite_compound:
+	case prolite_atom:
 		break;
 
 	default:
@@ -82,15 +82,15 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 
 		body = next_value(head);
 	}
-	else if ((body->m_uval & BOX_TAG_MASK) == BOX_TAG_VAR)
+	else if (UNBOX_TYPE(body->m_u64val) == prolite_var)
 	{
 		/* Convert to call(V) */
-		if (stack_push(&context->m_exec_stack,body->m_uval) == -1)
+		if (stack_push(&context->m_exec_stack,body->m_u64val) == -1)
 		{
 			stack_reset(&context->m_exec_stack,stack_base);
 			return -1;
 		}
-		t.m_uval = BOX_COMPOUND_EMBED_4(1,'c','a','l','l');
+		t.m_u64val = BOX_COMPOUND_EMBED_4(1,'c','a','l','l');
 		body = &t;
 		++body;
 	}
