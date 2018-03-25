@@ -1620,7 +1620,7 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
 
-	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
+	if (!box_string(prolite_atom,context,&node->m_boxed,next->m_str,next->m_len))
 		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	*next_type = token_next(context,parser,next);
@@ -1764,7 +1764,7 @@ static struct ast_node_t* parse_name(struct context_t* context, struct parser_t*
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
 
-	if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
+	if (!box_string(prolite_atom,context,&node->m_boxed,next->m_str,next->m_len))
 		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	*next_type = token_next(context,parser,next);
@@ -1816,8 +1816,7 @@ static struct ast_node_t* parse_chars_and_codes(struct context_t* context, int c
 	node->m_type = chars ? AST_TYPE_CHARS : AST_TYPE_CODES;
 	node->m_arity = 0;
 
-	node->m_boxed.m_uval = (node->m_type == AST_TYPE_CHARS ? BOX_TAG_CHARS : BOX_TAG_CODES);
-	if (!box_string(context,&node->m_boxed,token->m_str,token->m_len))
+	if (!box_string(node->m_type == AST_TYPE_CHARS ? prolite_chars : prolite_charcodes,context,&node->m_boxed,token->m_str,token->m_len))
 		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	return node;
@@ -1840,7 +1839,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 		node->m_type = AST_TYPE_VAR;
 		node->m_arity = -1;
 
-		if (!box_string(context,&node->m_boxed,next->m_str,next->m_len))
+		if (!box_string(prolite_atom,context,&node->m_boxed,next->m_str,next->m_len))
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 		break;
 
@@ -1974,7 +1973,7 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 		{
 			struct operator_t* op;
 
-			if (!box_string(context,&name,next->m_str,next->m_len))
+			if (!box_string(prolite_atom,context,&name,next->m_str,next->m_len))
 				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 			op = lookup_op(context,&name);
@@ -2160,7 +2159,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_t arity)
 {
 	enum eEmitStatus status;
-	if (arity < 16 && (functor & BOX_TAG_ATOM_EMBED) == BOX_TAG_ATOM_EMBED)
+	if (arity <= MAX_EMBED_ARITY && UNBOX_IS_TYPE_EMBED(functor,prolite_atom))
 	{
 		uint64_t len = (functor & ((uint64_t)7 << 40)) << 4;
 		uint64_t val = BOX_TAG_COMPOUND_EMBED | (functor & ~(UINT64_C(0xFFFFFF) << 40)) | len | (arity << 40);
@@ -2386,18 +2385,12 @@ static int include(struct context_t* context, struct term_t* term);
 /* 'Do' a directive */
 static int directive(struct context_t* context, struct term_t* term)
 {
-	switch (term->m_value->m_uval & BOX_TAG_MASK)
-	{
-	case BOX_TAG_VAR:
+	enum tag_type_t type = UNBOX_TYPE(term->m_value->m_u64val);
+	if (type == prolite_var)
 		return throw_instantiation_error(context);
 
-	case BOX_TAG_COMPOUND:
-	case BOX_TAG_ATOM:
-		break;
-
-	default:
+	if (type != prolite_atom && type != prolite_compound)
 		return throw_type_error(context,BUILTIN_ATOM(callable),term->m_value);
-	}
 
 	if (term->m_value->m_u64val == BOX_COMPOUND_EMBED_2(3,'o','p'))
 	{
@@ -2405,43 +2398,46 @@ static int directive(struct context_t* context, struct term_t* term)
 		return op_3(context,term);
 	}
 
-	// TODO: GARBAGE!!
-	if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 1))
+	if (type == prolite_compound)
 	{
-		switch (term->m_value[1].m_uval)
+		unsigned int arity = UNBOX
+		if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 1))
 		{
-		case BUILTIN_ATOM(dynamic):
-		case BUILTIN_ATOM(multifile):
-		case BUILTIN_ATOM(discontiguous):
-			++term->m_value;
-			return clause_directive(context,term);
+			switch (term->m_value[1].m_uval)
+			{
+			case BUILTIN_ATOM(dynamic):
+			case BUILTIN_ATOM(multifile):
+			case BUILTIN_ATOM(discontiguous):
+				++term->m_value;
+				return clause_directive(context,term);
 
-		case BUILTIN_ATOM(include):
-			term->m_value += 2;
-			return include(context,term);
+			case BUILTIN_ATOM(include):
+				term->m_value += 2;
+				return include(context,term);
 
-		case BUILTIN_ATOM(ensure_loaded):
-			term->m_value += 2;
-			return ensure_loaded(context,term);
+			case BUILTIN_ATOM(ensure_loaded):
+				term->m_value += 2;
+				return ensure_loaded(context,term);
 
-		default:
-			break;
+			default:
+				break;
+			}
 		}
-	}
-	else if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 2))
-	{
-		switch (term->m_value[1].m_uval)
+		else if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 2))
 		{
-		case BUILTIN_ATOM(char_conversion):
-			term->m_value += 2;
-			return char_conversion_2(context,term);
+			switch (term->m_value[1].m_uval)
+			{
+			case BUILTIN_ATOM(char_conversion):
+				term->m_value += 2;
+				return char_conversion_2(context,term);
 
-		case BUILTIN_ATOM(set_prolog_flag):
-			term->m_value += 2;
-			return set_prolog_flag_2(context,term);
+			case BUILTIN_ATOM(set_prolog_flag):
+				term->m_value += 2;
+				return set_prolog_flag_2(context,term);
 
-		default:
-			break;
+			default:
+				break;
+			}
 		}
 	}
 

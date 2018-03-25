@@ -29,7 +29,7 @@ static int builtin_string_compare(const void* p1, const void* p2)
 	return memcmp(s1->m_str,s2->m_str,s1->m_len);
 }
 
-static int box_string_builtin(union box_t* b, const unsigned char* str, size_t len)
+static int box_string_builtin(enum tag_type_t type, union box_t* b, const unsigned char* str, size_t len)
 {
 	struct builtin_string_t f, *s;
 	f.m_len = len;
@@ -39,11 +39,11 @@ static int box_string_builtin(union box_t* b, const unsigned char* str, size_t l
 	if (!s)
 		return 0;
 
-	b->m_u64val = BOX_TYPE(prolite_atom) | BOX_HI48(0x4000) | BOX_U32((uint32_t)(s - s_builtin_strings));
+	b->m_u64val = BOX_TYPE(type) | BOX_HI48(0x4000) | BOX_U32((uint32_t)(s - s_builtin_strings));
 	return 1;
 }
 
-static int box_string_ptr(struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
+static int box_string_ptr(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
 {
 	// TODO: THIS WHOLE THING LOOKS DODGY!!
 
@@ -52,13 +52,13 @@ static int box_string_ptr(struct context_t* context, union box_t* b, const unsig
 	{
 		if (s->m_len == len && memcmp(s->m_str,str,len) == 0)
 		{
-			b->m_u64val = BOX_TYPE(prolite_atom);
+			b->m_u64val = BOX_TYPE(type);
 			box_pointer(b,s);
 			return 1;
 		}
 	}
 
-	if (box_string_builtin(b,str,len))
+	if (box_string_builtin(type,b,str,len))
 		return 1;
 
 	s = stack_malloc(&context->m_exec_stack,sizeof(struct string_ptr_t) + len);
@@ -73,7 +73,7 @@ static int box_string_ptr(struct context_t* context, union box_t* b, const unsig
 	return 1;
 }
 
-static int box_string_embed(union box_t* b, const unsigned char* str, size_t len)
+static int box_string_embed(enum tag_type_t type, union box_t* b, const unsigned char* str, size_t len)
 {
 	uint64_t c[5] = {0};
 	if (len > 0)
@@ -96,12 +96,12 @@ static int box_string_embed(union box_t* b, const unsigned char* str, size_t len
 	return 1;
 }
 
-int box_string(struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
+int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
 {
 	if (len > 5)
-		return box_string_ptr(context,b,str,len);
+		return box_string_ptr(type,context,b,str,len);
 
-	return box_string_embed(b,str,len);
+	return box_string_embed(type,b,str,len);
 }
 
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len)

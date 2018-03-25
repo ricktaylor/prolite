@@ -101,6 +101,7 @@ enum tag_type_t
 
 #define BOX_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (BOX_TYPE(type) | BOX_MANT_48((UINT64_C(1) << 47) | (((flags) & UINT64_C(0xF)) << 43) | (((count) & UINT64_C(7)) << 40) | ((uint64_t)(a) << 32) | ((uint64_t)(b) << 24) | ((uint64_t)(c) << 16) | ((uint64_t)(d) << 8) | (uint64_t)(e)))
 #define UNBOX_IS_TYPE_EMBED(v,type)                 (UNBOX_TYPE(v) == (type) && (UNBOX_MANT_48(v) & (UINT64_C(1) << 47)))
+#define UNBOX_EMBED_FLAGS(v)                        ((UNBOX_MANT_48(v) >> 43) & 0xF)
 
 #define BOX_COMPOUND_EMBED_1(a,c)              BOX_TYPE_EMBED(prolite_compound,a,1,c,0,0,0,0)
 #define BOX_COMPOUND_EMBED_2(a,c1,c2)          BOX_TYPE_EMBED(prolite_compound,a,2,c1,c2,0,0,0)
@@ -174,7 +175,7 @@ static inline int32_t unbox_int32(const union box_t* b)
 
 struct context_t;
 
-int box_string(struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
+int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len);
 
 uint32_t embed_string_code(const union box_t* b);
