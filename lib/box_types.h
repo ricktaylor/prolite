@@ -68,14 +68,13 @@ union box_t
 enum tag_type_t
 {
 	prolite_double = 0,
-	prolite_var = 2,
+	prolite_int32 = 1,
+	prolite_atom = 2,
 	prolite_compound = 3,
-	prolite_int32 = 4,
-	prolite_atom = 5,
-	prolite_chars = 6,
-	prolite_charcodes = 7,
+	prolite_var = 4,
 
-	prolite_mask = 0xF
+	//prolite_chars = 6,
+	//prolite_charcodes = 7,
 };
 
 #if defined(__aarch64__) || defined(__arm__)
@@ -93,24 +92,14 @@ enum tag_type_t
 #define BOX_TYPE(type)   BOX_EXP_16(UINT64_C(0x7FF0) | (((type) & 8) << 11) | ((type) & 7))
 #define UNBOX_TYPE(v)    ((UNBOX_EXP_16(v) & UINT64_C(0x8000) >> 12) | (UNBOX_EXP_16(v) & UINT64_C(0x7)))
 
-#define BOX_HI48(u16)    BOX_MANT_48((UINT64_C(0xFFFF) & (u16)) << 32)
-#define UNBOX_HI48(v)    ((UNBOX_MANT_48(v) & (UINT64_C(0xFFFF) << 16)) >> 32)
+#define BOX_HI16(u16)    BOX_MANT_48((UINT64_C(0xFFFF) & (u16)) << 32)
+#define UNBOX_HI16(v)    ((UNBOX_MANT_48(v) & (UINT64_C(0xFFFF) << 16)) >> 32)
 
-#define BOX_U32(u32)     BOX_MANT_48(UINT64_C(0xFFFFFFFF) & (u32))
-#define UNBOX_U32(v)     (UNBOX_MANT_48(v) & UINT64_C(0xFFFFFFFF))
+#define BOX_LOW32(u32)   BOX_MANT_48(UINT64_C(0xFFFFFFFF) & (u32))
+#define UNBOX_LOW32(v)   (UNBOX_MANT_48(v) & UINT64_C(0xFFFFFFFF))
 
 #define BOX_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (BOX_TYPE(type) | BOX_MANT_48((UINT64_C(1) << 47) | (((flags) & UINT64_C(0xF)) << 43) | (((count) & UINT64_C(7)) << 40) | ((uint64_t)(a) << 32) | ((uint64_t)(b) << 24) | ((uint64_t)(c) << 16) | ((uint64_t)(d) << 8) | (uint64_t)(e)))
 #define UNBOX_IS_TYPE_EMBED(v,type)                 (UNBOX_TYPE(v) == (type) && (UNBOX_MANT_48(v) & (UINT64_C(1) << 47)))
-#define UNBOX_EMBED_FLAGS(v)                        ((UNBOX_MANT_48(v) >> 43) & 0xF)
-
-#define BOX_COMPOUND_EMBED_1(a,c)              BOX_TYPE_EMBED(prolite_compound,a,1,c,0,0,0,0)
-#define BOX_COMPOUND_EMBED_2(a,c1,c2)          BOX_TYPE_EMBED(prolite_compound,a,2,c1,c2,0,0,0)
-#define BOX_COMPOUND_EMBED_3(a,c1,c2,c3)       BOX_TYPE_EMBED(prolite_compound,a,3,c1,c2,c3,0,0)
-#define BOX_COMPOUND_EMBED_4(a,c1,c2,c3,c4)    BOX_TYPE_EMBED(prolite_compound,a,4,c1,c2,c3,c4,0)
-#define BOX_COMPOUND_EMBED_5(a,c1,c2,c3,c4,c5) BOX_TYPE_EMBED(prolite_compound,a,5,c1,c2,c3,c4,c5)
-
-#define MAX_EMBED_ARITY 0xF
-#define MAX_ARITY       ((UINT64_C(1) << 47) - 1)
 
 #define BOX_ATOM_EMBED_1(c)              BOX_TYPE_EMBED(prolite_atom,0,1,c,0,0,0,0)
 #define BOX_ATOM_EMBED_2(c1,c2)          BOX_TYPE_EMBED(prolite_atom,0,2,c1,c2,0,0,0)
@@ -118,70 +107,22 @@ enum tag_type_t
 #define BOX_ATOM_EMBED_4(c1,c2,c3,c4)    BOX_TYPE_EMBED(prolite_atom,0,4,c1,c2,c3,c4,0)
 #define BOX_ATOM_EMBED_5(c1,c2,c3,c4,c5) BOX_TYPE_EMBED(prolite_atom,0,5,c1,c2,c3,c4,c5)
 
-//#define BOX_TAG_COMPOUND_EMBED   BOX_TAG_TYPE_EMBED(BOX_TAG_COMPOUND)
-//#define BOX_TAG_ATOM_EMBED       BOX_TAG_TYPE_EMBED(BOX_TAG_ATOM)
-//#define BOX_TAG_ATOM_BUILTIN     BOX_TYPE_U32(prolite_atom,0x4000,0)
+#define BOX_COMPOUND_EMBED_1(a,c)              BOX_TYPE_EMBED(prolite_compound,a,1,c,0,0,0,0)
+#define BOX_COMPOUND_EMBED_2(a,c1,c2)          BOX_TYPE_EMBED(prolite_compound,a,2,c1,c2,0,0,0)
+#define BOX_COMPOUND_EMBED_3(a,c1,c2,c3)       BOX_TYPE_EMBED(prolite_compound,a,3,c1,c2,c3,0,0)
+#define BOX_COMPOUND_EMBED_4(a,c1,c2,c3,c4)    BOX_TYPE_EMBED(prolite_compound,a,4,c1,c2,c3,c4,0)
+#define BOX_COMPOUND_EMBED_5(a,c1,c2,c3,c4,c5) BOX_TYPE_EMBED(prolite_compound,a,5,c1,c2,c3,c4,c5)
 
-static inline void box_pointer(union box_t* b, void* ptr)
-{
-#if UINTPTR_MAX == UINT32_MAX
-	b->m_u64val |= BOX_U32((uintptr_t)ptr);
-#elif defined (__x86_64__) || defined(_M_X64) || defined(__aarch64__)
-	b->m_u64val |= BOX_MANT_48(((uintptr_t)ptr >> 3) & UINT64_C(0x1FFFFFFFFFFF));
-#else
-#error No idea what to do with addresses on your architecture!
-#endif
-}
-
-static inline void* unbox_pointer(const union box_t* b)
-{
-#if UINTPTR_MAX == UINT32_MAX
-	return (void*)(uintptr_t)UNOX_U32(b->m_u64val);
-#elif defined (__x86_64__) || defined(_M_X64) || defined(__aarch64__)
-	/* Sign extend to make an x86_64 canonical address */
-	struct pun { uint64_t u45 : 45; } p;
-	return (void*)((uintptr_t)(p.u45 = UNBOX_MANT_48(b->m_u64val) << 3));
-#else
-#error No idea what to do with addresses on your architecture!
-#endif
-}
-
-static inline union box_t box_double(double d)
-{
-	union box_t r;
-	if (isnan(d))
-		r.m_u64val = BOX_EXP_16(0x7FF8);
-	else
-		r.m_dval = d;
-	return r;
-}
-
-static inline double unbox_double(const union box_t* b)
-{
-	return b->m_dval;
-}
-
-static inline union box_t box_int32(int32_t n)
-{
-	union box_t r;
-	r.m_u64val = BOX_TYPE(prolite_int32) | BOX_U32((uint32_t)n);
-	return r;
-}
-
-static inline int32_t unbox_int32(const union box_t* b)
-{
-	return (int32_t)UNBOX_U32(b->m_u64val);
-}
+#define MAX_EMBED_ARITY   0xF
+#define MAX_BUILTIN_ARITY 0x3FFF
+#define MAX_ARITY         ((UINT64_C(1) << 47) - 1)
 
 struct context_t;
 
 int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len);
 
-uint32_t embed_string_code(const union box_t* b);
-
 const unsigned char* unbox_compound(struct context_t* context, const union box_t* b, uint64_t* arity, size_t* flen);
-uint64_t compound_arity(const union box_t* b);
 
 /* Macro magic to declare the builtin string constants */
 #define DECLARE_BUILTIN_STRING(name) BUILTIN_ATOM_##name,
@@ -190,6 +131,9 @@ enum builtin_atoms_t
 #include "builtin_strings.h"
 };
 
-#define BUILTIN_ATOM(name) (BOX_TYPE(prolite_atom) | BOX_HI48(0x4000) | BOX_U32(BUILTIN_ATOM_##name))
+#define BOX_BUILTIN_ATOM(name)        (BOX_TYPE(prolite_atom) | BOX_HI16(0x4000) | BOX_LOW32(BUILTIN_ATOM_##name))
+#define BOX_BUILTIN_COMPOUND(f,a)     (BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | (a)) | BOX_LOW32(BUILTIN_ATOM_##f))
+
+#define UNBOX_IS_TYPE_BUILTIN(v,type) (UNBOX_TYPE(v) == (type) && (UNBOX_MANT_48(v) & (UINT64_C(3) << 46)) == (UINT64_C(1) << 46))
 
 #endif /* BOX_TYPES_H_ */

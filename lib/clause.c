@@ -4,17 +4,28 @@
 
 union box_t* next_value(union box_t* v)
 {
-	if (UNBOX_TYPE(v->m_u64val) == prolite_compound)
+	enum tag_type_t type = UNBOX_TYPE(v->m_u64val);
+	if (type == prolite_compound)
 	{
-		uint64_t arity = compound_arity(v);
-		if (UNBOX_IS_TYPE_EMBED(v->m_u64val,prolite_compound))
+		uint64_t all48 = UNBOX_MANT_48(v->m_u64val);
+		uint64_t arity;
+		unsigned int hi16 = (all48 >> 32);
+		if (hi16 & 0x8000)
+			arity = (hi16 & (MAX_EMBED_ARITY << 11)) >> 11;
+		else if ((hi16 & 0xC000) == 0x4000)
+			arity = (hi16 & MAX_BUILTIN_ARITY);
+		else
+		{
+			arity = all48 & MAX_ARITY;
 			++v;
+		}
 
 		while (arity--)
 			v = next_value(v);
 	}
 	else
 		++v;
+
 	return v;
 }
 
@@ -70,7 +81,7 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 		break;
 
 	default:
-		return throw_type_error(context,BUILTIN_ATOM(callable),head);
+		return throw_type_error(context,BOX_BUILTIN_ATOM(callable),head);
 	}
 
 	/* TODO: Check for static procedure */
@@ -104,7 +115,7 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 
 		case 1:
 			stack_reset(&context->m_exec_stack,stack_base);
-			return throw_type_error(context,BUILTIN_ATOM(callable),body);
+			return throw_type_error(context,BOX_BUILTIN_ATOM(callable),body);
 		}
 	}
 

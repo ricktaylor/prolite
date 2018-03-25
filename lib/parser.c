@@ -1524,7 +1524,10 @@ static struct ast_node_t* parse_number(struct context_t* context, struct parser_
 			return syntax_error(AST_ERR_FLOAT_UNDERFLOW,ast_err);
 
 		node->m_type = AST_TYPE_DOUBLE;
-		node->m_boxed = box_double(dval);
+		if (isnan(dval))
+			node->m_boxed.m_u64val = BOX_EXP_16(0x7FF8);
+		else
+			node->m_boxed.m_dval = dval;
 	}
 	else if (*next_type == tokCharCode)
 	{
@@ -1544,7 +1547,7 @@ static struct ast_node_t* parse_number(struct context_t* context, struct parser_
 		}
 
 		node->m_type = AST_TYPE_INTEGER;
-		node->m_boxed = box_int32(v);
+		node->m_boxed.m_u64val = BOX_TYPE(prolite_int32) | BOX_LOW32(v);
 	}
 	else
 	{
@@ -1576,9 +1579,9 @@ static struct ast_node_t* parse_number(struct context_t* context, struct parser_
 		node->m_type = AST_TYPE_INTEGER;
 
 		if (v == UINT64_C(0x80000000))
-			node->m_boxed = box_int32(INT32_MIN);
+			node->m_boxed.m_u64val = BOX_TYPE(prolite_int32) | BOX_LOW32((uint32_t)INT32_MIN);
 		else
-			node->m_boxed = box_int32(v);
+			node->m_boxed.m_u64val = BOX_TYPE(prolite_int32) | BOX_LOW32((uint32_t)v);
 	}
 
 	*next_type = token_next(context,parser,next);
@@ -1591,12 +1594,12 @@ static struct ast_node_t* parse_negative(struct context_t* context, struct parse
 	if (node)
 	{
 		if (node->m_type == AST_TYPE_DOUBLE)
-			node->m_boxed = box_double(-unbox_double(&node->m_boxed));
+			node->m_boxed.m_dval = -node->m_boxed.m_dval;
 		else
 		{
-			int32_t v = unbox_int32(&node->m_boxed);
+			int32_t v = UNBOX_LOW32(node->m_boxed.m_u64val);
 			if (v > 0)
-				node->m_boxed = box_int32(-v);
+				node->m_boxed.m_u64val = BOX_TYPE(prolite_int32) | BOX_LOW32((uint32_t)(-v));
 		}
 	}
 	return node;
@@ -1816,10 +1819,11 @@ static struct ast_node_t* parse_chars_and_codes(struct context_t* context, int c
 	node->m_type = chars ? AST_TYPE_CHARS : AST_TYPE_CODES;
 	node->m_arity = 0;
 
-	if (!box_string(node->m_type == AST_TYPE_CHARS ? prolite_chars : prolite_charcodes,context,&node->m_boxed,token->m_str,token->m_len))
+	// TODO: Fix char codes
+//	if (!box_string(node->m_type == AST_TYPE_CHARS ? prolite_chars : prolite_charcodes,context,&node->m_boxed,token->m_str,token->m_len))
 		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
-	return node;
+	//return node;
 }
 
 static struct ast_node_t* parse_term_base(struct context_t* context, struct parser_t* parser, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
@@ -2161,13 +2165,20 @@ static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, 
 	enum eEmitStatus status;
 	if (arity <= MAX_EMBED_ARITY && UNBOX_IS_TYPE_EMBED(functor,prolite_atom))
 	{
-		uint64_t len = (functor & ((uint64_t)7 << 40)) << 4;
-		uint64_t val = BOX_TAG_COMPOUND_EMBED | (functor & ~(UINT64_C(0xFFFFFF) << 40)) | len | (arity << 40);
-		status = (stack_push(stack,val) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+		// Convert embed atom to embed compound
+		uint16_t hi16 = UNBOX_HI16(functor);
+		hi16 |= (arity < 11);
+
+		status = (stack_push(stack,BOX_TYPE(prolite_compound) | BOX_HI16(hi16) | UNBOX_LOW32(functor)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+	}
+	else if (arity < MAX_BUILTIN_ARITY && UNBOX_IS_TYPE_BUILTIN(functor,prolite_atom))
+	{
+		// Convert builtin atom to builtin compound
+		status = (stack_push(stack,BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | arity) | UNBOX_LOW32(functor)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 	}
 	else
 	{
-		status = (stack_push(stack,BOX_TAG_COMPOUND | arity) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+		status = (stack_push(stack,BOX_TYPE(prolite_compound) | BOX_MANT_48(arity)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 		if (!status)
 			status = (stack_push(stack,functor) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 	}
@@ -2179,10 +2190,10 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 	enum eEmitStatus status = EMIT_OK;
 
 	if (node->m_type == AST_TYPE_VAR)
-		status = (stack_push(&context->m_exec_stack,BOX_TAG_VAR | node->m_arity) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+		status = (stack_push(&context->m_exec_stack,BOX_TYPE(prolite_var) | BOX_MANT_48(node->m_arity)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 	else if (node->m_type == AST_TYPE_COMPOUND)
 	{
-		status = emit_compound(&context->m_exec_stack,node->m_boxed.m_uval,node->m_arity);
+		status = emit_compound(&context->m_exec_stack,node->m_boxed.m_u64val,node->m_arity);
 		if (!status)
 		{
 			uint64_t i;
@@ -2191,7 +2202,7 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 		}
 	}
 	else
-		status = (stack_push(&context->m_exec_stack,node->m_boxed.m_uval) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+		status = (stack_push(&context->m_exec_stack,node->m_boxed.m_u64val) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 
 	return status;
 }
@@ -2202,9 +2213,9 @@ static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast
 	{
 		enum eEmitStatus status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2);
 		if (!status)
-			status = emit_compound(&context->m_scratch_stack,BUILTIN_ATOM(syntax_error),1);
+			status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(syntax_error),1);
 		if (!status && ast_err < AST_SYNTAX_ERR_INVALID_ARG)
-			status = emit_compound(&context->m_scratch_stack,BUILTIN_ATOM(missing),1);
+			status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(missing),1);
 		if (!status)
 		{
 			/* TODO: line info */
@@ -2218,19 +2229,19 @@ static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast
 	switch (ast_err)
 	{
 	case AST_ERR_FLOAT_OVERFLOW:
-		return (throw_evaluation_error(context,BUILTIN_ATOM(float_overflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_evaluation_error(context,BOX_BUILTIN_ATOM(float_overflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_ERR_FLOAT_UNDERFLOW:
-		return (throw_evaluation_error(context,BUILTIN_ATOM(underflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_evaluation_error(context,BOX_BUILTIN_ATOM(underflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_ERR_MAX_INTEGER:
-		return (throw_representation_error(context,BUILTIN_ATOM(max_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_representation_error(context,BOX_BUILTIN_ATOM(max_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_ERR_MIN_INTEGER:
-		return (throw_representation_error(context,BUILTIN_ATOM(min_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_representation_error(context,BOX_BUILTIN_ATOM(min_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_ERR_MAX_ARITY:
-		return (throw_representation_error(context,BUILTIN_ATOM(max_arity)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_representation_error(context,BOX_BUILTIN_ATOM(max_arity)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE:
 		return (stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_1(')')) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
@@ -2251,19 +2262,19 @@ static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast
 		return (stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_1('`')) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_ARG:
-		return (stack_push(&context->m_scratch_stack,BUILTIN_ATOM(invalid_argument)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(invalid_argument)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
-		return (stack_push(&context->m_scratch_stack,BUILTIN_ATOM(unexpected_token)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(unexpected_token)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_CHAR:
-		return (stack_push(&context->m_scratch_stack,BUILTIN_ATOM(invalid_character)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(invalid_character)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_ESCAPE:
-		return (stack_push(&context->m_scratch_stack,BUILTIN_ATOM(invalid_escape)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(invalid_escape)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_UTF8:
-		return (stack_push(&context->m_scratch_stack,BUILTIN_ATOM(invalid_utf8)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(invalid_utf8)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	default:
 		return EMIT_OUT_OF_MEM;
@@ -2297,9 +2308,9 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		{
 			/* Missing . */
 			union box_t* top = stack_top_ptr(context->m_exec_stack);
-			status = emit_compound(&context->m_scratch_stack,BUILTIN_ATOM(syntax_error),1);
+			status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(syntax_error),1);
 			if (!status)
-				status = emit_compound(&context->m_scratch_stack,BUILTIN_ATOM(missing),1);
+				status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(missing),1);
 			if (!status)
 				status = (stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_1('.')) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 			if (!status)
@@ -2385,67 +2396,50 @@ static int include(struct context_t* context, struct term_t* term);
 /* 'Do' a directive */
 static int directive(struct context_t* context, struct term_t* term)
 {
-	enum tag_type_t type = UNBOX_TYPE(term->m_value->m_u64val);
-	if (type == prolite_var)
-		return throw_instantiation_error(context);
-
-	if (type != prolite_atom && type != prolite_compound)
-		return throw_type_error(context,BUILTIN_ATOM(callable),term->m_value);
-
-	if (term->m_value->m_u64val == BOX_COMPOUND_EMBED_2(3,'o','p'))
+	switch (term->m_value->m_u64val)
 	{
+	case BOX_COMPOUND_EMBED_2(3,'o','p'):
 		++term->m_value;
 		return op_3(context,term);
-	}
 
-	if (type == prolite_compound)
-	{
-		unsigned int arity = UNBOX
-		if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 1))
+	case BOX_BUILTIN_COMPOUND(dynamic,1):
+	case BOX_BUILTIN_COMPOUND(multifile,1):
+	case BOX_BUILTIN_COMPOUND(discontiguous,1):
+		++term->m_value;
+		return clause_directive(context,term);
+
+	case BOX_BUILTIN_COMPOUND(include,1):
+		term->m_value += 2;
+		return include(context,term);
+
+	case BOX_BUILTIN_COMPOUND(ensure_loaded,1):
+		term->m_value += 2;
+		return ensure_loaded(context,term);
+
+	case BOX_BUILTIN_COMPOUND(char_conversion,2):
+		term->m_value += 2;
+		return char_conversion_2(context,term);
+
+	case BOX_BUILTIN_COMPOUND(set_prolog_flag,2):
+		term->m_value += 2;
+		return set_prolog_flag_2(context,term);
+
+	default:
 		{
-			switch (term->m_value[1].m_uval)
-			{
-			case BUILTIN_ATOM(dynamic):
-			case BUILTIN_ATOM(multifile):
-			case BUILTIN_ATOM(discontiguous):
-				++term->m_value;
-				return clause_directive(context,term);
+			enum tag_type_t type = UNBOX_TYPE(term->m_value->m_u64val);
+			if (type == prolite_var)
+				return throw_instantiation_error(context);
 
-			case BUILTIN_ATOM(include):
-				term->m_value += 2;
-				return include(context,term);
-
-			case BUILTIN_ATOM(ensure_loaded):
-				term->m_value += 2;
-				return ensure_loaded(context,term);
-
-			default:
-				break;
-			}
+			if (type != prolite_atom && type != prolite_compound)
+				return throw_type_error(context,BOX_BUILTIN_ATOM(callable),term->m_value);
 		}
-		else if (term->m_value->m_uval == (UINT64_C(0xFFF6) << 48 | 2))
-		{
-			switch (term->m_value[1].m_uval)
-			{
-			case BUILTIN_ATOM(char_conversion):
-				term->m_value += 2;
-				return char_conversion_2(context,term);
-
-			case BUILTIN_ATOM(set_prolog_flag):
-				term->m_value += 2;
-				return set_prolog_flag_2(context,term);
-
-			default:
-				break;
-			}
-		}
+		break;
 	}
 
 	if (context->m_module->m_flags.unknown == 2)
-		return throw_existence_error(context,BUILTIN_ATOM(procedure),term->m_value);
+		return throw_existence_error(context,BOX_BUILTIN_ATOM(procedure),term->m_value);
 
 	/* TODO: Warn? */
-
 	return 0;
 }
 
@@ -2472,8 +2466,7 @@ static int load_file(struct context_t* context, struct stream_t* s)
 			if (term.m_value[0].m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
 			{
 				/* Check now for :- initialization/1 */
-				if (term.m_value[1].m_uval == (UINT64_C(0xFFF6) << 48 | 1) &&
-						term.m_value[2].m_u64val == BUILTIN_ATOM(initialization))
+				if (term.m_value[1].m_u64val == BOX_BUILTIN_COMPOUND(initialization,1))
 				{
 					term.m_value += 3;
 					int err = compile_initializer(context,&term);
@@ -2567,9 +2560,9 @@ int read_term(struct context_t* context, struct stream_t* s, struct term_t* term
 	status = emit_term(context,term,&parser);
 	if (status == EMIT_EOF)
 	{
-		status = emit_compound(&context->m_scratch_stack,BUILTIN_ATOM(syntax_error),1);
+		status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(syntax_error),1);
 		if (!status)
-			status = (stack_push(&context->m_scratch_stack,BUILTIN_ATOM(past_end_of_stream)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+			status = (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(past_end_of_stream)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 	}
 
 	if (status == EMIT_THROW)

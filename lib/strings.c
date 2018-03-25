@@ -39,8 +39,32 @@ static int box_string_builtin(enum tag_type_t type, union box_t* b, const unsign
 	if (!s)
 		return 0;
 
-	b->m_u64val = BOX_TYPE(type) | BOX_HI48(0x4000) | BOX_U32((uint32_t)(s - s_builtin_strings));
+	b->m_u64val = BOX_TYPE(type) | BOX_HI16(0x4000) | BOX_LOW32((uint32_t)(s - s_builtin_strings));
 	return 1;
+}
+
+static void box_pointer(union box_t* b, void* ptr)
+{
+#if UINTPTR_MAX == UINT32_MAX
+	b->m_u64val |= BOX_LOW32((uintptr_t)ptr);
+#elif defined (__x86_64__) || defined(_M_X64) || defined(__aarch64__)
+	b->m_u64val |= BOX_MANT_48(((uintptr_t)ptr >> 3) & UINT64_C(0x1FFFFFFFFFFF));
+#else
+#error No idea what to do with addresses on your architecture!
+#endif
+}
+
+static void* unbox_pointer(const union box_t* b)
+{
+#if UINTPTR_MAX == UINT32_MAX
+	return (void*)(uintptr_t)UNOX_U32(b->m_u64val);
+#elif defined (__x86_64__) || defined(_M_X64) || defined(__aarch64__)
+	/* Sign extend to make an x86_64 canonical address */
+	struct pun { uint64_t u45 : 45; } p;
+	return (void*)((uintptr_t)(p.u45 = UNBOX_MANT_48(b->m_u64val) << 3));
+#else
+#error No idea what to do with addresses on your architecture!
+#endif
 }
 
 static int box_string_ptr(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
@@ -106,7 +130,7 @@ int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, 
 
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len)
 {
-	unsigned int hi48 = UNBOX_HI48(b->m_u64val);
+	unsigned int hi48 = UNBOX_HI16(b->m_u64val);
 	unsigned int mask = hi48 & 0xC000;
 	if (mask == 0)
 	{
@@ -116,7 +140,7 @@ const unsigned char* unbox_string(struct context_t* context, const union box_t* 
 	}
 	else if (mask == 0x4000)
 	{
-		const struct builtin_string_t* s = &s_builtin_strings[UNBOX_U32(b->m_u64val)];
+		const struct builtin_string_t* s = &s_builtin_strings[UNBOX_LOW32(b->m_u64val)];
 		*len = s->m_len;
 		return s->m_str;
 	}
@@ -141,85 +165,4 @@ const unsigned char* unbox_compound(struct context_t* context, const union box_t
 	}
 	*arity = all48 & MAX_ARITY;
 	return unbox_string(context,b+1,flen);
-}
-
-uint64_t compound_arity(const union box_t* b)
-{
-	uint64_t all48 = UNBOX_MANT_48(b->m_u64val);
-	unsigned int hi48 = (all48 >> 32);
-	if (hi48 & 0x8000)
-		return (hi48 & 0x7800) >> 11;
-	return all48 & MAX_ARITY;
-}
-
-uint32_t embed_string_code(const union box_t* b)
-{
-	struct pun
-	{
-		uint32_t u32val;
-		int8_t   c[4];
-	} p;
-	unsigned int len = (UNBOX_HI48(b->m_u64val) & 0x0700) >> 8;
-	unsigned int count = 0;
-	uint32_t val = 0;
-
-	p.u32val = UNBOX_U32(b->m_u64val);
-
-	if (p.c[0] <= 0x7f)
-		return p.c[0];
-
-	if (p.c[0] < 0xC2 || p.c[0] > 0xF4)
-		return -1;
-
-	if ((p.c[0] & 0xE0) == 0xC0)
-	{
-		count = 2;
-		val = (p.c[0] & 0x1F);
-	}
-	else if ((p.c[0] & 0xF0) == 0xE0)
-	{
-		if (len == 1)
-			return -1;
-
-		if ((p.c[0] == 0xE0 && p.c[1] >= 0x80 && p.c[1] <= 0x9F) ||
-			(p.c[0] == 0xED && p.c[1] >= 0xA0 && p.c[1] <= 0xBF))
-		{
-			return -1;
-		}
-
-		count = 3;
-		val = (p.c[0] & 0x0F);
-	}
-	else if ((p.c[0] & 0xF8) == 0xF0)
-	{
-		if (len == 1)
-			return -1;
-
-		if ((p.c[0] == 0xF0 && p.c[1] >= 0x80 && p.c[1] <= 0x8F) ||
-			(p.c[0] == 0xF4 && p.c[1] >= 0x90 && p.c[1] <= 0xBF))
-		{
-			return -1;
-		}
-
-		count = 4;
-		val = (p.c[0] & 0x7);
-	}
-	else
-		return -1;
-
-	if (len != count)
-		return -1;
-	else
-	{
-		unsigned int i;
-		for (i=1;i<count;++i)
-		{
-			if ((p.c[i] & 0xC0) != 0x80)
-				return -1;
-
-			val = (val << 6) | (p.c[i] & 0x3F);
-		}
-	}
-
-	return val;
 }

@@ -15,6 +15,82 @@ uint32_t convert_char(struct context_t* context, uint32_t in_char)
 	return in_char;
 }
 
+static uint32_t atom_to_code(const union box_t* b)
+{
+	uint16_t hi16 = UNBOX_HI16(b->m_u64val);
+	uint32_t lo32 = UNBOX_LOW32(b->m_u64val);
+	unsigned int len = (hi16 & 0x0700) >> 8;
+
+	uint8_t c[4];
+
+	unsigned int count = 0;
+	uint32_t val = 0;
+
+	c[0] = (hi16 & 0xFF);
+	c[1] = (lo32 >> 24);
+	c[2] = (lo32 >> 16);
+	c[3] = (lo32 >> 8);
+	c[4] = lo32;
+
+	if (c[0] <= 0x7f)
+		return len == 1 ? c[0] : -1;
+
+	if (c[0] < 0xC2 || c[0] > 0xF4)
+		return -1;
+
+	if ((c[0] & 0xE0) == 0xC0)
+	{
+		count = 2;
+		val = (c[0] & 0x1F);
+	}
+	else if ((c[0] & 0xF0) == 0xE0)
+	{
+		if (len == 1)
+			return -1;
+
+		if ((c[0] == 0xE0 && c[1] >= 0x80 && c[1] <= 0x9F) ||
+			(c[0] == 0xED && c[1] >= 0xA0 && c[1] <= 0xBF))
+		{
+			return -1;
+		}
+
+		count = 3;
+		val = (c[0] & 0x0F);
+	}
+	else if ((c[0] & 0xF8) == 0xF0)
+	{
+		if (len == 1)
+			return -1;
+
+		if ((c[0] == 0xF0 && c[1] >= 0x80 && c[1] <= 0x8F) ||
+			(c[0] == 0xF4 && c[1] >= 0x90 && c[1] <= 0xBF))
+		{
+			return -1;
+		}
+
+		count = 4;
+		val = (c[0] & 0x7);
+	}
+	else
+		return -1;
+
+	if (len != count)
+		return -1;
+	else
+	{
+		unsigned int i;
+		for (i=1;i<count;++i)
+		{
+			if ((c[i] & 0xC0) != 0x80)
+				return -1;
+
+			val = (val << 6) | (c[i] & 0x3F);
+		}
+	}
+
+	return val;
+}
+
 int char_conversion_2(struct context_t* context, struct term_t* term)
 {
 	uint32_t in_char = -1;
@@ -25,20 +101,20 @@ int char_conversion_2(struct context_t* context, struct term_t* term)
 	if (type == prolite_var)
 		return throw_instantiation_error(context);
 
-	if (type != prolite_atom ||
-		(in_char = embed_string_code(&term->m_value[0])) == -1)
+	if (!UNBOX_IS_TYPE_EMBED(term->m_value[0].m_u64val,prolite_atom) ||
+		(in_char = atom_to_code(&term->m_value[0])) == -1)
 	{
-		return throw_representation_error(context,BUILTIN_ATOM(character));
+		return throw_representation_error(context,BOX_BUILTIN_ATOM(character));
 	}
 
 	type = UNBOX_TYPE(term->m_value[1].m_u64val);
 	if (type == prolite_var)
 		return throw_instantiation_error(context);
 
-	if (type != prolite_atom ||
-		(out_char = embed_string_code(&term->m_value[1])) == -1)
+	if (!UNBOX_IS_TYPE_EMBED(term->m_value[1].m_u64val,prolite_atom) ||
+		(out_char = atom_to_code(&term->m_value[1])) == -1)
 	{
-		return throw_representation_error(context,BUILTIN_ATOM(character));
+		return throw_representation_error(context,BOX_BUILTIN_ATOM(character));
 	}
 
 	if (in_char == out_char)
@@ -88,11 +164,11 @@ int op_3(struct context_t* context, struct term_t* term)
 		return throw_instantiation_error(context);
 
 	if (type != prolite_int32)
-		return throw_type_error(context,BUILTIN_ATOM(integer),&term->m_value[0]);
+		return throw_type_error(context,BOX_BUILTIN_ATOM(integer),&term->m_value[0]);
 
-	priority = unbox_int32(&term->m_value[0]);
+	priority = UNBOX_LOW32(term->m_value[0].m_u64val);
 	if (priority < 0 || priority > 1200)
-		return throw_domain_error(context,BUILTIN_ATOM(operator_priority),&term->m_value[0]);
+		return throw_domain_error(context,BOX_BUILTIN_ATOM(operator_priority),&term->m_value[0]);
 
 	type = UNBOX_TYPE(term->m_value[1].m_u64val);
 	if (type == prolite_var)
@@ -125,7 +201,7 @@ int op_3(struct context_t* context, struct term_t* term)
 		op_spec = eYF;
 		break;
 	default:
-		return throw_domain_error(context,BUILTIN_ATOM(operator_specifier),&term->m_value[1]);
+		return throw_domain_error(context,BOX_BUILTIN_ATOM(operator_specifier),&term->m_value[1]);
 	}
 
 	type = UNBOX_TYPE(term->m_value[2].m_u64val);
