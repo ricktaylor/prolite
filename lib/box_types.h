@@ -53,31 +53,6 @@
  */
 
 #include <stdint.h>
-#include <math.h>
-
-#if defined(_MSC_VER)
-#define inline __inline
-#endif
-
-union box_t
-{
-	double   m_dval;
-	uint64_t m_u64val;
-};
-
-enum tag_type_t
-{
-	prolite_double = 0,
-	prolite_int32 = 1,
-	prolite_atom = 2,
-	prolite_compound = 3,
-	prolite_var = 4,
-
-	//prolite_chars = 6,
-	//prolite_charcodes = 7,
-
-	// DO NOT USE 8! (Negative NaN)
-};
 
 #if defined(__aarch64__) || defined(__arm__)
 #define BOX_EXP_16(v)    ((UINT64_C(0xFFFF) & (v)) << 24)
@@ -118,13 +93,6 @@ enum tag_type_t
 #define MAX_EMBED_ARITY   0xF
 #define MAX_BUILTIN_ARITY 0x3FFF
 #define MAX_ARITY         ((UINT64_C(1) << 47) - 1)
-
-struct context_t;
-
-int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
-const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len);
-
-const unsigned char* unbox_compound(struct context_t* context, const union box_t* b, uint64_t* arity, size_t* flen);
 
 /* Macro magic to declare the builtin string constants */
 #define DECLARE_BUILTIN_STRING(name) BUILTIN_ATOM_##name,

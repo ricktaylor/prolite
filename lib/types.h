@@ -11,7 +11,29 @@
 #include "stack.h"
 #include "box_types.h"
 
-union box_t* next_value(union box_t* v);
+#if defined(_MSC_VER)
+#define inline __inline
+#endif
+
+union box_t
+{
+	double   m_dval;
+	uint64_t m_u64val;
+};
+
+enum tag_type_t
+{
+	prolite_double = 0,
+	prolite_int32 = 1,
+	prolite_atom = 2,
+	prolite_compound = 3,
+	prolite_var = 4,
+
+	//prolite_chars = 6,
+	//prolite_charcodes = 7,
+
+	// DO NOT USE 8! (Negative NaN)
+};
 
 struct var_t
 {
@@ -106,6 +128,7 @@ struct procedure_t
 
 struct procedure_table_t
 {
+	// TODO!
 	int fast_hash_table;
 
 	size_t m_procedure_count;
@@ -122,6 +145,9 @@ enum eSolveResult
 	SOLVE_HALT
 };
 
-typedef enum eSolveResult(*solve_fn_t)(struct context_t*);
+typedef enum eSolveResult (*solve_fn_t)(struct context_t*);
+
+union box_t* next_value(union box_t* v);
+int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
 
 #endif /* TYPES_H_ */

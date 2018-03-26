@@ -5,6 +5,7 @@
 
 #include <string.h>
 #include <errno.h>
+#include <math.h>
 #include <assert.h>
 
 enum eTokenType
