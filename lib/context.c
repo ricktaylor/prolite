@@ -45,9 +45,6 @@ static uint32_t atom_to_code(const union box_t* b)
 	}
 	else if ((c[0] & 0xF0) == 0xE0)
 	{
-		if (len == 1)
-			return -1;
-
 		if ((c[0] == 0xE0 && c[1] >= 0x80 && c[1] <= 0x9F) ||
 			(c[0] == 0xED && c[1] >= 0xA0 && c[1] <= 0xBF))
 		{
@@ -59,9 +56,6 @@ static uint32_t atom_to_code(const union box_t* b)
 	}
 	else if ((c[0] & 0xF8) == 0xF0)
 	{
-		if (len == 1)
-			return -1;
-
 		if ((c[0] == 0xF0 && c[1] >= 0x80 && c[1] <= 0x8F) ||
 			(c[0] == 0xF4 && c[1] >= 0x90 && c[1] <= 0xBF))
 		{
