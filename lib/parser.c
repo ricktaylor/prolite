@@ -2167,7 +2167,7 @@ static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, 
 	{
 		// Convert embed atom to embed compound
 		uint16_t hi16 = UNBOX_HI16(functor);
-		hi16 |= (arity < 11);
+		hi16 |= (arity << 11);
 
 		status = (stack_push(stack,BOX_TYPE(prolite_compound) | BOX_HI16(hi16) | UNBOX_LOW32(functor)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 	}

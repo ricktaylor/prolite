@@ -8,7 +8,7 @@
 #ifndef BOX_TYPES_H_
 #define BOX_TYPES_H_
 
-// Lifted straight out of duktape/duk_dblunion.h
+// Explanation lifted straight out of duktape/duk_dblunion.h
 /*
  *  Union to access IEEE double memory representation, indexes for double
  *  memory representation, and some macros for double manipulation.
@@ -35,9 +35,9 @@
  *
  *  At least three memory layouts are relevant here:
  *
- *    A B C D E F G H    Big endian (e.g. 68k)           DUK_USE_DOUBLE_BE
- *    H G F E D C B A    Little endian (e.g. x86)        DUK_USE_DOUBLE_LE
- *    D C B A H G F E    Mixed/cross endian (e.g. ARM)   DUK_USE_DOUBLE_ME
+ *    A B C D E F G H    Big endian (e.g. 68k)
+ *    H G F E D C B A    Little endian (e.g. x86)
+ *    D C B A H G F E    Mixed/cross endian (e.g. ARM)
  *
  *  ARM is a special case: ARM double values are in mixed/cross endian
  *  format while ARM uint64_t values are in standard little endian
@@ -75,6 +75,8 @@ enum tag_type_t
 
 	//prolite_chars = 6,
 	//prolite_charcodes = 7,
+
+	// DO NOT USE 8! (Negative NaN)
 };
 
 #if defined(__aarch64__) || defined(__arm__)
@@ -84,22 +86,22 @@ enum tag_type_t
 #define UNBOX_MANT_48(v) (((v) & (UINT64_C(0xFFFF) << 32) | (((v) & (UINT64_C(0xFFFFFFFF) << 32)) >> 32))
 #else
 #define BOX_EXP_16(v)    ((UINT64_C(0xFFFF) & (v)) << 48)
-#define UNBOX_EXP_16(v)  ((v) & (UINT64_C(0xFFFF) << 48) >> 48)
+#define UNBOX_EXP_16(v)  ((uint64_t)(v) >> 48)
 #define BOX_MANT_48(v)   ((v) & ~(UINT64_C(0xFFFF) << 48))
 #define UNBOX_MANT_48(v) BOX_MANT_48(v)
 #endif
 
-#define BOX_TYPE(type)   BOX_EXP_16(UINT64_C(0x7FF0) | (((type) & 8) << 11) | ((type) & 7))
-#define UNBOX_TYPE(v)    ((UNBOX_EXP_16(v) & UINT64_C(0x8000) >> 12) | (UNBOX_EXP_16(v) & UINT64_C(0x7)))
+#define BOX_TYPE(type)   BOX_EXP_16(UINT64_C(0x7FF0) | (((type) & 8) << 12) | ((type) & 7))
+#define UNBOX_TYPE(v)    (((UNBOX_EXP_16(v) & UINT64_C(0x8000)) >> 12) | (UNBOX_EXP_16(v) & UINT64_C(0x7)))
 
 #define BOX_HI16(u16)    BOX_MANT_48((UINT64_C(0xFFFF) & (u16)) << 32)
-#define UNBOX_HI16(v)    ((UNBOX_MANT_48(v) & (UINT64_C(0xFFFF) << 16)) >> 32)
+#define UNBOX_HI16(v)    (UNBOX_MANT_48(v) >> 32)
 
 #define BOX_LOW32(u32)   BOX_MANT_48(UINT64_C(0xFFFFFFFF) & (u32))
 #define UNBOX_LOW32(v)   (UNBOX_MANT_48(v) & UINT64_C(0xFFFFFFFF))
 
-#define BOX_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (BOX_TYPE(type) | BOX_MANT_48((UINT64_C(1) << 47) | (((flags) & UINT64_C(0xF)) << 43) | (((count) & UINT64_C(7)) << 40) | ((uint64_t)(a) << 32) | ((uint64_t)(b) << 24) | ((uint64_t)(c) << 16) | ((uint64_t)(d) << 8) | (uint64_t)(e)))
-#define UNBOX_IS_TYPE_EMBED(v,type)                 (UNBOX_TYPE(v) == (type) && (UNBOX_MANT_48(v) & (UINT64_C(1) << 47)))
+#define BOX_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (BOX_TYPE(type) | BOX_HI16(0x8000 | (((flags) & 0xF) << 11) | (((count) & 7) << 8) | (a)) | BOX_LOW32(((b) << 24) | ((c) << 16) | ((d) << 8) | (e)))
+#define UNBOX_IS_TYPE_EMBED(v,type)                 (UNBOX_TYPE(v) == (type) && (UNBOX_HI16(v) & 0x8000))
 
 #define BOX_ATOM_EMBED_1(c)              BOX_TYPE_EMBED(prolite_atom,0,1,c,0,0,0,0)
 #define BOX_ATOM_EMBED_2(c1,c2)          BOX_TYPE_EMBED(prolite_atom,0,2,c1,c2,0,0,0)
@@ -134,6 +136,6 @@ enum builtin_atoms_t
 #define BOX_BUILTIN_ATOM(name)        (BOX_TYPE(prolite_atom) | BOX_HI16(0x4000) | BOX_LOW32(BUILTIN_ATOM_##name))
 #define BOX_BUILTIN_COMPOUND(f,a)     (BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | (a)) | BOX_LOW32(BUILTIN_ATOM_##f))
 
-#define UNBOX_IS_TYPE_BUILTIN(v,type) (UNBOX_TYPE(v) == (type) && (UNBOX_MANT_48(v) & (UINT64_C(3) << 46)) == (UINT64_C(1) << 46))
+#define UNBOX_IS_TYPE_BUILTIN(v,type) (UNBOX_TYPE(v) == (type) && (UNBOX_HI16(v) & 0xc000) == 0x4000)
 
 #endif /* BOX_TYPES_H_ */

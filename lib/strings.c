@@ -18,31 +18,6 @@ const struct builtin_string_t s_builtin_strings[] =
 #include "builtin_strings.h"
 };
 
-static int builtin_string_compare(const void* p1, const void* p2)
-{
-	const struct builtin_string_t* s1 = p1;
-	const struct builtin_string_t* s2 = p2;
-
-	if (s1->m_len != s2->m_len)
-		return s1->m_len - s2->m_len;
-
-	return memcmp(s1->m_str,s2->m_str,s1->m_len);
-}
-
-static int box_string_builtin(enum tag_type_t type, union box_t* b, const unsigned char* str, size_t len)
-{
-	struct builtin_string_t f, *s;
-	f.m_len = len;
-	f.m_str = str;
-
-	s = bsearch(&f,s_builtin_strings,sizeof(s_builtin_strings) / sizeof(s_builtin_strings[0]),sizeof(s_builtin_strings),&builtin_string_compare);
-	if (!s)
-		return 0;
-
-	b->m_u64val = BOX_TYPE(type) | BOX_HI16(0x4000) | BOX_LOW32((uint32_t)(s - s_builtin_strings));
-	return 1;
-}
-
 static void box_pointer(union box_t* b, void* ptr)
 {
 #if UINTPTR_MAX == UINT32_MAX
@@ -67,65 +42,62 @@ static void* unbox_pointer(const union box_t* b)
 #endif
 }
 
-static int box_string_ptr(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
+static int builtin_string_compare(const void* p1, const void* p2)
 {
-	// TODO: THIS WHOLE THING LOOKS DODGY!!
+	const struct builtin_string_t* s1 = p1;
+	const struct builtin_string_t* s2 = p2;
 
-	struct string_ptr_t* s;
-	for (s = context->m_strings; s; s = s->m_prev)
-	{
-		if (s->m_len == len && memcmp(s->m_str,str,len) == 0)
-		{
-			b->m_u64val = BOX_TYPE(type);
-			box_pointer(b,s);
-			return 1;
-		}
-	}
+	if (s1->m_len != s2->m_len)
+		return s1->m_len - s2->m_len;
 
-	if (box_string_builtin(type,b,str,len))
-		return 1;
-
-	s = stack_malloc(&context->m_exec_stack,sizeof(struct string_ptr_t) + len);
-	if (!s)
-		return 0;
-
-	s->m_prev = context->m_strings;
-	s->m_len = len;
-	memcpy(s->m_str,str,len);
-	context->m_strings = s;
-
-	return 1;
-}
-
-static int box_string_embed(enum tag_type_t type, union box_t* b, const unsigned char* str, size_t len)
-{
-	uint64_t c[5] = {0};
-	if (len > 0)
-		c[4] = *str++;
-
-	if (len > 1)
-		c[3] = *str++;
-
-	if (len > 2)
-		c[2] = *str++;
-
-	if (len > 3)
-		c[1] = *str++;
-
-	if (len > 4)
-		c[0] = *str++;
-
-	b->m_u64val = BOX_TYPE_EMBED(prolite_atom,0,len,c[4],c[3],c[2],c[1],c[0]);
-
-	return 1;
+	return memcmp(s1->m_str,s2->m_str,s1->m_len);
 }
 
 int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
 {
-	if (len > 5)
-		return box_string_ptr(type,context,b,str,len);
+	if (len <= 5)
+	{
+		uint8_t c[5] = {0};
+		memcpy(c,str,len);
+		b->m_u64val = BOX_TYPE_EMBED(type,0,len,c[4],c[3],c[2],c[1],c[0]);
+	}
+	else
+	{
+		struct builtin_string_t f, *r;
+		f.m_len = len;
+		f.m_str = str;
 
-	return box_string_embed(type,b,str,len);
+		r = bsearch(&f,s_builtin_strings,sizeof(s_builtin_strings) / sizeof(s_builtin_strings[0]),sizeof(s_builtin_strings),&builtin_string_compare);
+		if (r)
+			b->m_u64val = BOX_TYPE(type) | BOX_HI16(0x4000) | BOX_LOW32((uint32_t)(r - s_builtin_strings));
+		else
+		{
+			struct string_ptr_t* s;
+			for (s = context->m_strings; s; s = s->m_prev)
+			{
+				if (s->m_len == len && memcmp(s->m_str,str,len) == 0)
+					break;
+			}
+
+			if (!s)
+			{
+				s = stack_malloc(&context->m_exec_stack,sizeof(struct string_ptr_t) + len);
+				if (!s)
+					return 0;
+
+				s->m_prev = context->m_strings;
+				s->m_len = len;
+				memcpy(s->m_str,str,len);
+				context->m_strings = s;
+			}
+
+			// TODO: Do something smarter here by using 46-bit stack offsets
+			b->m_u64val = BOX_TYPE(type);
+			box_pointer(b,s);
+		}
+	}
+
+	return 1;
 }
 
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len)
