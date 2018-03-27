@@ -90,8 +90,8 @@
 #define BOX_COMPOUND_EMBED_4(a,c1,c2,c3,c4)    BOX_TYPE_EMBED(prolite_compound,a,4,c1,c2,c3,c4,0)
 #define BOX_COMPOUND_EMBED_5(a,c1,c2,c3,c4,c5) BOX_TYPE_EMBED(prolite_compound,a,5,c1,c2,c3,c4,c5)
 
-#define MAX_EMBED_ARITY   0xF
-#define MAX_BUILTIN_ARITY 0x3FFF
+#define MAX_ARITY_EMBED   0xF
+#define MAX_ARITY_BUILTIN 0x3FFF
 #define MAX_ARITY         ((UINT64_C(1) << 47) - 1)
 
 /* Macro magic to declare the builtin string constants */
@@ -101,8 +101,8 @@ enum builtin_atoms_t
 #include "builtin_strings.h"
 };
 
-#define BOX_BUILTIN_ATOM(name)        (BOX_TYPE(prolite_atom) | BOX_HI16(0x4000) | BOX_LOW32(BUILTIN_ATOM_##name))
-#define BOX_BUILTIN_COMPOUND(f,a)     (BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | (a)) | BOX_LOW32(BUILTIN_ATOM_##f))
+#define BOX_ATOM_BUILTIN(name)        (BOX_TYPE(prolite_atom) | BOX_HI16(0x4000) | BOX_LOW32(BUILTIN_ATOM_##name))
+#define BOX_COMPOUND_BUILTIN(f,a)     (BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | (a)) | BOX_LOW32(BUILTIN_ATOM_##f))
 
 #define UNBOX_IS_TYPE_BUILTIN(v,type) (UNBOX_TYPE(v) == (type) && (UNBOX_HI16(v) & 0xc000) == 0x4000)
 

@@ -2164,7 +2164,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_t arity)
 {
 	enum eEmitStatus status;
-	if (arity <= MAX_EMBED_ARITY && UNBOX_IS_TYPE_EMBED(functor,prolite_atom))
+	if (arity <= MAX_ARITY_EMBED && UNBOX_IS_TYPE_EMBED(functor,prolite_atom))
 	{
 		// Convert embed atom to embed compound
 		uint16_t hi16 = UNBOX_HI16(functor);
@@ -2172,7 +2172,7 @@ static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, 
 
 		status = (stack_push(stack,BOX_TYPE(prolite_compound) | BOX_HI16(hi16) | UNBOX_LOW32(functor)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
 	}
-	else if (arity < MAX_BUILTIN_ARITY && UNBOX_IS_TYPE_BUILTIN(functor,prolite_atom))
+	else if (arity < MAX_ARITY_BUILTIN && UNBOX_IS_TYPE_BUILTIN(functor,prolite_atom))
 	{
 		// Convert builtin atom to builtin compound
 		status = (stack_push(stack,BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | arity) | UNBOX_LOW32(functor)) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
@@ -2214,9 +2214,9 @@ static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast
 	{
 		enum eEmitStatus status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2);
 		if (!status)
-			status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(syntax_error),1);
+			status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1);
 		if (!status && ast_err < AST_SYNTAX_ERR_INVALID_ARG)
-			status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(missing),1);
+			status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(missing),1);
 		if (!status)
 		{
 			/* TODO: line info */
@@ -2230,19 +2230,19 @@ static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast
 	switch (ast_err)
 	{
 	case AST_ERR_FLOAT_OVERFLOW:
-		return (throw_evaluation_error(context,BOX_BUILTIN_ATOM(float_overflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_evaluation_error(context,BOX_ATOM_BUILTIN(float_overflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_ERR_FLOAT_UNDERFLOW:
-		return (throw_evaluation_error(context,BOX_BUILTIN_ATOM(underflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_evaluation_error(context,BOX_ATOM_BUILTIN(underflow)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_ERR_MAX_INTEGER:
-		return (throw_representation_error(context,BOX_BUILTIN_ATOM(max_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_representation_error(context,BOX_ATOM_BUILTIN(max_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_ERR_MIN_INTEGER:
-		return (throw_representation_error(context,BOX_BUILTIN_ATOM(min_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_representation_error(context,BOX_ATOM_BUILTIN(min_integer)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_ERR_MAX_ARITY:
-		return (throw_representation_error(context,BOX_BUILTIN_ATOM(max_arity)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (throw_representation_error(context,BOX_ATOM_BUILTIN(max_arity)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE:
 		return (stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_1(')')) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
@@ -2263,19 +2263,19 @@ static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast
 		return (stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_1('`')) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_ARG:
-		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(invalid_argument)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_ATOM_BUILTIN(invalid_argument)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
-		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(unexpected_token)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_ATOM_BUILTIN(unexpected_token)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_CHAR:
-		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(invalid_character)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_ATOM_BUILTIN(invalid_character)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_ESCAPE:
-		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(invalid_escape)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_ATOM_BUILTIN(invalid_escape)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_UTF8:
-		return (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(invalid_utf8)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+		return (stack_push(&context->m_scratch_stack,BOX_ATOM_BUILTIN(invalid_utf8)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 
 	default:
 		return EMIT_OUT_OF_MEM;
@@ -2308,26 +2308,26 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		if (node)
 		{
 			/* Missing . */
-			union box_t* top = stack_top_ptr(context->m_exec_stack);
-			status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(syntax_error),1);
+			union box_t* new_val = stack_end_ptr(context->m_exec_stack);
+			status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1);
 			if (!status)
-				status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(missing),1);
+				status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(missing),1);
 			if (!status)
 				status = (stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_1('.')) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 			if (!status)
 			{
 				term->m_vars = NULL;
-				term->m_value = top+1;
+				term->m_value = new_val;
 			}
 		}
 		else if (next_type != tokEOF)
 		{
-			union box_t* top = stack_top_ptr(context->m_exec_stack);
+			union box_t* new_val = stack_end_ptr(context->m_exec_stack);
 			status = emit_error(context,ast_err,parser);
 			if (!status)
 			{
 				term->m_vars = NULL;
-				term->m_value = top+1;
+				term->m_value = new_val;
 			}
 		}
 		else
@@ -2344,10 +2344,10 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		status = emit_node_vars(context,&term->m_vars,node);
 		if (!status)
 		{
-			union box_t* top = stack_top_ptr(context->m_exec_stack);
+			union box_t* new_val = stack_end_ptr(context->m_exec_stack);
 			status = emit_node_value(context,node);
 			if (!status)
-				term->m_value = top+1;
+				term->m_value = new_val;
 		}
 	}
 
@@ -2403,25 +2403,25 @@ static int directive(struct context_t* context, struct term_t* term)
 		++term->m_value;
 		return op_3(context,term);
 
-	case BOX_BUILTIN_COMPOUND(dynamic,1):
-	case BOX_BUILTIN_COMPOUND(multifile,1):
-	case BOX_BUILTIN_COMPOUND(discontiguous,1):
+	case BOX_COMPOUND_BUILTIN(dynamic,1):
+	case BOX_COMPOUND_BUILTIN(multifile,1):
+	case BOX_COMPOUND_BUILTIN(discontiguous,1):
 		++term->m_value;
 		return clause_directive(context,term);
 
-	case BOX_BUILTIN_COMPOUND(include,1):
+	case BOX_COMPOUND_BUILTIN(include,1):
 		term->m_value += 2;
 		return include(context,term);
 
-	case BOX_BUILTIN_COMPOUND(ensure_loaded,1):
+	case BOX_COMPOUND_BUILTIN(ensure_loaded,1):
 		term->m_value += 2;
 		return ensure_loaded(context,term);
 
-	case BOX_BUILTIN_COMPOUND(char_conversion,2):
+	case BOX_COMPOUND_BUILTIN(char_conversion,2):
 		term->m_value += 2;
 		return char_conversion_2(context,term);
 
-	case BOX_BUILTIN_COMPOUND(set_prolog_flag,2):
+	case BOX_COMPOUND_BUILTIN(set_prolog_flag,2):
 		term->m_value += 2;
 		return set_prolog_flag_2(context,term);
 
@@ -2432,13 +2432,13 @@ static int directive(struct context_t* context, struct term_t* term)
 				return throw_instantiation_error(context);
 
 			if (type != prolite_atom && type != prolite_compound)
-				return throw_type_error(context,BOX_BUILTIN_ATOM(callable),term->m_value);
+				return throw_type_error(context,BOX_ATOM_BUILTIN(callable),term->m_value);
 		}
 		break;
 	}
 
 	if (context->m_module->m_flags.unknown == 2)
-		return throw_existence_error(context,BOX_BUILTIN_ATOM(procedure),term->m_value);
+		return throw_existence_error(context,BOX_ATOM_BUILTIN(procedure),term->m_value);
 
 	/* TODO: Warn? */
 	return 0;
@@ -2467,7 +2467,7 @@ static int load_file(struct context_t* context, struct stream_t* s)
 			if (term.m_value[0].m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
 			{
 				/* Check now for :- initialization/1 */
-				if (term.m_value[1].m_u64val == BOX_BUILTIN_COMPOUND(initialization,1))
+				if (term.m_value[1].m_u64val == BOX_COMPOUND_BUILTIN(initialization,1))
 				{
 					term.m_value += 3;
 					int err = compile_initializer(context,&term);
@@ -2561,9 +2561,9 @@ int read_term(struct context_t* context, struct stream_t* s, struct term_t* term
 	status = emit_term(context,term,&parser);
 	if (status == EMIT_EOF)
 	{
-		status = emit_compound(&context->m_scratch_stack,BOX_BUILTIN_ATOM(syntax_error),1);
+		status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1);
 		if (!status)
-			status = (stack_push(&context->m_scratch_stack,BOX_BUILTIN_ATOM(past_end_of_stream)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+			status = (stack_push(&context->m_scratch_stack,BOX_ATOM_BUILTIN(past_end_of_stream)) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
 	}
 
 	if (status == EMIT_THROW)

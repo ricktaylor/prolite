@@ -11,9 +11,9 @@ union box_t* next_value(union box_t* v)
 		uint64_t arity;
 		unsigned int hi16 = (all48 >> 32);
 		if (hi16 & 0x8000)
-			arity = (hi16 & (MAX_EMBED_ARITY << 11)) >> 11;
+			arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
 		else if ((hi16 & 0xC000) == 0x4000)
-			arity = (hi16 & MAX_BUILTIN_ARITY);
+			arity = (hi16 & MAX_ARITY_BUILTIN);
 		else
 		{
 			arity = all48 & MAX_ARITY;
@@ -81,7 +81,7 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 		break;
 
 	default:
-		return throw_type_error(context,BOX_BUILTIN_ATOM(callable),head);
+		return throw_type_error(context,BOX_ATOM_BUILTIN(callable),head);
 	}
 
 	/* TODO: Check for static procedure */
@@ -115,7 +115,7 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 
 		case 1:
 			stack_reset(&context->m_exec_stack,stack_base);
-			return throw_type_error(context,BOX_BUILTIN_ATOM(callable),body);
+			return throw_type_error(context,BOX_ATOM_BUILTIN(callable),body);
 		}
 	}
 

@@ -21,17 +21,19 @@ static int copy_term(struct context_t* context, struct term_t* src, struct term_
 
 static void clear_vars(struct var_info_t* vars)
 {
+	assert(0);
+}
 
+static void reset_context(struct context_t* context, size_t pos)
+{
+	stack_reset(&context->m_exec_stack,pos);
 }
 
 static inline int stack_push_term(struct context_t* context, const struct term_t* t)
 {
-	if (stack_push_ptr(&context->m_exec_stack,t->m_vars) == -1)
-		return -1;
-
-	if (stack_push_ptr(&context->m_exec_stack,t->m_value) == -1)
+	if (stack_push_ptr(&context->m_exec_stack,t->m_vars) == -1 ||
+		stack_push_ptr(&context->m_exec_stack,t->m_value) == -1)
 	{
-		stack_pop_ptr(&context->m_exec_stack);
 		return -1;
 	}
 
@@ -127,8 +129,8 @@ redo:
 			}
 		}
 
-		if (result != SOLVE_TRUE && result != SOLVE_THROW && result != SOLVE_HALT)
-			stack_reset(&context->m_exec_stack,stack_base);
+		if (result > SOLVE_TRUE)
+			reset_context(context,stack_base);
 	}
 
 	return result;
@@ -163,8 +165,8 @@ static enum eSolveResult redo_or(struct context_t* context)
 		else
 		{
 			result = solve_goal(context,&new_or_goal);
-			if (result != SOLVE_TRUE && result != SOLVE_THROW && result != SOLVE_HALT)
-				stack_reset(&context->m_exec_stack,stack_base);
+			if (result > SOLVE_TRUE)
+				reset_context(context,stack_base);
 		}
 	}
 
@@ -196,8 +198,8 @@ static enum eSolveResult solve_or(struct context_t* context, struct term_t* orig
 		}
 		else
 		{
-			if (result != SOLVE_THROW && result != SOLVE_HALT)
-				stack_reset(&context->m_exec_stack,stack_base);
+			if (result > SOLVE_TRUE)
+				reset_context(context,stack_base);
 
 			if (result == SOLVE_FAIL)
 			{
@@ -209,8 +211,8 @@ static enum eSolveResult solve_or(struct context_t* context, struct term_t* orig
 				{
 					result = solve_goal(context,&or_goal);
 
-					if (result != SOLVE_TRUE && result != SOLVE_THROW && result != SOLVE_HALT)
-						stack_reset(&context->m_exec_stack,stack_base);
+					if (result > SOLVE_TRUE)
+						reset_context(context,stack_base);
 				}
 			}
 		}
@@ -240,7 +242,6 @@ static enum eSolveResult redo_call(struct context_t* context)
 	/* Redo solve_goal() */
 	fn = stack_pop_ptr(&context->m_exec_stack);
 	result = (*fn)(context);
-
 	if (result == SOLVE_TRUE)
 	{
 		if (stack_push_ptr(&context->m_exec_stack,&redo_call) == -1)
@@ -271,58 +272,202 @@ static enum eSolveResult solve_call(struct context_t* context, struct term_t* or
 		else if (result == SOLVE_CUT)
 			result = SOLVE_FAIL;
 
-		if (result != SOLVE_TRUE && result != SOLVE_THROW && result != SOLVE_HALT)
-			stack_reset(&context->m_exec_stack,stack_base);
+		if (result > SOLVE_TRUE)
+			reset_context(context,stack_base);
 	}
 
 	return result;
 }
 
-static enum eSolveResult redo_true(struct context_t* context)
+static enum eSolveResult solve_if_then_else(struct context_t* context, struct term_t* orig_goal)
+{
+	// TODO
+	assert(0);
+}
+
+static enum eSolveResult solve_if_then(struct context_t* context, struct term_t* orig_goal)
+{
+	// TODO
+	assert(0);
+}
+
+static enum eSolveResult redo_throw(struct context_t* context)
+{
+	if (stack_push_ptr(&context->m_exec_stack,&redo_throw) == -1)
+		return SOLVE_NOMEM;
+
+	return SOLVE_THROW;
+}
+
+static enum eSolveResult solve_throw(struct context_t* context, struct term_t* orig_goal)
+{
+	if (stack_push_term(context,orig_goal) == -1 ||
+		stack_push_ptr(&context->m_exec_stack,&redo_throw) == -1)
+	{
+		return SOLVE_NOMEM;
+	}
+
+	return SOLVE_THROW;
+}
+
+static enum eSolveResult do_catch(enum eSolveResult result, struct context_t* context, struct term_t* catcher, struct term_t* recovery, size_t stack_base)
+{
+	if (result == SOLVE_NOMEM || result == SOLVE_THROW)
+	{
+		struct term_t ball = {0};
+		if (result == SOLVE_THROW)
+		{
+			// Pop the redo guard and the ball
+			stack_pop_ptr(&context->m_exec_stack);
+			stack_pop_term(context,&ball);
+
+			// Switch ball onto the scratch stack for now...
+
+			reset_context(context,stack_base);
+
+			// Copy ball back...
+		}
+
+		if (result == SOLVE_NOMEM)
+		{
+			// Try to regain some space, and the stack is trashed beyond stack_base
+			reset_context(context,stack_base);
+
+			// TODO: Try to push 'resource_error' here
+			assert(0);
+		}
+
+		clear_vars(catcher->m_vars);
+
+		// Unify ball and recovery
+		assert(0);
+
+		if (0)
+			result = solve_throw(context,&ball);
+		else
+			result = solve_call(context,recovery);
+	}
+
+	return result;
+}
+
+static enum eSolveResult redo_catch_goal(struct context_t* context)
+{
+	size_t stack_base;
+	struct term_t catcher,recovery;
+	solve_fn_t fn;
+	enum eSolveResult result;
+
+	stack_pop_term(context,&recovery);
+	stack_pop_term(context,&catcher);
+	stack_base = stack_pop(&context->m_exec_stack);
+
+	/* Redo solve_call(goal) */
+	fn = stack_pop_ptr(&context->m_exec_stack);
+	result = (*fn)(context);
+	if (result == SOLVE_TRUE)
+	{
+		if (stack_push_ptr(&context->m_exec_stack,&redo_catch_goal) == -1)
+			result = SOLVE_NOMEM;
+	}
+
+	return do_catch(result,context,&catcher,&recovery,stack_base);
+}
+
+static enum eSolveResult solve_catch(struct context_t* context, struct term_t* orig_goal)
+{
+	struct term_t goal,catcher,recovery;
+	size_t stack_base = stack_top(context->m_exec_stack);
+
+	goal.m_vars = catcher.m_vars = recovery.m_vars = orig_goal->m_vars;
+	goal.m_value = next_value(orig_goal->m_value);
+	catcher.m_value = next_value(goal.m_value);
+	recovery.m_value = next_value(recovery.m_value);
+
+	enum eSolveResult result = solve_call(context,&goal);
+	if (result == SOLVE_TRUE)
+	{
+		if (stack_push(&context->m_exec_stack,stack_base) == -1 ||
+			stack_push_term(context,&catcher) == -1 ||
+			stack_push_term(context,&recovery) == -1 ||
+			stack_push_ptr(&context->m_exec_stack,&redo_catch_goal) == -1)
+		{
+			result = SOLVE_NOMEM;
+		}
+	}
+
+	return do_catch(result,context,&catcher,&recovery,stack_base);
+}
+
+static enum eSolveResult solve_fail(struct context_t* context)
 {
 	return SOLVE_FAIL;
 }
 
 static enum eSolveResult solve_true(struct context_t* context)
 {
-	if (stack_push_ptr(&context->m_exec_stack,&redo_true) == -1)
+	if (stack_push_ptr(&context->m_exec_stack,&solve_fail) == -1)
 		return SOLVE_NOMEM;
 
 	return SOLVE_TRUE;
 }
 
-static enum eSolveResult solve_if_then_else(struct context_t* context, struct term_t* orig_goal)
+static enum eSolveResult solve_not_proveable(struct context_t* context, struct term_t* orig_goal)
 {
-	assert(0);
+	enum eSolveResult result = solve_call(context,orig_goal);
+	if (result == SOLVE_TRUE)
+		result = SOLVE_FAIL;
+	else if (result == SOLVE_FAIL)
+	{
+		result = SOLVE_TRUE;
+
+		if (stack_push_ptr(&context->m_exec_stack,&solve_fail) == -1)
+			result = SOLVE_NOMEM;
+	}
+
+	return result;
 }
 
-static enum eSolveResult solve_if_then(struct context_t* context, struct term_t* orig_goal)
+static enum eSolveResult solve_once(struct context_t* context, struct term_t* orig_goal)
 {
-	assert(0);
+	size_t stack_base = stack_top(context->m_exec_stack);
+
+	enum eSolveResult result = solve_call(context,orig_goal);
+	if (result == SOLVE_TRUE)
+	{
+		reset_context(context,stack_base);
+
+		if (stack_push_ptr(&context->m_exec_stack,&solve_fail) == -1)
+			result = SOLVE_NOMEM;
+	}
+
+	return result;
 }
 
-static enum eSolveResult solve_catch(struct context_t* context, struct term_t* orig_goal)
+static enum eSolveResult solve_repeat(struct context_t* context)
 {
-	assert(0);
+	if (stack_push_ptr(&context->m_exec_stack,&solve_repeat) == -1)
+		return SOLVE_NOMEM;
+
+	return SOLVE_TRUE;
 }
 
-static enum eSolveResult solve_throw(struct context_t* context, struct term_t* orig_goal)
+static enum eSolveResult redo_halt(struct context_t* context)
 {
-	assert(0);
+	if (stack_push_ptr(&context->m_exec_stack,&redo_halt) == -1)
+		return SOLVE_NOMEM;
+
+	return SOLVE_HALT;
 }
 
 static enum eSolveResult solve_halt(struct context_t* context, struct term_t* orig_goal)
 {
-	enum eSolveResult result = SOLVE_HALT;
-	size_t stack_base = stack_top(context->m_exec_stack);
-
 	if (stack_push_term(context,orig_goal) == -1 ||
-		stack_push(&context->m_exec_stack,stack_base) == -1)
+		stack_push_ptr(&context->m_exec_stack,&redo_halt) == -1)
 	{
-		result = SOLVE_NOMEM;
+		return SOLVE_NOMEM;
 	}
-
-	return result;
+	return SOLVE_HALT;
 }
 
 static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal)
@@ -361,6 +506,15 @@ static enum eSolveResult solve_goal(struct context_t* context, struct term_t* go
 	case BOX_COMPOUND_EMBED_4(0,'h','a','l','t'):
 	case BOX_COMPOUND_EMBED_4(1,'h','a','l','t'):
 		return solve_halt(context,goal);
+
+	case BOX_COMPOUND_EMBED_2(1,'\\','+'):
+		return solve_not_proveable(context,goal);
+
+	case BOX_ATOM_EMBED_4('o','n','c','e'):
+		return solve_once(context,goal);
+
+	case BOX_ATOM_BUILTIN(repeat):
+		return solve_repeat(context);
 
 	default:
 		break;

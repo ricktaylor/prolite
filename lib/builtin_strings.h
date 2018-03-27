@@ -9,6 +9,7 @@
 
 /* These MUST be sorted by length then text */
 DECLARE_BUILTIN_STRING(memory)
+DECLARE_BUILTIN_STRING(repeat)
 DECLARE_BUILTIN_STRING(dynamic)
 DECLARE_BUILTIN_STRING(include)
 DECLARE_BUILTIN_STRING(integer)
