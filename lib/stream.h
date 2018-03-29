@@ -12,13 +12,13 @@ struct stream_t
 
 static inline void stream_close(struct stream_t* s)
 {
-	if (s)
+	if (s && s->m_fn_close)
 		(*s->m_fn_close)(s);
 }
 
 static inline int64_t stream_read(struct stream_t* s, void* dest, size_t len)
 {
-	return (!s ? -1 : (*s->m_fn_read)(s,dest,len));
+	return (s && s->m_fn_read ? (*s->m_fn_read)(s,dest,len) : -1);
 }
 
 struct stream_t* new_text_stream(const char** str, size_t len);
