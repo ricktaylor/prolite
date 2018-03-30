@@ -23,12 +23,7 @@ void stack_delete(struct stack_t* s);
 
 static inline uint64_t stack_top(const struct stack_t* stack)
 {
-	return (!stack ? 0 : stack->m_base + stack->m_top - 1);
-}
-
-static inline void* stack_end_ptr(struct stack_t* stack)
-{
-	return (!stack ? NULL : &stack->m_data[stack->m_top]);
+	return (!stack ? 0 : stack->m_base + stack->m_top);
 }
 
 uint64_t stack_push(struct stack_t** stack, uint64_t val);
@@ -40,7 +35,7 @@ static inline uint64_t stack_push_ptr(struct stack_t** stack, const void* ptr)
 
 static inline uint64_t stack_pop(struct stack_t** stack)
 {
-	if ((*stack)->m_top == 0)
+	while ((*stack) && (*stack)->m_top == 0)
 		(*stack) = (*stack)->m_prev;
 
 	return (((*stack) && (*stack)->m_top) ? (*stack)->m_data[--(*stack)->m_top] : 0);
@@ -51,7 +46,7 @@ static inline void* stack_pop_ptr(struct stack_t** stack)
 	return (void*)(uintptr_t)stack_pop(stack);
 }
 
-uint64_t stack_at(const struct stack_t* stack, uint64_t pos);
+void* stack_at(struct stack_t* stack, uint64_t pos);
 
 void stack_reset(struct stack_t** stack, uint64_t pos);
 

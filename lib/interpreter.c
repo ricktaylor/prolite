@@ -46,26 +46,26 @@ static inline void stack_pop_term(struct context_t* context, struct term_t* t)
 	t->m_vars = stack_pop_ptr(&context->m_exec_stack);
 }
 
+static inline enum eSolveResult redo_goal(struct context_t* context)
+{
+	solve_fn_t fn = stack_pop_ptr(&context->m_exec_stack);
+	return (*fn)(context);
+}
+
 static enum eSolveResult redo_and(struct context_t* context)
 {
-	struct term_t second_goal;
-	solve_fn_t fn;
 	enum eSolveResult result;
+	struct term_t second_goal;
 
 	stack_pop_term(context,&second_goal);
 
-	/* Redo solve_goal(second_goal) */
-	fn = stack_pop_ptr(&context->m_exec_stack);
-	result = (*fn)(context);
-
+	result = redo_goal(context);
 	if (result == SOLVE_FAIL)
 	{
 redo:
 		clear_vars(second_goal.m_vars);
 
-		/* Redo solve_goal(first_goal) */
-		fn = stack_pop_ptr(&context->m_exec_stack);
-		result = (*fn)(context);
+		result = redo_goal(context);
 		if (result == SOLVE_TRUE)
 		{
 			result = solve_goal(context,&second_goal);
@@ -118,12 +118,9 @@ redo:
 			}
 			else if (result == SOLVE_FAIL)
 			{
-				/* Redo solve_goal(first_goal) */
-				solve_fn_t fn = stack_pop_ptr(&context->m_exec_stack);
-
 				clear_vars(fresh_goal.m_vars);
 
-				result = (*fn)(context);
+				result = redo_goal(context);
 				if (result == SOLVE_TRUE)
 					goto redo;
 			}
@@ -138,15 +135,12 @@ redo:
 
 static enum eSolveResult redo_or(struct context_t* context)
 {
-	struct term_t or_goal;
-	solve_fn_t fn;
 	enum eSolveResult result;
+	struct term_t or_goal;
 
 	stack_pop_term(context,&or_goal);
 
-	/* Redo solve_goal(first_goal) */
-	fn = stack_pop_ptr(&context->m_exec_stack);
-	result = (*fn)(context);
+	result = redo_goal(context);
 	if (result == SOLVE_TRUE)
 	{
 		if (stack_push_term(context,&or_goal) == -1 ||
@@ -236,12 +230,7 @@ static inline enum eSolveResult solve_cut(struct context_t* context)
 
 static enum eSolveResult redo_call(struct context_t* context)
 {
-	solve_fn_t fn;
-	enum eSolveResult result;
-
-	/* Redo solve_goal() */
-	fn = stack_pop_ptr(&context->m_exec_stack);
-	result = (*fn)(context);
+	enum eSolveResult result = redo_goal(context);
 	if (result == SOLVE_TRUE)
 	{
 		if (stack_push_ptr(&context->m_exec_stack,&redo_call) == -1)
@@ -353,18 +342,15 @@ static enum eSolveResult do_catch(enum eSolveResult result, struct context_t* co
 
 static enum eSolveResult redo_catch_goal(struct context_t* context)
 {
-	size_t stack_base;
-	struct term_t catcher,recovery;
-	solve_fn_t fn;
 	enum eSolveResult result;
+	struct term_t catcher,recovery;
+	size_t stack_base;
 
 	stack_pop_term(context,&recovery);
 	stack_pop_term(context,&catcher);
 	stack_base = stack_pop(&context->m_exec_stack);
 
-	/* Redo solve_call(goal) */
-	fn = stack_pop_ptr(&context->m_exec_stack);
-	result = (*fn)(context);
+	result = redo_goal(context);
 	if (result == SOLVE_TRUE)
 	{
 		if (stack_push_ptr(&context->m_exec_stack,&redo_catch_goal) == -1)

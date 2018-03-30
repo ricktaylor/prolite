@@ -2308,7 +2308,7 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		if (node)
 		{
 			/* Missing . */
-			union box_t* new_val = stack_end_ptr(context->m_exec_stack);
+			size_t top = stack_top(context->m_exec_stack);
 			status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1);
 			if (!status)
 				status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(missing),1);
@@ -2317,17 +2317,17 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 			if (!status)
 			{
 				term->m_vars = NULL;
-				term->m_value = new_val;
+				term->m_value = stack_at(context->m_exec_stack,top);
 			}
 		}
 		else if (next_type != tokEOF)
 		{
-			union box_t* new_val = stack_end_ptr(context->m_exec_stack);
+			size_t top = stack_top(context->m_exec_stack);
 			status = emit_error(context,ast_err,parser);
 			if (!status)
 			{
 				term->m_vars = NULL;
-				term->m_value = new_val;
+				term->m_value = stack_at(context->m_exec_stack,top);
 			}
 		}
 		else
@@ -2344,10 +2344,10 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		status = emit_node_vars(context,&term->m_vars,node);
 		if (!status)
 		{
-			union box_t* new_val = stack_end_ptr(context->m_exec_stack);
+			size_t top = stack_top(context->m_exec_stack);
 			status = emit_node_value(context,node);
 			if (!status)
-				term->m_value = new_val;
+				term->m_value = stack_at(context->m_exec_stack,top);
 		}
 	}
 

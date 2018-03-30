@@ -66,8 +66,9 @@
 #define UNBOX_MANT_48(v) BOX_MANT_48(v)
 #endif
 
-#define BOX_TYPE(type)   BOX_EXP_16(UINT64_C(0x7FF0) | (((type) & 8) << 12) | ((type) & 7))
-#define UNBOX_TYPE(v)    (((UNBOX_EXP_16(v) & UINT64_C(0x8000)) >> 12) | (UNBOX_EXP_16(v) & UINT64_C(0x7)))
+#define BOX_TYPE(type)       BOX_EXP_16(0x7FF0 | ((type) & 7))
+#define BOX_TYPE_DEBUG(type) BOX_EXP_16(0xFFF0 | ((type) & 7))
+#define UNBOX_TYPE(v)        (UNBOX_EXP_16(v) & 7)
 
 #define BOX_HI16(u16)    BOX_MANT_48((UINT64_C(0xFFFF) & (u16)) << 32)
 #define UNBOX_HI16(v)    (UNBOX_MANT_48(v) >> 32)

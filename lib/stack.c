@@ -57,15 +57,18 @@ void stack_delete(struct stack_t* s)
 	}
 }
 
-uint64_t stack_at(const struct stack_t* stack, uint64_t pos)
+void* stack_at(struct stack_t* stack, uint64_t pos)
 {
 	while (stack && stack->m_base + stack->m_top < pos)
 		stack = stack->m_next;
 
-	if (!stack)
-		return 0;
+	while (stack && stack->m_base > pos)
+		stack = stack->m_prev;
 
-	return stack->m_data[pos - stack->m_base];
+	if (!stack)
+		return NULL;
+
+	return &stack->m_data[pos - stack->m_base];
 }
 
 uint64_t stack_push(struct stack_t** stack, uint64_t val)
@@ -197,9 +200,7 @@ void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t ne
 int stack_copy(struct stack_t** dest, struct stack_t** src, size_t start)
 {
 	/* Bulk copy without extra splitting */
-
-	uint64_t top = stack_top(*src);
-	if (start < top)
+	if (start < stack_top(*src))
 	{
 		/* Rewind the start */
 		struct stack_t* n;

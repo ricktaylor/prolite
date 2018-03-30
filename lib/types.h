@@ -24,6 +24,7 @@ union box_t
 enum tag_type_t
 {
 	prolite_double = 0,
+	// Values 1..7 are available
 	prolite_int32 = 1,
 	prolite_atom = 2,
 	prolite_compound = 3,
@@ -32,7 +33,6 @@ enum tag_type_t
 	//prolite_chars = 6,
 	//prolite_charcodes = 7,
 
-	// DO NOT USE 8! (Negative NaN)
 };
 
 struct var_t
