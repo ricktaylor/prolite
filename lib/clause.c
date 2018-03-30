@@ -20,6 +20,8 @@ union box_t* next_value(union box_t* v)
 			++v;
 		}
 
+		++v;
+
 		while (arity--)
 			v = next_value(v);
 	}

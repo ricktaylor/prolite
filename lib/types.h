@@ -137,13 +137,12 @@ struct procedure_table_t
 
 enum eSolveResult
 {
+	SOLVE_FAIL = 0,
+	SOLVE_TRUE = 1,
+	SOLVE_CUT = -1,
 	SOLVE_HALT = -2,
-	SOLVE_THROW = -1,
-	SOLVE_TRUE = 0,
-	// Any value > SOLVE_TRUE is context stack destroying
-	SOLVE_FAIL = 1,
-	SOLVE_CUT = 2,
-	SOLVE_NOMEM = 3
+	SOLVE_THROW = -3,
+	SOLVE_NOMEM = -4,
 };
 
 typedef enum eSolveResult (*solve_fn_t)(struct context_t*);

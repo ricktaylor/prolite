@@ -78,6 +78,8 @@ int prolite_prepare(prolite_env_t env, const char* query_text, size_t query_len,
 			case 0:
 				if (solve_prepare(&q->m_context,&term) == -1)
 					err = SOLVE_NOMEM;
+				else
+					err = SOLVE_TRUE;
 				break;
 
 			default:
@@ -85,7 +87,7 @@ int prolite_prepare(prolite_env_t env, const char* query_text, size_t query_len,
 				break;
 			}
 
-			if (err)
+			if (err != SOLVE_TRUE)
 			{
 				prolite_finalize((prolite_query_t)q);
 				q = NULL;

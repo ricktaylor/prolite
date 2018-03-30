@@ -577,15 +577,15 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 				case eaGraphic:
 					*state = eGraphicName;
-					goto next_char;
+					goto append_chars;
 
 				case eaName:
 					*state = eName;
-					goto next_char;
+					goto append_chars;
 
 				case eaVar:
 					*state = eVar;
-					goto next_char;
+					goto append_chars;
 
 				case eaZero:
 					*state = eZero;
@@ -593,7 +593,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 				case eaNumber:
 					*state = eInteger;
-					goto next_char;
+					goto append_chars;
 
 				case eaSingleQuote:
 					*state = eSingleQuote;
@@ -1145,10 +1145,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		/* Reset the state and treat as integer */
 		c = '0';
 		*state = eInteger;
-		peek = *p;
-		peek_line = info->m_line;
-		peek_col = info->m_col;
-		goto next_char;
+		goto append_chars;
 
 	case eOctalCharCode:
 		/* We know *p == "0'\o" */
@@ -1326,6 +1323,17 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 		*state = eStart;
 		return tokFloat;
+
+	append_chars:
+		peek = *p;
+		peek_line = info->m_line;
+		peek_col = info->m_col;
+
+		if (token_append_unicode_char(context,token,c) != 0)
+		{
+			*state = eStart;
+			return tokNoMem;
+		}
 
 	default:
 		for (;;)
