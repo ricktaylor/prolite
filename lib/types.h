@@ -96,8 +96,8 @@ struct string_ptr_t
 
 struct context_t
 {
-	struct stack_t* m_scratch_stack;
-	struct stack_t* m_exec_stack;
+	struct stack_t*      m_scratch_stack;
+	struct stack_t*      m_exec_stack;
 
 	struct string_ptr_t* m_strings;
 	struct module_t*     m_module;

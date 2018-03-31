@@ -15,4 +15,6 @@ struct operator_t* lookup_prefix_op(struct context_t* context, const union box_t
 int op_3(struct context_t* context, struct term_t* term);
 int char_conversion_2(struct context_t* context, struct term_t* term);
 
+void context_reset(struct context_t* context, size_t pos);
+
 #endif /* CONTEXT_H_INCLUDED_ */

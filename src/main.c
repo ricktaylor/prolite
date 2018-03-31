@@ -14,7 +14,13 @@ int main(int argc, char* argv[])
 
 	if (prolite_prepare(dummy,"true,halt(1).",-1,&q,NULL) == PROLITE_TRUE)
 	{
-		prolite_step(q);
+		while (prolite_step(q) == PROLITE_TRUE)
+			;
+
+		prolite_reset(q);
+
+		while (prolite_step(q) == PROLITE_TRUE)
+			;
 
 		prolite_finalize(q);
 	}

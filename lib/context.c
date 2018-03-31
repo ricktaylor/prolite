@@ -253,3 +253,8 @@ int op_3(struct context_t* context, struct term_t* term)
 
 	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),&term->m_value[2]);
 }
+
+void context_reset(struct context_t* context, size_t pos)
+{
+	stack_reset(&context->m_exec_stack,pos);
+}

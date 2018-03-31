@@ -2216,7 +2216,7 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 	return status;
 }
 
-static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast_err, struct parser_t* parser)
+static enum eEmitStatus emit_ast_error(struct context_t* context, enum eASTError ast_err, struct parser_t* parser)
 {
 	if (ast_err >= AST_SYNTAX_ERR_MISSING_CLOSE)
 	{
@@ -2228,11 +2228,9 @@ static enum eEmitStatus emit_error(struct context_t* context, enum eASTError ast
 		if (!status)
 		{
 			/* TODO: line info */
-			status = (stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_4('i','n','f','o')) == -1 ? EMIT_OUT_OF_MEM : EMIT_OK);
+			status = stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_4('i','n','f','o')) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW;
 		}
-
-		if (status != EMIT_OK)
-			return status;
+		return status;
 	}
 
 	switch (ast_err)
@@ -2303,9 +2301,7 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	struct ast_node_t* node = parse_term(context,parser,1201,&next_type,&next,&ast_err);
 	if (!node || next_type != tokEnd)
 	{
-		/* Reset stacks */
-		context->m_strings = prev_strings;
-		stack_reset(&context->m_exec_stack,stack_base);
+		/* Reset scratch stack */
 		stack_reset(&context->m_scratch_stack,scratch_base);
 
 		/* Reset token because we just trashed it */
@@ -2316,28 +2312,14 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		if (node)
 		{
 			/* Missing . */
-			size_t top = stack_top(context->m_exec_stack);
 			status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1);
 			if (!status)
 				status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(missing),1);
 			if (!status)
 				status = (stack_push(&context->m_scratch_stack,BOX_ATOM_EMBED_1('.')) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
-			if (!status)
-			{
-				term->m_vars = NULL;
-				term->m_value = stack_at(context->m_exec_stack,top);
-			}
 		}
 		else if (next_type != tokEOF)
-		{
-			size_t top = stack_top(context->m_exec_stack);
-			status = emit_error(context,ast_err,parser);
-			if (!status)
-			{
-				term->m_vars = NULL;
-				term->m_value = stack_at(context->m_exec_stack,top);
-			}
-		}
+			status = emit_ast_error(context,ast_err,parser);
 		else
 			status = EMIT_EOF;
 
@@ -2359,17 +2341,18 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		}
 	}
 
-	/* Reset scratch stack */
-	stack_reset(&context->m_scratch_stack,scratch_base);
-
 	/* Emit out of memory last */
-	if (status == EMIT_OUT_OF_MEM)
+	if (status != EMIT_OK)
 	{
 		/* Reset exec stack */
 		context->m_strings = prev_strings;
 		stack_reset(&context->m_exec_stack,stack_base);
+	}
 
-		status = (throw_oom_error(context) == -1 ? EMIT_OUT_OF_MEM : EMIT_THROW);
+	if (status != EMIT_THROW)
+	{
+		/* Reset scratch stack */
+		stack_reset(&context->m_scratch_stack,scratch_base);
 	}
 
 	return status;
@@ -2552,12 +2535,7 @@ static int include(struct context_t* context, struct term_t* term)
 	return err;
 }
 
-int consult(struct context_t* context, struct stream_t* s)
-{
-	return load_file(context,s);
-}
-
-int read_term(struct context_t* context, struct stream_t* s, struct term_t* term)
+enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term)
 {
 	enum eEmitStatus status = EMIT_OK;
 	struct parser_t parser = {0};
@@ -2567,7 +2545,11 @@ int read_term(struct context_t* context, struct stream_t* s, struct term_t* term
 	/* TODO: Check for permission errors first */
 
 	status = emit_term(context,term,&parser);
-	if (status == EMIT_EOF)
+	if (status == EMIT_OUT_OF_MEM)
+	{
+		// TODO: emit the error
+	}
+	else if (status == EMIT_EOF)
 	{
 		status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1);
 		if (!status)
@@ -2575,14 +2557,7 @@ int read_term(struct context_t* context, struct stream_t* s, struct term_t* term
 	}
 
 	if (status == EMIT_THROW)
-	{
-		/* TODO: Throw the error term */
+		return SOLVE_THROW;
 
-		return 1;
-	}
-
-	if (status == EMIT_OUT_OF_MEM)
-		return -1;
-
-	return 0;
+	return SOLVE_TRUE;
 }
