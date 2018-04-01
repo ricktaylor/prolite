@@ -6,7 +6,8 @@ enum eProliteResult
 	PROLITE_NOMEM = -2,
 	PROLITE_ERROR = -1,
 	PROLITE_FALSE = 0,
-	PROLITE_TRUE = 1
+	PROLITE_TRUE = 1,
+	PROLITE_HALT = 2
 };
 
 typedef struct prolite_env

@@ -30,8 +30,6 @@ static void clear_vars(struct var_info_t* vars)
 	}
 }
 
-
-
 static inline int stack_push_term(struct context_t* context, const struct term_t* t)
 {
 	if (stack_push_ptr(&context->m_exec_stack,t->m_vars) == -1 ||
@@ -160,12 +158,10 @@ static enum eSolveResult redo_or(struct context_t* context)
 	}
 	else if (result == SOLVE_FAIL)
 	{
-		struct term_t new_or_goal;
-
-		if (copy_term(context,&or_goal,&new_or_goal) != 0)
+		if (copy_term(context,&or_goal,&or_goal) != 0)
 			result = SOLVE_NOMEM;
 		else
-			result = solve_goal(context,&new_or_goal);
+			result = solve_goal(context,&or_goal);
 	}
 
 	return result;
@@ -241,7 +237,6 @@ enum eSolveResult solve_call(struct context_t* context, struct term_t* goal)
 {
 	enum eSolveResult result;
 	struct term_t fresh_goal;
-
 	if (copy_term(context,goal,&fresh_goal) != 0)
 		result = SOLVE_NOMEM;
 	else
@@ -431,23 +426,27 @@ static enum eSolveResult solve_halt(struct context_t* context, struct term_t* go
 {
 	if (goal->m_value->m_u64val == BOX_COMPOUND_EMBED_4(1,'h','a','l','t'))
 	{
+		struct term_t fresh_goal;
 		goal->m_value = next_value(goal->m_value);
-
-		// Check goal->m_value
-
-		if (stack_push(&context->m_exec_stack,goal->m_value->m_u64val) == -1)
+		if (copy_term(context,goal,&fresh_goal) != 0)
 			return SOLVE_NOMEM;
 
+		// TODO: Check fresh_goal.m_value
+
+		if (stack_push(&context->m_scratch_stack,fresh_goal.m_value->m_u64val) == -1)
+			return SOLVE_NOMEM;
 	}
 	else
 	{
 		// Push 0 as the exit_code
-		if (stack_push(&context->m_exec_stack,BOX_TYPE(prolite_int32)) == -1)
+		if (stack_push(&context->m_scratch_stack,BOX_TYPE(prolite_int32)) == -1)
 			return SOLVE_NOMEM;
 	}
 
 	return SOLVE_HALT;
 }
+
+#include "builtin_functions.h"
 
 static enum eSolveResult solve_goal(struct context_t* context, struct term_t* goal)
 {
@@ -474,33 +473,22 @@ static enum eSolveResult solve_goal(struct context_t* context, struct term_t* go
 	case BOX_COMPOUND_EMBED_4(1,'c','a','l','l'):
 		goal->m_value = next_value(goal->m_value);
 		return solve_call(context,goal);
-	}
-
-	// Giant switch for builtins
-	switch (goal->m_value->m_u64val)
-	{
-	case BOX_COMPOUND_EMBED_2(2,'-','>'):
-		return solve_if_then(context,goal);
-
-	case BOX_COMPOUND_EMBED_5(3,'c','a','t','c','h'):
-		return solve_catch(context,goal);
 
 	case BOX_COMPOUND_EMBED_5(1,'t','h','r','o','w'):
 		goal->m_value = next_value(goal->m_value);
 		return solve_throw(context,goal);
 
-	case BOX_ATOM_EMBED_4('h','a','l','t'):
-	case BOX_COMPOUND_EMBED_4(1,'h','a','l','t'):
-		return solve_halt(context,goal);
-
-	case BOX_COMPOUND_EMBED_2(1,'\\','+'):
-		return solve_not_proveable(context,goal);
-
-	case BOX_ATOM_EMBED_4('o','n','c','e'):
-		return solve_once(context,goal);
-
 	case BOX_ATOM_BUILTIN(repeat):
 		return solve_repeat(context);
+	}
+
+	// Now use the builtin functions
+	switch (goal->m_value->m_u64val)
+	{
+#undef DECLARE_BUILTIN_FUNCTION
+#define DECLARE_BUILTIN_FUNCTION(f,n) \
+	case (n): return solve_##f(context,goal);
+#include "builtin_functions.h"
 
 	default:
 		break;

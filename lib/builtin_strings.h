@@ -1,11 +1,11 @@
-#ifndef BUILTIN_STRINGS_H_INCLUDED_
-#define BUILTIN_STRINGS_H_INCLUDED_
-
-/* DO NOT INCLUDE THIS FILE DIRECTLY */
+#if !defined(BUILTIN_STRINGS_H_INCLUDED_) || defined(DECLARE_BUILTIN_STRING)
 
 #if !defined(DECLARE_BUILTIN_STRING)
-#error Do not include this file directly
-#else
+#define BUILTIN_STRINGS_H_INCLUDED_
+enum builtin_atoms_t
+{
+#define DECLARE_BUILTIN_STRING(name) BUILTIN_ATOM_##name,
+#endif
 
 /* These MUST be sorted by length then text */
 DECLARE_BUILTIN_STRING(memory)
@@ -48,6 +48,8 @@ DECLARE_BUILTIN_STRING(past_end_of_stream)
 DECLARE_BUILTIN_STRING(instantiation_error)
 DECLARE_BUILTIN_STRING(representation_error)
 
+#if defined(BUILTIN_STRINGS_H_INCLUDED_)
+};
 #endif
 
 #endif /* BUILTIN_STRINGS_H_INCLUDED_ */
