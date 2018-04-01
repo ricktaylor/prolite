@@ -2,62 +2,7 @@
 #include "clause.h"
 #include "throw.h"
 
-union box_t* next_value(union box_t* v)
-{
-	enum tag_type_t type = UNBOX_TYPE(v->m_u64val);
-	if (type == prolite_compound)
-	{
-		uint64_t all48 = UNBOX_MANT_48(v->m_u64val);
-		uint64_t arity;
-		unsigned int hi16 = (all48 >> 32);
-		if (hi16 & 0x8000)
-			arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
-		else if ((hi16 & 0xC000) == 0x4000)
-			arity = (hi16 & MAX_ARITY_BUILTIN);
-		else
-		{
-			arity = all48 & MAX_ARITY;
-			++v;
-		}
-
-		++v;
-
-		while (arity--)
-			v = next_value(v);
-	}
-	else
-		++v;
-
-	return v;
-}
-
-/* Returns -1 on instantiation error, 1 on callable error, 0 ok */
-int check_callable_term(union box_t* v)
-{
-	switch (UNBOX_TYPE(v->m_u64val))
-	{
-	case prolite_var:
-		return -1;
-
-	case prolite_compound:
-		if (v->m_u64val == BOX_COMPOUND_EMBED_1(2,',') ||
-				v->m_u64val == BOX_COMPOUND_EMBED_1(2,';') ||
-				v->m_u64val == BOX_COMPOUND_EMBED_2(2,'-','>'))
-		{
-			int r = check_callable_term(v + 1);
-			if (!r)
-				r = check_callable_term(next_value(v + 1));
-			return r;
-		}
-		return 0;
-
-	case prolite_atom:
-		return 0;
-
-	default:
-		return 1;
-	}
-}
+int check_callable_term(union box_t* v);
 
 /* Assert a clause */
 int assert_clause(struct context_t* context, struct term_t* term, int z)

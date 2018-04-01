@@ -132,12 +132,20 @@ enum eProliteResult prolite_reset(prolite_query_t query)
 	struct query_t* q = (struct query_t*)query;
 	if (q)
 	{
-		context_reset(&q->m_context,q->m_start);
+		result = PROLITE_TRUE;
+		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
+		{
+			// In order to rewind stack safely, force a halt and step
+			q->m_context.m_flags.halt = 1;
+			redo_goal(&q->m_context);
+			q->m_context.m_flags.halt = 0;
+
+			context_reset(&q->m_context,q->m_start);
+		}
+
 		stack_compact(q->m_context.m_exec_stack);
 		if (stack_push_ptr(&q->m_context.m_exec_stack,&solve_start) == -1)
 			result = SOLVE_NOMEM;
-		else
-			result = PROLITE_TRUE;
 
 		stack_reset(&q->m_context.m_scratch_stack,0);
 		stack_compact(q->m_context.m_scratch_stack);
@@ -149,5 +157,8 @@ void prolite_finalize(prolite_query_t query)
 {
 	struct query_t* q = (struct query_t*)query;
 	if (q)
+	{
+		prolite_reset(query);
 		stack_delete(q->m_context.m_exec_stack);
+	}
 }

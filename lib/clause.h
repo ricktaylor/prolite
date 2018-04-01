@@ -10,6 +10,4 @@ int add_query(struct context_t* context, struct term_t* term, uint64_t stack_bas
 /* Assert a clause */
 int assert_clause(struct context_t* context, struct term_t* term, int z);
 
-int check_callable_term(union box_t* v);
-
 #endif /* CLAUSE_H_INCLUDED_ */
