@@ -2182,7 +2182,7 @@ enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_
 	else
 	{
 		status = (stack_push(stack,BOX_TYPE(prolite_compound) | BOX_MANT_48(arity)) == -1 ? EMIT_NOMEM : EMIT_OK);
-		if (!status)
+		if (status == EMIT_OK)
 			status = (stack_push(stack,functor) == -1 ? EMIT_NOMEM : EMIT_OK);
 	}
 	return status;
@@ -2197,7 +2197,7 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 	else if (node->m_type == AST_TYPE_COMPOUND)
 	{
 		status = emit_compound(&context->m_exec_stack,node->m_boxed.m_u64val,node->m_arity);
-		if (!status)
+		if (status == EMIT_OK)
 		{
 			uint64_t i;
 			for (i = 0; !status && i < node->m_arity; ++i)
@@ -2230,9 +2230,9 @@ static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t
 	va_start(args,arity);
 
 	enum eEmitStatus status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2);
-	if (!status)
+	if (status == EMIT_OK)
 		status = emit_compound(&context->m_scratch_stack,error_functor,arity);
-	if (!status)
+	if (status == EMIT_OK)
 	{
 		unsigned int a;
 		for (a; !status && a < arity; ++a)
@@ -2240,7 +2240,7 @@ static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t
 			status = (stack_push(&context->m_scratch_stack,va_arg(args,uint64_t)) == -1 ? EMIT_NOMEM : EMIT_OK);
 		}
 	}
-	if (!status)
+	if (status == EMIT_OK)
 		status = emit_error_line_info(context,info);
 
 	va_end(args);
@@ -2251,13 +2251,13 @@ static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t
 static enum eEmitStatus emit_syntax_error_missing(struct context_t* context, uint64_t missing_atom, struct line_info_t* info)
 {
 	enum eEmitStatus status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2);
-	if (!status)
+	if (status == EMIT_OK)
 		status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1);
-	if (!status)
+	if (status == EMIT_OK)
 		status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(missing),1);
-	if (!status)
+	if (status == EMIT_OK)
 		status = (stack_push(&context->m_scratch_stack,missing_atom) == -1 ? EMIT_NOMEM : EMIT_OK);
-	if (!status)
+	if (status == EMIT_OK)
 		status = emit_error_line_info(context,info);
 	return status;
 }
@@ -2347,7 +2347,7 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		else
 			status = EMIT_EOF;
 
-		/* Skip to what looks like a complete term */
+		/* Skip to what looks like the end of a complete term */
 		while (next_type != tokEnd && next_type != tokEOF)
 			next_type = token_next(context,parser,&next);
 	}
@@ -2356,11 +2356,11 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		/* Emit the node */
 		term->m_vars = NULL;
 		status = emit_node_vars(context,&term->m_vars,node);
-		if (!status)
+		if (status == EMIT_OK)
 		{
 			size_t top = stack_top(context->m_exec_stack);
 			status = emit_node_value(context,node);
-			if (!status)
+			if (status == EMIT_OK)
 				term->m_value = stack_at(context->m_exec_stack,top);
 		}
 	}
@@ -2517,12 +2517,13 @@ static int load_file(struct context_t* context, struct stream_t* s)
 			if (term.m_value->m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
 			{
 				/* Directive, skip to first arg */
-				++term.m_value;
+				term.m_value = first_arg(term.m_value);
 
 				/* Check now for :- initialization/1 */
 				if (term.m_value->m_u64val == BOX_COMPOUND_BUILTIN(initialization,1))
 				{
-					++term.m_value;
+					term.m_value = first_arg(term.m_value);
+
 					int err = compile_initializer(context,&term);
 					if (err == -1)
 						status = EMIT_NOMEM;
@@ -2611,9 +2612,7 @@ enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struc
 	}
 	else if (status == EMIT_EOF)
 	{
-		status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1);
-		if (!status)
-			status = (stack_push(&context->m_scratch_stack,BOX_ATOM_BUILTIN(past_end_of_stream)) == -1 ? EMIT_NOMEM : EMIT_THROW);
+		status = (emit_error(context,&parser.m_line_info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(past_end_of_stream)) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
 	}
 
 	if (status == EMIT_THROW)
