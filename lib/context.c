@@ -6,7 +6,6 @@
  */
 
 #include "context.h"
-#include "throw.h"
 
 #include <assert.h>
 
@@ -90,25 +89,28 @@ int char_conversion_2(struct context_t* context, struct term_t* term)
 	uint32_t in_char = -1;
 	uint32_t out_char = -1;
 
-	/* Check value[0] first, otherwise we don't know what value[1] is! */
-	enum tag_type_t type = UNBOX_TYPE(term->m_value[0].m_u64val);
-	if (type == prolite_var)
-		return throw_instantiation_error(context);
+	union box_t* arg = first_arg(term->m_value);
 
-	if (!UNBOX_IS_TYPE_EMBED(term->m_value[0].m_u64val,prolite_atom) ||
-		(in_char = atom_to_code(&term->m_value[0])) == -1)
+	/* Check value[0] first, otherwise we don't know what value[1] is! */
+	enum tag_type_t type = UNBOX_TYPE(arg->m_u64val);
+	if (type == prolite_var)
+		return throw_instantiation_error(context,NULL);
+
+	if (!UNBOX_IS_TYPE_EMBED(arg->m_u64val,prolite_atom) ||
+		(in_char = atom_to_code(arg)) == -1)
 	{
-		return throw_representation_error(context,BOX_ATOM_BUILTIN(character));
+		return throw_representation_error(context,BOX_ATOM_BUILTIN(character),arg);
 	}
 
-	type = UNBOX_TYPE(term->m_value[1].m_u64val);
+	arg = next_arg(arg);
+	type = UNBOX_TYPE(arg->m_u64val);
 	if (type == prolite_var)
-		return throw_instantiation_error(context);
+		return throw_instantiation_error(context,NULL);
 
-	if (!UNBOX_IS_TYPE_EMBED(term->m_value[1].m_u64val,prolite_atom) ||
-		(out_char = atom_to_code(&term->m_value[1])) == -1)
+	if (!UNBOX_IS_TYPE_EMBED(arg->m_u64val,prolite_atom) ||
+		(out_char = atom_to_code(arg)) == -1)
 	{
-		return throw_representation_error(context,BOX_ATOM_BUILTIN(character));
+		return throw_representation_error(context,BOX_ATOM_BUILTIN(character),arg);
 	}
 
 	if (in_char == out_char)
@@ -155,7 +157,7 @@ int op_3(struct context_t* context, struct term_t* term)
 	enum tag_type_t type = UNBOX_TYPE(term->m_value[0].m_u64val);
 
 	if (type == prolite_var)
-		return throw_instantiation_error(context);
+		return throw_instantiation_error(context,NULL);
 
 	if (type != prolite_int32)
 		return throw_type_error(context,BOX_ATOM_BUILTIN(integer),&term->m_value[0]);
@@ -166,7 +168,7 @@ int op_3(struct context_t* context, struct term_t* term)
 
 	type = UNBOX_TYPE(term->m_value[1].m_u64val);
 	if (type == prolite_var)
-		return throw_instantiation_error(context);
+		return throw_instantiation_error(context,NULL);
 
 	if (type != prolite_atom)
 		return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),&term->m_value[1]);
@@ -202,7 +204,7 @@ int op_3(struct context_t* context, struct term_t* term)
 	if (type == prolite_var ||
 		term->m_value[2].m_u64val == BOX_COMPOUND_EMBED_1(2,'|'))
 	{
-		return throw_instantiation_error(context);
+		return throw_instantiation_error(context,NULL);
 	}
 
 	if (type == prolite_atom)
@@ -213,13 +215,13 @@ int op_3(struct context_t* context, struct term_t* term)
 	}
 	else if (term->m_value[2].m_u64val == BOX_COMPOUND_EMBED_1(2,'.'))
 	{
-		const union box_t* list = term->m_value + 2;
+		union box_t* list = first_arg(term->m_value);
 		do
 		{
 			/* List - enumerate */
-			type = UNBOX_TYPE(list[1].m_u64val);
+			type = UNBOX_TYPE(list->m_u64val);
 			if (type == prolite_var)
-				return throw_instantiation_error(context);
+				return throw_instantiation_error(context,NULL);
 
 			if (type == prolite_atom)
 			{
@@ -234,10 +236,9 @@ int op_3(struct context_t* context, struct term_t* term)
 			else
 				return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),&list[1]);
 
-			if (list[2].m_u64val == BOX_ATOM_EMBED_2('[',']'))
+			list = next_arg(list);
+			if (list->m_u64val == BOX_ATOM_EMBED_2('[',']'))
 				return 0;
-
-			list += 2;
 		}
 		while (list->m_u64val == BOX_COMPOUND_EMBED_1(2,'.'));
 
@@ -245,16 +246,11 @@ int op_3(struct context_t* context, struct term_t* term)
 		if (type == prolite_var ||
 			list->m_u64val == BOX_COMPOUND_EMBED_1(2,'|'))
 		{
-			return throw_instantiation_error(context);
+			return throw_instantiation_error(context,NULL);
 		}
 
 		return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),list);
 	}
 
 	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),&term->m_value[2]);
-}
-
-void context_reset(struct context_t* context, size_t pos)
-{
-	stack_reset(&context->m_exec_stack,pos);
 }

@@ -21,6 +21,14 @@ union box_t
 	uint64_t m_u64val;
 };
 
+struct line_info_t
+{
+	size_t         m_start_line;
+	size_t         m_start_col;
+	size_t         m_end_line;
+	size_t         m_end_col;
+};
+
 enum tag_type_t
 {
 	prolite_double = 0,
@@ -152,7 +160,15 @@ enum eSolveResult
 
 typedef enum eSolveResult (*solve_fn_t)(struct context_t*);
 
-union box_t* next_value(union box_t* v);
-int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
+union box_t* first_arg(union box_t* v);
+union box_t* next_arg(union box_t* v);
+
+enum eSolveResult throw_instantiation_error(struct context_t* context, const union box_t* culprit);
+enum eSolveResult throw_type_error(struct context_t* context, uint64_t valid_type, const union box_t* culprit);
+enum eSolveResult throw_representation_error(struct context_t* context, uint64_t flag, const union box_t* culprit);
+enum eSolveResult throw_existence_error(struct context_t* context, uint64_t object_type, const union box_t* culprit);
+enum eSolveResult throw_domain_error(struct context_t* context, uint64_t valid_domain, const union box_t* culprit);
+enum eSolveResult throw_permission_error(struct context_t* context, uint64_t operation, uint64_t permission, const union box_t* culprit);
+enum eSolveResult throw_evaluation_error(struct context_t* context, uint64_t error, const union box_t* culprit);
 
 #endif /* TYPES_H_ */
