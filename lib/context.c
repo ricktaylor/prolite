@@ -125,16 +125,137 @@ int char_conversion_2(struct context_t* context, struct term_t* term)
 	return 0;
 }
 
-/* Try to find a infix/suffix op, otherwise find prefix */
+static struct operator_t* find_op(struct context_t* context, const union box_t* b)
+{
+	static struct operator_t s_builtins[] =
+	{
+		/* 0 */ { NULL, eXFX, 1200 },
+		/* 1 */ { NULL, eXFY, 1100 },
+		/* 2 */ { NULL, eXFY, 1050 },
+		/* 3 */ { NULL, eXFY, 1000 },
+		/* 4 */ { NULL, eXFX, 700 },
+		/* 5 */ { NULL, eYFX, 500 },
+		/* 6 */ { NULL, eYFX, 400 },
+		/* 7 */ { NULL, eXFX, 200 },
+		/* 8 */ { NULL, eXFY, 200 },
+	};
+
+	/*if (context->m_module->m_operators)
+	{
+		// TODO: Use the module table
+		assert(0);
+	}*/
+
+	switch (b->m_u64val)
+	{
+	case BOX_ATOM_EMBED_2(':','-'):
+	case BOX_ATOM_EMBED_3('-','-','>'):
+		return &s_builtins[0];
+
+	case BOX_ATOM_EMBED_1(';'):
+		return &s_builtins[1];
+
+	case BOX_ATOM_EMBED_2('-','>'):
+		return &s_builtins[2];
+
+	case BOX_ATOM_EMBED_1(','):
+		return &s_builtins[3];
+
+	case BOX_ATOM_EMBED_1('='):
+	case BOX_ATOM_EMBED_2('\\','='):
+	case BOX_ATOM_EMBED_2('=','='):
+	case BOX_ATOM_EMBED_3('\\','=','='):
+	case BOX_ATOM_EMBED_2('@','<'):
+	case BOX_ATOM_EMBED_3('@','=','<'):
+	case BOX_ATOM_EMBED_2('@','>'):
+	case BOX_ATOM_EMBED_3('@','>','='):
+	case BOX_ATOM_EMBED_3('=','.','.'):
+	case BOX_ATOM_EMBED_2('i','s'):
+	case BOX_ATOM_EMBED_3('=',':','='):
+	case BOX_ATOM_EMBED_3('=','\\','='):
+	case BOX_ATOM_EMBED_1('<'):
+	case BOX_ATOM_EMBED_2('=','<'):
+	case BOX_ATOM_EMBED_1('>'):
+	case BOX_ATOM_EMBED_2('>','='):
+		return &s_builtins[4];
+
+	case BOX_ATOM_EMBED_1('+'):
+	case BOX_ATOM_EMBED_1('-'):
+	case BOX_ATOM_EMBED_2('/','\\'):
+	case BOX_ATOM_EMBED_2('\\','/'):
+		return &s_builtins[5];
+
+	case BOX_ATOM_EMBED_1('*'):
+	case BOX_ATOM_EMBED_1('/'):
+	case BOX_ATOM_EMBED_2('/','/'):
+	case BOX_ATOM_EMBED_3('r','e','m'):
+	case BOX_ATOM_EMBED_3('m','o','d'):
+	case BOX_ATOM_EMBED_2('<','<'):
+	case BOX_ATOM_EMBED_2('>','>'):
+	case BOX_ATOM_EMBED_3('d','i','v'):
+		return &s_builtins[6];
+
+	case BOX_ATOM_EMBED_2('*','*'):
+		return &s_builtins[7];
+
+	case BOX_ATOM_EMBED_1('^'):
+		return &s_builtins[8];
+
+	default:
+		return NULL;
+	}
+}
+
+struct operator_t* find_prefix_op(struct context_t* context, const union box_t* b)
+{
+	static struct operator_t s_builtins[] =
+	{
+		/* 0 */ { NULL, eFX, 1200 },
+		/* 1 */ { NULL, eFY, 900 },
+		/* 2 */ { NULL, eFY, 200 },
+	};
+
+	/*if (context->m_module->m_operators)
+	{
+		// TODO: Use the module table
+		assert(0);
+	}*/
+
+	switch (b->m_u64val)
+	{
+	case BOX_ATOM_EMBED_2(':','-'):
+	case BOX_ATOM_EMBED_2('?','-'):
+		return &s_builtins[0];
+
+	case BOX_ATOM_EMBED_2('\\','+'):
+		return &s_builtins[1];
+
+	case BOX_ATOM_EMBED_1('-'):
+	case BOX_ATOM_EMBED_1('\\'):
+	case BOX_ATOM_EMBED_1('+'):
+		return &s_builtins[2];
+
+	default:
+		return NULL;
+	}
+}
+
+/* Try to find a infix/postfix op, otherwise find prefix */
 struct operator_t* lookup_op(struct context_t* context, const union box_t* b)
 {
-	return NULL;
+	struct operator_t* op = find_op(context,b);
+	if (!op)
+		op = find_prefix_op(context,b);
+	return op;
 }
 
 /* Try to find a prefix op, otherwise find infix/suffix */
 struct operator_t* lookup_prefix_op(struct context_t* context, const union box_t* b)
 {
-	return NULL;
+	struct operator_t* op = find_prefix_op(context,b);
+	if (!op)
+		op = find_op(context,b);
+	return op;
 }
 
 static int add_op(struct context_t* context, unsigned int priority, enum eOpSpec op_spec, uint64_t atom)
