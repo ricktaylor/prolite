@@ -1484,7 +1484,7 @@ static enum eTokenType token_next(struct context_t* context, struct parser_t* pa
 	return tok;
 }
 
-static struct ast_node_t* syntax_error(enum eASTError error, enum eASTError* ast_err)
+static inline struct ast_node_t* syntax_error(enum eASTError error, enum eASTError* ast_err)
 {
 	*ast_err = error;
 	return NULL;

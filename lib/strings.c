@@ -58,6 +58,21 @@ int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, 
 	if (len <= 5)
 	{
 		uint8_t c[5] = {0};
+		switch (len)
+		{
+		case 5:
+			c[4] = str[4];
+		case 4:
+			c[3] = str[3];
+		case 3:
+			c[2] = str[2];
+		case 2:
+			c[1] = str[1];
+		case 1:
+			c[0] = str[0];
+		default:
+			break;
+		}
 		memcpy(c,str,len);
 		b->m_u64val = BOX_TYPE_EMBED(type,0,len,c[0],c[1],c[2],c[3],c[4]);
 	}
