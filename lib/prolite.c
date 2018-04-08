@@ -7,8 +7,8 @@
 #include <string.h>
 
 enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term);
-enum eSolveResult solve_call(struct context_t* context, struct term_t* goal);
-enum eSolveResult redo_goal(struct context_t* context);
+enum eSolveResult call(struct context_t* context, struct term_t* goal);
+enum eSolveResult redo(struct context_t* context);
 
 struct text_stream_t
 {
@@ -36,7 +36,7 @@ static enum eSolveResult solve_start(struct context_t* context)
 	uint64_t top = stack_top(context->m_exec_stack);
 	goal.m_value = *(union box_t**)stack_at(context->m_exec_stack,top-1);
 	goal.m_vars = *(struct var_info_t**)stack_at(context->m_exec_stack,top-2);
-	return solve_call(context,&goal);
+	return call(context,&goal);
 }
 
 struct query_t
@@ -54,7 +54,7 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 	struct stack_t* s = NULL;
 	struct query_t* q = stack_malloc(&s,sizeof(struct query_t));
 	if (!q)
-		return SOLVE_NOMEM;
+		return PROLITE_NOMEM;
 
 	memset(q,0,sizeof(struct query_t));
 	q->m_context.m_exec_stack = s;
@@ -83,17 +83,17 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 		}
 	}
 
-	*query = (prolite_query_t)q;
-
 	switch (result)
 	{
 	case SOLVE_TRUE:
+		*query = (prolite_query_t)q;
 		return PROLITE_TRUE;
 
 	case SOLVE_NOMEM:
 		return PROLITE_NOMEM;
 
 	case SOLVE_THROW:
+		*query = (prolite_query_t)q;
 		return PROLITE_ERROR;
 
 	default:
@@ -101,7 +101,7 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 	}
 }
 
-enum eProliteResult prolite_step(prolite_query_t query)
+enum eProliteResult prolite_solve(prolite_query_t query)
 {
 	struct query_t* q = (struct query_t*)query;
 	if (!q)
@@ -110,7 +110,7 @@ enum eProliteResult prolite_step(prolite_query_t query)
 	if (stack_top(q->m_context.m_exec_stack) == q->m_start)
 		return PROLITE_FALSE;
 
-	switch (redo_goal(&q->m_context))
+	switch (redo(&q->m_context))
 	{
 	case SOLVE_TRUE:
 		return PROLITE_TRUE;
@@ -137,7 +137,7 @@ enum eProliteResult prolite_reset(prolite_query_t query)
 		{
 			// In order to rewind stack safely, force a halt and step
 			q->m_context.m_flags.halt = 1;
-			redo_goal(&q->m_context);
+			redo(&q->m_context);
 			q->m_context.m_flags.halt = 0;
 
 			context_reset(&q->m_context,q->m_start);
