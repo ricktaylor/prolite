@@ -84,12 +84,12 @@ static uint32_t atom_to_code(const union box_t* b)
 	return val;
 }
 
-int char_conversion_2(struct context_t* context, struct term_t* term)
+enum eSolveResult solve_char_conversion(struct context_t* context, struct term_t* goal)
 {
 	uint32_t in_char = -1;
 	uint32_t out_char = -1;
 
-	union box_t* arg = first_arg(term->m_value);
+	union box_t* arg = first_arg(goal->m_value);
 
 	/* Check value[0] first, otherwise we don't know what value[1] is! */
 	enum tag_type_t type = UNBOX_TYPE(arg->m_u64val);
@@ -122,7 +122,7 @@ int char_conversion_2(struct context_t* context, struct term_t* term)
 		/* TODO: Update the char_conversion table */
 	}
 
-	return 0;
+	return SOLVE_TRUE;
 }
 
 static struct operator_t* find_op(struct context_t* context, const union box_t* b)
@@ -270,8 +270,10 @@ static int remove_op(struct context_t* context, enum eOpSpec op_spec, uint64_t a
 	return -1;
 }
 
-int op_3(struct context_t* context, struct term_t* term)
+enum eSolveResult solve_op(struct context_t* context, struct term_t* term)
 {
+	// TODO: ARGS ARE ALL WRONG
+
 	/* Check value[0] first, otherwise we don't know what value[1 and 2] is! */
 	int priority;
 	enum eOpSpec op_spec;
@@ -374,4 +376,9 @@ int op_3(struct context_t* context, struct term_t* term)
 	}
 
 	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),&term->m_value[2]);
+}
+
+enum eSolveResult solve_set_prolog_flag(struct context_t* context, struct term_t* goal)
+{
+	assert(0);
 }

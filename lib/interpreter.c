@@ -563,8 +563,16 @@ enum eSolveResult solve_halt(struct context_t* context, struct term_t* goal)
 	return SOLVE_HALT;
 }
 
+static enum eSolveResult solve_user_defined(struct context_t* context, struct term_t* goal)
+{
+	assert(0);
+	return SOLVE_FAIL;
+}
+
 static enum eSolveResult solve(struct context_t* context, struct term_t* goal)
 {
+	enum eSolveResult result;
+
 	if (context->m_flags.halt)
 		return solve_halt(context,goal);
 
@@ -574,12 +582,13 @@ static enum eSolveResult solve(struct context_t* context, struct term_t* goal)
 
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
-	case (n): return solve_##f(context,goal);
+	case (n): result = solve_##f(context,goal); break;
 #include "builtin_functions.h"
 
 	default:
-		/* Emit user defined */
-		assert(0);
-		return SOLVE_FAIL;
+		result = solve_user_defined(context,goal);
+		break;
 	}
+
+	return result;
 }

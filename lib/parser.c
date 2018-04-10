@@ -2124,7 +2124,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 
 		if (i == var_count)
 		{
-			if (var_count >= (UINT64_C(1) << 48))
+			if (var_count >= (UINT64_C(1) << 49))
 			{
 				/* There is not an ISO standard error for 'too many vars'
 				 * but we will be out of memory soon anyway, so that will do */
@@ -2235,7 +2235,7 @@ static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t
 	if (status == EMIT_OK)
 	{
 		unsigned int a;
-		for (a; !status && a < arity; ++a)
+		for (a = 0; !status && a < arity; ++a)
 		{
 			status = (stack_push(&context->m_scratch_stack,va_arg(args,uint64_t)) == -1 ? EMIT_NOMEM : EMIT_OK);
 		}
@@ -2382,6 +2382,185 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	return status;
 }
 
+static enum eEmitStatus clause_directive(struct context_t* context, struct term_t* term)
+{
+	assert(0);
+}
+
+static enum eEmitStatus ensure_loaded(struct context_t* context, struct term_t* term)
+{
+	assert(0);
+}
+
+static enum eEmitStatus compile_initializer(struct context_t* context, struct term_t* term)
+{
+	assert(0);
+}
+
+static enum eEmitStatus assert_clause(struct context_t* context, struct term_t* term, int assert_z)
+{
+	assert(0);
+}
+
+enum eSolveResult solve_op(struct context_t* context, struct term_t* goal);
+enum eSolveResult solve_char_conversion(struct context_t* context, struct term_t* goal);
+enum eSolveResult solve_set_prolog_flag(struct context_t* context, struct term_t* goal);
+
+static enum eEmitStatus directive_solve(struct context_t* context, struct term_t* term, enum eSolveResult (*solve_fn)(struct context_t*,struct term_t*))
+{
+	switch ((*solve_fn)(context,term))
+	{
+	case SOLVE_TRUE:
+		return EMIT_OK;
+
+	case SOLVE_NOMEM:
+		return EMIT_NOMEM;
+
+	case SOLVE_THROW:
+		return EMIT_THROW;
+
+	default:
+		// Should never happen
+		assert(0);
+		return (emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(system_error),0) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
+	}
+}
+
+static enum eEmitStatus include(struct context_t* context, struct term_t* term);
+
+/* 'Do' a directive */
+static enum eEmitStatus directive(struct context_t* context, struct term_t* term)
+{
+	enum tag_type_t type;
+
+	term->m_value = first_arg(term->m_value);
+
+	switch (term->m_value->m_u64val)
+	{
+	case BOX_COMPOUND_BUILTIN(dynamic,1):
+	case BOX_COMPOUND_BUILTIN(multifile,1):
+	case BOX_COMPOUND_BUILTIN(discontiguous,1):
+		return clause_directive(context,term);
+
+	case BOX_COMPOUND_BUILTIN(include,1):
+		return include(context,term);
+
+	case BOX_COMPOUND_BUILTIN(ensure_loaded,1):
+		return ensure_loaded(context,term);
+
+	case BOX_COMPOUND_BUILTIN(initialization,1):
+		return compile_initializer(context,term);
+
+	case BOX_COMPOUND_EMBED_2(3,'o','p'):
+		return directive_solve(context,term,&solve_op);
+
+	case BOX_COMPOUND_BUILTIN(char_conversion,2):
+		return directive_solve(context,term,&solve_char_conversion);
+
+	case BOX_COMPOUND_BUILTIN(set_prolog_flag,2):
+		return directive_solve(context,term,&solve_set_prolog_flag);
+
+	default:
+		break;
+	}
+
+	type = UNBOX_TYPE(term->m_value->m_u64val);
+	if (type == prolite_var)
+		return emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(instantiation_error),0);
+
+	if (type != prolite_atom && type != prolite_compound)
+		return emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(type_error),2,BOX_ATOM_BUILTIN(callable),term->m_value->m_u64val);
+
+	if (context->m_module->m_flags.unknown == 2)
+		return emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(existence_error),2,BOX_ATOM_BUILTIN(procedure),term->m_value->m_u64val);
+
+	/* TODO: Warn? */
+	return 0;
+}
+
+static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
+{
+	enum eEmitStatus status;
+	struct parser_t parser = {0};
+	parser.m_s = s;
+	parser.m_line_info.m_end_line = 1;
+
+	do
+	{
+		struct term_t term = {0};
+		uint64_t stack_base = stack_top(context->m_exec_stack);
+
+		status = emit_term(context,&term,&parser);
+		if (status == EMIT_OK)
+		{
+			if (term.m_value->m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
+				status = directive(context,&term);
+			else
+			{
+				/* Assert the term */
+				status = assert_clause(context,&term,1);
+			}
+		}
+
+		stack_reset(&context->m_exec_stack,stack_base);
+	}
+	while (status == EMIT_OK);
+
+	if (status == EMIT_EOF)
+		status = EMIT_OK;
+
+	/* Compact the stacks because we may have allocated a lot */
+	stack_compact(context->m_scratch_stack);
+	stack_compact(context->m_exec_stack);
+
+	return status;
+}
+
+static enum eEmitStatus include(struct context_t* context, struct term_t* term)
+{
+	enum eEmitStatus status;
+	struct stream_t* s = NULL;
+
+	term->m_value = first_arg(term->m_value);
+
+	/* TODO: Open stream term->m_value[0] */
+
+	/* TODO: Twiddle with context */
+
+	status = load_file(context,s);
+	if (status == EMIT_OK)
+	{
+		/* TODO: Untwiddle context */
+	}
+
+	return status;
+}
+
+enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term)
+{
+	enum eEmitStatus status = EMIT_OK;
+	struct parser_t parser = {0};
+	parser.m_s = s;
+	parser.m_line_info.m_end_line = 1;
+
+	/* TODO: Check for permission errors first */
+
+	status = emit_term(context,term,&parser);
+	if (status == EMIT_NOMEM)
+	{
+		// TODO: emit the error
+	}
+	else if (status == EMIT_EOF)
+	{
+		status = (emit_error(context,&parser.m_line_info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(past_end_of_stream)) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
+	}
+
+	if (status == EMIT_THROW)
+		return SOLVE_THROW;
+
+	return SOLVE_TRUE;
+}
+
 enum eSolveResult throw_instantiation_error(struct context_t* context, const union box_t* culprit)
 {
 	return (emit_error(context,get_debug_info(culprit),BOX_ATOM_BUILTIN(instantiation_error),0) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
@@ -2415,208 +2594,4 @@ enum eSolveResult throw_permission_error(struct context_t* context, uint64_t ope
 enum eSolveResult throw_evaluation_error(struct context_t* context, uint64_t error, const union box_t* culprit)
 {
 	return (emit_error(context,get_debug_info(culprit),BOX_ATOM_BUILTIN(evaluation_error),1,error) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
-}
-
-static int clause_directive(struct context_t* context, struct term_t* term)
-{
-	assert(0);
-}
-
-static int ensure_loaded(struct context_t* context, struct term_t* term)
-{
-	assert(0);
-}
-
-static int set_prolog_flag_2(struct context_t* context, struct term_t* term)
-{
-	assert(0);
-}
-
-static int compile_initializer(struct context_t* context, struct term_t* term)
-{
-	assert(0);
-}
-
-static int assert_clause(struct context_t* context, struct term_t* term, int assert_z)
-{
-	assert(0);
-}
-
-static int include(struct context_t* context, struct term_t* term);
-
-/* 'Do' a directive */
-static int directive(struct context_t* context, struct term_t* term)
-{
-	switch (term->m_value->m_u64val)
-	{
-	case BOX_COMPOUND_BUILTIN(dynamic,1):
-	case BOX_COMPOUND_BUILTIN(multifile,1):
-	case BOX_COMPOUND_BUILTIN(discontiguous,1):
-		return clause_directive(context,term);
-
-	case BOX_COMPOUND_BUILTIN(include,1):
-		++term->m_value;
-		return include(context,term);
-
-	case BOX_COMPOUND_BUILTIN(ensure_loaded,1):
-		++term->m_value;
-		return ensure_loaded(context,term);
-
-	/* TODO: The following are actually just a call to solve */
-	case BOX_COMPOUND_EMBED_2(3,'o','p'):
-		++term->m_value;
-		return op_3(context,term);
-
-	case BOX_COMPOUND_BUILTIN(char_conversion,2):
-		term->m_value += 2;
-		return char_conversion_2(context,term);
-
-	case BOX_COMPOUND_BUILTIN(set_prolog_flag,2):
-		term->m_value += 2;
-		return set_prolog_flag_2(context,term);
-
-	default:
-		{
-			enum tag_type_t type = UNBOX_TYPE(term->m_value->m_u64val);
-			if (type == prolite_var)
-				return throw_instantiation_error(context,NULL);
-
-			if (type != prolite_atom && type != prolite_compound)
-				return throw_type_error(context,BOX_ATOM_BUILTIN(callable),term->m_value);
-		}
-		break;
-	}
-
-	if (context->m_module->m_flags.unknown == 2)
-		return throw_existence_error(context,BOX_ATOM_BUILTIN(procedure),term->m_value);
-
-	/* TODO: Warn? */
-	return 0;
-}
-
-static int load_file(struct context_t* context, struct stream_t* s)
-{
-	uint64_t original_stack_base = stack_top(context->m_exec_stack);
-	uint64_t stack_base = original_stack_base;
-	struct string_ptr_t* original_prev_strings = context->m_strings;
-	struct string_ptr_t* prev_strings = original_prev_strings;
-	int failed = 0;
-	struct parser_t parser = {0};
-	parser.m_s = s;
-	parser.m_line_info.m_end_line = 1;
-
-	while (failed != -1)
-	{
-		struct term_t term = {0};
-		enum eEmitStatus status = emit_term(context,&term,&parser);
-		if (status == EMIT_EOF)
-			break;
-
-		if (status == EMIT_OK)
-		{
-			if (term.m_value->m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
-			{
-				/* Directive, skip to first arg */
-				term.m_value = first_arg(term.m_value);
-
-				/* Check now for :- initialization/1 */
-				if (term.m_value->m_u64val == BOX_COMPOUND_BUILTIN(initialization,1))
-				{
-					term.m_value = first_arg(term.m_value);
-
-					int err = compile_initializer(context,&term);
-					if (err == -1)
-						status = EMIT_NOMEM;
-					else if (err)
-						status = EMIT_THROW;
-					else
-					{
-						/* add_query will write op codes to the exec stack, so don't pop them */
-						stack_base = original_stack_base = stack_top(context->m_exec_stack);
-					}
-				}
-				else
-				{
-					int err = directive(context,&term);
-					if (err == -1)
-						status = EMIT_NOMEM;
-					else if (err)
-						status = EMIT_THROW;
-				}
-			}
-			else if (!failed)
-			{
-				/* Assert the term */
-				int err = assert_clause(context,&term,1);
-				if (err == -1)
-					status = EMIT_NOMEM;
-				else if (err)
-					status = EMIT_THROW;
-			}
-		}
-
-		if (status == EMIT_THROW)
-		{
-			/* TODO: Report the error term, or throw it? */
-			failed = 1;
-		}
-
-		if (status == EMIT_NOMEM)
-			failed = -1;
-
-		/* Reset exec and scratch stack */
-		context->m_strings = prev_strings;
-		stack_reset(&context->m_exec_stack,stack_base);
-	}
-
-	/* Hard reset the stacks because we may have allocated a lot */
-	context->m_strings = original_prev_strings;
-	stack_reset(&context->m_exec_stack,original_stack_base);
-	stack_compact(context->m_exec_stack);
-	stack_compact(context->m_scratch_stack);
-
-	return failed ? -1 : 0;
-}
-
-static int include(struct context_t* context, struct term_t* term)
-{
-	int err = 0;
-	struct stream_t* s = NULL;
-
-	/* TODO: Open stream term->m_value[0] */
-
-	/* TODO: Twiddle with context */
-
-	err = load_file(context,s);
-	if (!err)
-	{
-		/* TODO: Untwiddle context */
-	}
-
-	return err;
-}
-
-enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term)
-{
-	enum eEmitStatus status = EMIT_OK;
-	struct parser_t parser = {0};
-	parser.m_s = s;
-	parser.m_line_info.m_end_line = 1;
-
-	/* TODO: Check for permission errors first */
-
-	status = emit_term(context,term,&parser);
-	if (status == EMIT_NOMEM)
-	{
-		// TODO: emit the error
-	}
-	else if (status == EMIT_EOF)
-	{
-		status = (emit_error(context,&parser.m_line_info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(past_end_of_stream)) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
-	}
-
-	if (status == EMIT_THROW)
-		return SOLVE_THROW;
-
-	return SOLVE_TRUE;
 }
