@@ -1,5 +1,5 @@
 
-#include "context.h"
+#include "types.h"
 #include "stream.h"
 
 #include <string.h>
@@ -7,6 +7,14 @@
 #include <math.h>
 #include <stdarg.h>
 #include <assert.h>
+
+uint32_t convert_char(struct context_t* context, uint32_t in_char);
+
+/* Try to find a infix/suffix op, otherwise find prefix */
+struct operator_t* lookup_op(struct context_t* context, const union box_t* b);
+
+/* Try to find a prefix op, otherwise find infix/suffix */
+struct operator_t* lookup_prefix_op(struct context_t* context, const union box_t* b);
 
 int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len);
 

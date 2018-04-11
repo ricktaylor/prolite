@@ -1,11 +1,12 @@
 
 
-#include "context.h"
+#include "types.h"
 #include "builtin_functions.h"
 
 #include <assert.h>
 
 static enum eSolveResult solve(struct context_t* context, struct term_t* goal);
+enum eSolveResult redo(struct context_t* context);
 
 union box_t* next_arg(union box_t* v);
 
@@ -103,12 +104,6 @@ static inline void stack_pop_term(struct context_t* context, struct term_t* t)
 	t->m_vars = stack_pop_ptr(&context->m_exec_stack);
 }
 
-enum eSolveResult redo(struct context_t* context)
-{
-	solve_fn_t fn = stack_pop_ptr(&context->m_exec_stack);
-	return (*fn)(context);
-}
-
 static enum eSolveResult redo_and(struct context_t* context)
 {
 	enum eSolveResult result;
@@ -119,7 +114,7 @@ static enum eSolveResult redo_and(struct context_t* context)
 	result = redo(context);
 	if (result == SOLVE_FAIL)
 	{
-redo:
+again:
 		context_reset(context,stack_base);
 
 		clear_vars(second_goal.m_vars);
@@ -131,7 +126,7 @@ redo:
 
 			result = solve(context,&second_goal);
 			if (result == SOLVE_FAIL)
-				goto redo;
+				goto again;
 		}
 	}
 
@@ -168,7 +163,7 @@ enum eSolveResult solve_and(struct context_t* context, struct term_t* goal)
 			struct term_t second_goal;
 			second_goal.m_vars = fresh_goal.m_vars;
 			second_goal.m_value = next_arg(first_goal.m_value);
-redo:
+again:
 			stack_base = stack_top(context->m_exec_stack);
 			result = solve(context,&second_goal);
 			if (result == SOLVE_TRUE)
@@ -188,7 +183,7 @@ redo:
 
 				result = redo(context);
 				if (result == SOLVE_TRUE)
-					goto redo;
+					goto again;
 			}
 		}
 	}
@@ -389,9 +384,25 @@ enum eSolveResult solve_fail(struct context_t* context, struct term_t* goal)
 	return SOLVE_FAIL;
 }
 
+static enum eSolveResult redo_fail(struct context_t* context)
+{
+	return SOLVE_FAIL;
+}
+
 enum eSolveResult solve_true(struct context_t* context, struct term_t* goal)
 {
-	if (stack_push_ptr(&context->m_exec_stack,&solve_fail) == -1)
+	if (stack_push_ptr(&context->m_exec_stack,&redo_fail) == -1)
+		return SOLVE_NOMEM;
+
+	return SOLVE_TRUE;
+}
+
+static enum eSolveResult redo_repeat(struct context_t* context)
+{
+	if (context->m_flags.halt)
+		return SOLVE_HALT;
+
+	if (stack_push_ptr(&context->m_exec_stack,&redo_repeat) == -1)
 		return SOLVE_NOMEM;
 
 	return SOLVE_TRUE;
@@ -399,10 +410,7 @@ enum eSolveResult solve_true(struct context_t* context, struct term_t* goal)
 
 enum eSolveResult solve_repeat(struct context_t* context, struct term_t* goal)
 {
-	if (stack_push_ptr(&context->m_exec_stack,&solve_repeat) == -1)
-		return SOLVE_NOMEM;
-
-	return SOLVE_TRUE;
+	return redo_repeat(context);
 }
 
 static enum eSolveResult catch(struct context_t* context, enum eSolveResult result, struct term_t* catcher, struct term_t* recovery, size_t scratch_base)
@@ -513,7 +521,7 @@ enum eSolveResult solve_not_proveable(struct context_t* context, struct term_t* 
 	{
 		result = SOLVE_TRUE;
 
-		if (stack_push_ptr(&context->m_exec_stack,&solve_fail) == -1)
+		if (stack_push_ptr(&context->m_exec_stack,&redo_fail) == -1)
 			result = SOLVE_NOMEM;
 	}
 
@@ -532,7 +540,7 @@ enum eSolveResult solve_once(struct context_t* context, struct term_t* goal)
 	{
 		context_reset(context,stack_base);
 
-		if (stack_push_ptr(&context->m_exec_stack,&solve_fail) == -1)
+		if (stack_push_ptr(&context->m_exec_stack,&redo_fail) == -1)
 			result = SOLVE_NOMEM;
 	}
 
@@ -574,9 +582,10 @@ static enum eSolveResult solve(struct context_t* context, struct term_t* goal)
 	enum eSolveResult result;
 
 	if (context->m_flags.halt)
-		return solve_halt(context,goal);
+		return SOLVE_HALT;
 
-	// Now use the builtin functions
+	// TODO: tracepoint *call*
+
 	switch (goal->m_value->m_u64val)
 	{
 
@@ -589,6 +598,22 @@ static enum eSolveResult solve(struct context_t* context, struct term_t* goal)
 		result = solve_user_defined(context,goal);
 		break;
 	}
+
+	// TODO: tracepoint *exit*/*throw*/*fail*
+
+	return result;
+}
+
+enum eSolveResult redo(struct context_t* context)
+{
+	enum eSolveResult result;
+	solve_fn_t fn = stack_pop_ptr(&context->m_exec_stack);
+
+	// TODO: tracepoint *redo*
+
+	result = (*fn)(context);
+
+	// TODO: tracepoint *exit*/*throw*/*fail*
 
 	return result;
 }

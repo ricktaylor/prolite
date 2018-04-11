@@ -1,11 +1,12 @@
 
-#include "context.h"
+#include "types.h"
 #include "stream.h"
 
 #include "../include/prolite.h"
 
 #include <string.h>
 
+void context_reset(struct context_t* context, size_t pos);
 enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term);
 enum eSolveResult call(struct context_t* context, struct term_t* goal);
 enum eSolveResult redo(struct context_t* context);
@@ -104,26 +105,28 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 enum eProliteResult prolite_solve(prolite_query_t query)
 {
 	struct query_t* q = (struct query_t*)query;
-	if (!q)
-		return SOLVE_FAIL;
-
-	if (stack_top(q->m_context.m_exec_stack) == q->m_start)
-		return PROLITE_FALSE;
-
-	switch (redo(&q->m_context))
+	if (q)
 	{
-	case SOLVE_TRUE:
-		return PROLITE_TRUE;
+		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
+		{
+			solve_fn_t fn = stack_pop_ptr(&q->m_context.m_exec_stack);
+			switch ((*fn)(&q->m_context))
+			{
+			case SOLVE_TRUE:
+				return PROLITE_TRUE;
 
-	case SOLVE_NOMEM:
-		return PROLITE_NOMEM;
+			case SOLVE_NOMEM:
+				return PROLITE_NOMEM;
 
-	case SOLVE_THROW:
-		return PROLITE_ERROR;
+			case SOLVE_THROW:
+				return PROLITE_ERROR;
 
-	default:
-		return PROLITE_FALSE;
+			default:
+				break;
+			}
+		}
 	}
+	return PROLITE_FALSE;
 }
 
 enum eProliteResult prolite_reset(prolite_query_t query)
