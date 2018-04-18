@@ -12,7 +12,7 @@ int main(int argc, char* argv[])
 	prolite_env_t dummy;
 	prolite_query_t q;
 
-	if (prolite_prepare(dummy,"true,halt(1).",-1,&q,NULL) == PROLITE_TRUE)
+	if (prolite_prepare(dummy,"true,true.",-1,&q,NULL) == PROLITE_TRUE)
 	{
 		while (prolite_solve(q) == PROLITE_TRUE)
 			;

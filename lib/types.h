@@ -150,8 +150,8 @@ struct procedure_table_t
 
 enum eSolveResult
 {
-	SOLVE_FAIL = 0,
 	SOLVE_TRUE = 1,
+	SOLVE_FAIL = 0,
 	SOLVE_CUT = -1,
 	SOLVE_HALT = -2,
 	SOLVE_THROW = -3,

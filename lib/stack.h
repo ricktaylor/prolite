@@ -23,7 +23,7 @@ void stack_delete(struct stack_t* s);
 
 static inline uint64_t stack_top(const struct stack_t* stack)
 {
-	return (!stack ? 0 : stack->m_base + stack->m_top);
+	return (!stack ? 0 : (stack->m_base + stack->m_top));
 }
 
 uint64_t stack_push(struct stack_t** stack, uint64_t val);

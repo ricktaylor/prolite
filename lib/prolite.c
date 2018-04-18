@@ -77,9 +77,7 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 		}
 		else
 		{
-			q->m_start = stack_top(q->m_context.m_exec_stack);
-
-			if (stack_push_ptr(&q->m_context.m_exec_stack,&solve_start) == -1)
+			if ((q->m_start = stack_push_ptr(&q->m_context.m_exec_stack,&solve_start)) == -1)
 				result = SOLVE_NOMEM;
 		}
 	}
@@ -110,16 +108,23 @@ enum eProliteResult prolite_solve(prolite_query_t query)
 		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
 		{
 			solve_fn_t fn = stack_pop_ptr(&q->m_context.m_exec_stack);
-			switch ((*fn)(&q->m_context))
-			{
-			case SOLVE_TRUE:
+			enum eSolveResult result = (*fn)(&q->m_context);
+			if (result == SOLVE_TRUE)
 				return PROLITE_TRUE;
 
+			// Reset the context to prevent further execution
+			context_reset(&q->m_context,q->m_start);
+
+			switch (result)
+			{
 			case SOLVE_NOMEM:
 				return PROLITE_NOMEM;
 
 			case SOLVE_THROW:
 				return PROLITE_ERROR;
+
+			case SOLVE_HALT:
+				return PROLITE_HALT;
 
 			default:
 				break;
