@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <assert.h>
 
+void context_reset(struct context_t* context, size_t pos);
 uint32_t convert_char(struct context_t* context, uint32_t in_char);
 
 /* Try to find a infix/suffix op, otherwise find prefix */
@@ -2333,7 +2334,6 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	enum eASTError ast_err = AST_ERR_NONE;
 	uint64_t stack_base = stack_top(context->m_exec_stack);
 	uint64_t scratch_base = stack_top(context->m_scratch_stack);
-	struct string_ptr_t* prev_strings = context->m_strings;
 
 	struct token_t next = {0};
 	enum eTokenType next_type = token_next(context,parser,&next);
@@ -2373,19 +2373,13 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 		}
 	}
 
-	/* Emit out of memory last */
 	if (status != EMIT_OK)
-	{
-		/* Reset exec stack */
-		context->m_strings = prev_strings;
-		stack_reset(&context->m_exec_stack,stack_base);
-	}
+		context_reset(context,stack_base);
 
 	if (status != EMIT_THROW)
-	{
-		/* Reset scratch stack */
 		stack_reset(&context->m_scratch_stack,scratch_base);
-	}
+
+	/* TODO: Emit out of memory last */
 
 	return status;
 }
