@@ -111,11 +111,6 @@ struct continuation_t
 
 struct context_t
 {
-	struct context_flags_t
-	{
-		unsigned halt : 1;
-	} m_flags;
-
 	struct stack_t*        m_scratch_stack;
 	struct stack_t*        m_exec_stack;
 

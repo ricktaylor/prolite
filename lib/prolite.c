@@ -5,6 +5,7 @@
 #include "../include/prolite.h"
 
 #include <string.h>
+#include <assert.h>
 
 void context_reset(struct context_t* context, size_t pos);
 enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term);
@@ -157,9 +158,9 @@ enum eProliteResult prolite_reset(prolite_query_t query)
 		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
 		{
 			// In order to rewind stack safely, force a halt and step
-			q->m_context.m_flags.halt = 1;
+			assert(0);
+
 			redo(&q->m_context);
-			q->m_context.m_flags.halt = 0;
 
 			context_reset(&q->m_context,q->m_start);
 		}
