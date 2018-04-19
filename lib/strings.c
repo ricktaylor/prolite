@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 struct builtin_string_t
 {
@@ -53,66 +54,80 @@ static int builtin_string_compare(const void* p1, const void* p2)
 	return memcmp(s1->m_str,s2->m_str,s1->m_len);
 }
 
-int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
+static int box_stack_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
 {
-	if (len <= 5)
+	struct string_ptr_t* s;
+	for (s = context->m_strings; s; s = s->m_prev)
 	{
-		uint8_t c[5] = {0};
-		switch (len)
-		{
-		case 5:
-			c[4] = str[4];
-		case 4:
-			c[3] = str[3];
-		case 3:
-			c[2] = str[2];
-		case 2:
-			c[1] = str[1];
-		case 1:
-			c[0] = str[0];
-		default:
+		if (s->m_len == len && memcmp(s->m_str,str,len) == 0)
 			break;
-		}
-		memcpy(c,str,len);
-		b->m_u64val = BOX_TYPE_EMBED(type,0,len,c[0],c[1],c[2],c[3],c[4]);
 	}
-	else
+
+	if (!s)
 	{
-		struct builtin_string_t f, *r;
-		f.m_len = len;
-		f.m_str = str;
+		s = stack_malloc(&context->m_exec_stack,sizeof(struct string_ptr_t) + len);
+		if (!s)
+			return 0;
 
-		r = bsearch(&f,s_builtin_strings,sizeof(s_builtin_strings) / sizeof(s_builtin_strings[0]),sizeof(s_builtin_strings),&builtin_string_compare);
-		if (r)
-			b->m_u64val = BOX_TYPE(type) | BOX_HI16(0x4000) | BOX_LOW32((uint32_t)(r - s_builtin_strings));
-		else
-		{
-			struct string_ptr_t* s;
-			for (s = context->m_strings; s; s = s->m_prev)
-			{
-				if (s->m_len == len && memcmp(s->m_str,str,len) == 0)
-					break;
-			}
-
-			if (!s)
-			{
-				s = stack_malloc(&context->m_exec_stack,sizeof(struct string_ptr_t) + len);
-				if (!s)
-					return 0;
-
-				s->m_prev = context->m_strings;
-				s->m_len = len;
-				memcpy(s->m_str,str,len);
-				context->m_strings = s;
-			}
-
-			// TODO: Do something smarter here by using 46-bit stack offsets
-			b->m_u64val = BOX_TYPE(type);
-			box_pointer(b,s);
-		}
+		s->m_prev = context->m_strings;
+		s->m_len = len;
+		memcpy(s->m_str,str,len);
+		context->m_strings = s;
 	}
+
+	// TODO: Do something smarter here by using 46-bit stack offsets
+	b->m_u64val = BOX_TYPE(type);
+	box_pointer(b,s);
 
 	return 1;
+}
+
+static int box_builtin_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
+{
+	struct builtin_string_t f, *r;
+	f.m_len = len;
+	f.m_str = str;
+
+	r = bsearch(&f,s_builtin_strings,sizeof(s_builtin_strings) / sizeof(s_builtin_strings[0]),sizeof(s_builtin_strings),&builtin_string_compare);
+	if (r)
+	{
+		b->m_u64val = BOX_TYPE(type) | BOX_HI16(0x4000) | BOX_LOW32((uint32_t)(r - s_builtin_strings));
+		return 1;
+	}
+	return 0;
+}
+
+int box_string(enum tag_type_t type, struct context_t* context, union box_t* b, const unsigned char* str, size_t len)
+{
+	switch (len)
+	{
+	case 5:
+		b->m_u64val = BOX_TYPE_EMBED(type,0,5,str[0],str[1],str[2],str[3],str[4]);
+		return 1;
+
+	case 4:
+		b->m_u64val = BOX_TYPE_EMBED(type,0,4,str[0],str[1],str[2],str[3],0);
+		return 1;
+
+	case 3:
+		b->m_u64val = BOX_TYPE_EMBED(type,0,3,str[0],str[1],str[2],0,0);
+		return 1;
+
+	case 2:
+		b->m_u64val = BOX_TYPE_EMBED(type,0,2,str[0],str[1],0,0,0);
+		return 1;
+
+	case 1:
+		b->m_u64val = BOX_TYPE_EMBED(type,0,1,str[0],0,0,0,0);
+		return 1;
+
+	case 0:
+		b->m_u64val = BOX_TYPE_EMBED(type,0,0,0,0,0,0,0);
+		return 1;
+
+	default:
+		return box_builtin_string(type,context,b,str,len) || box_stack_string(type,context,b,str,len);
+	}
 }
 
 const unsigned char* unbox_string(struct context_t* context, const union box_t* b, size_t* len)
@@ -135,6 +150,7 @@ const unsigned char* unbox_string(struct context_t* context, const union box_t* 
 	*len = (hi48 & 0x0700) >> 8;
 
 	// TODO: NEED TO UNPACK!!
+	assert(0);
 	return NULL;
 }
 
@@ -148,6 +164,7 @@ const unsigned char* unbox_compound(struct context_t* context, const union box_t
 		*arity = (hi48 & 0x7800) >> 11;
 
 		// TODO: NEED TO UNPACK
+		assert(0);
 		return NULL;//((const unsigned char*)b) + 3;
 	}
 	*arity = all48 & MAX_ARITY;
