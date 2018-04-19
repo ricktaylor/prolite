@@ -312,11 +312,6 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 static uint32_t token_get_char_conv(struct context_t* context, const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
 {
 	uint32_t c = token_get_char(p,pe,eof,line,col);
-
-	// TODO: Remove me when module work
-	if (!context->m_module)
-		return c;
-
 	if (context->m_module->m_flags.char_conversion && c <= char_max)
 		c = convert_char(context,c);
 	return c;
@@ -1869,20 +1864,20 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 		return parse_number(context,parser,node,next_type,next,ast_err,0);
 
 	case tokDQL:
-		if (context->m_module->m_flags.double_quotes == 0 /* atom */)
+		if (context->m_module->m_flags.double_quotes == 2 /* atom */)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.1:2007 */
 			return parse_name(context,parser,max_prec,next_type,next,ast_err);
 		}
 
-		node = parse_chars_and_codes(context,context->m_module->m_flags.double_quotes == 1 ? 1 : 0,next,ast_err);
+		node = parse_chars_and_codes(context,context->m_module->m_flags.double_quotes,next,ast_err);
 		break;
 
 	case tokBackQuote:
-		if (context->m_module->m_flags.back_quotes == 0 /* atom */)
+		if (context->m_module->m_flags.back_quotes == 2 /* atom */)
 			return parse_name(context,parser,max_prec,next_type,next,ast_err);
 
-		node = parse_chars_and_codes(context,context->m_module->m_flags.back_quotes == 1 ? 1 : 0,next,ast_err);
+		node = parse_chars_and_codes(context,context->m_module->m_flags.back_quotes,next,ast_err);
 		break;
 
 	case tokOpen:
@@ -2473,7 +2468,7 @@ static enum eEmitStatus directive(struct context_t* context, struct term_t* term
 	if (type != prolite_atom && type != prolite_compound)
 		return emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(type_error),2,BOX_ATOM_BUILTIN(callable),term->m_value->m_u64val);
 
-	if (context->m_module->m_flags.unknown == 2)
+	if (context->m_module->m_flags.unknown == 0)
 		return emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(existence_error),2,BOX_ATOM_BUILTIN(procedure),term->m_value->m_u64val);
 
 	/* TODO: Warn? */

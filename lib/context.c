@@ -140,11 +140,11 @@ static struct operator_t* find_op(struct context_t* context, const union box_t* 
 		/* 8 */ { NULL, eXFY, 200 },
 	};
 
-	/*if (context->m_module->m_operators)
+	if (context->m_module->m_operators)
 	{
 		// TODO: Use the module table
 		assert(0);
-	}*/
+	}
 
 	switch (b->m_u64val)
 	{
@@ -215,11 +215,11 @@ struct operator_t* find_prefix_op(struct context_t* context, const union box_t* 
 		/* 2 */ { NULL, eFY, 200 },
 	};
 
-	/*if (context->m_module->m_operators)
+	if (context->m_module->m_operators)
 	{
 		// TODO: Use the module table
 		assert(0);
-	}*/
+	}
 
 	switch (b->m_u64val)
 	{

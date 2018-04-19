@@ -52,13 +52,26 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 	struct text_stream_t ts = {0};
 	struct term_t term = {0};
 
-	struct stack_t* s = NULL;
-	struct query_t* q = stack_malloc(&s,sizeof(struct query_t));
-	if (!q)
-		return PROLITE_NOMEM;
+	struct query_t* q = NULL;
+	{
+		struct stack_t* s = NULL;
+		q = stack_malloc(&s,sizeof(struct query_t));
+		if (!q)
+			return PROLITE_NOMEM;
 
-	memset(q,0,sizeof(struct query_t));
-	q->m_context.m_exec_stack = s;
+		memset(q,0,sizeof(struct query_t));
+		q->m_context.m_exec_stack = s;
+	}
+
+	q->m_context.m_module = stack_malloc(&q->m_context.m_exec_stack,sizeof(struct module_t));
+	if (!q->m_context.m_module)
+	{
+		stack_delete(q->m_context.m_exec_stack);
+		return PROLITE_NOMEM;
+	}
+	memset(q->m_context.m_module,0,sizeof(struct module_t));
+	q->m_context.m_module->m_flags.char_conversion = 1;
+	q->m_context.m_module->m_flags.back_quotes = 1;
 
 	ts.m_proto.m_fn_read = &text_stream_read;
 	ts.m_str = &query_text;

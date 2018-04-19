@@ -32,6 +32,7 @@ struct line_info_t
 enum tag_type_t
 {
 	prolite_double = 0,
+
 	// Values 1..7 are available
 	prolite_int32 = 1,
 	prolite_atom = 2,
@@ -102,6 +103,12 @@ struct string_ptr_t
 	unsigned char        m_str[];
 };
 
+struct continuation_t
+{
+	struct term_t          m_goal;
+	struct continuation_t* m_next;
+};
+
 struct context_t
 {
 	struct context_flags_t
@@ -109,11 +116,12 @@ struct context_t
 		unsigned halt : 1;
 	} m_flags;
 
-	struct stack_t*      m_scratch_stack;
-	struct stack_t*      m_exec_stack;
+	struct stack_t*        m_scratch_stack;
+	struct stack_t*        m_exec_stack;
 
-	struct string_ptr_t* m_strings;
-	struct module_t*     m_module;
+	struct continuation_t* m_cont;
+	struct string_ptr_t*   m_strings;
+	struct module_t*       m_module;
 };
 
 struct clause_t
@@ -156,6 +164,7 @@ enum eSolveResult
 	SOLVE_HALT = -2,
 	SOLVE_THROW = -3,
 	SOLVE_NOMEM = -4,
+	SOLVE_NOT_CALLABLE = -5,
 };
 
 typedef enum eSolveResult (*solve_fn_t)(struct context_t*);
