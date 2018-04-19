@@ -7,7 +7,7 @@
 #include <string.h>
 #include <assert.h>
 
-void context_reset(struct context_t* context, size_t pos);
+enum eSolveResult rewind_context(struct context_t* context);
 enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term);
 enum eSolveResult call(struct context_t* context, struct term_t* goal);
 enum eSolveResult redo(struct context_t* context);
@@ -122,15 +122,11 @@ enum eProliteResult prolite_solve(prolite_query_t query)
 		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
 		{
 			solve_fn_t fn = stack_pop_ptr(&q->m_context.m_exec_stack);
-			enum eSolveResult result = (*fn)(&q->m_context);
-			if (result == SOLVE_TRUE)
+			switch ((*fn)(&q->m_context))
+			{
+			case SOLVE_TRUE:
 				return PROLITE_TRUE;
 
-			// Reset the context to prevent further execution
-			context_reset(&q->m_context,q->m_start);
-
-			switch (result)
-			{
 			case SOLVE_NOMEM:
 				return PROLITE_NOMEM;
 
@@ -157,12 +153,9 @@ enum eProliteResult prolite_reset(prolite_query_t query)
 		result = PROLITE_TRUE;
 		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
 		{
-			// In order to rewind stack safely, force a halt and step
-			assert(0);
+			rewind_context(&q->m_context);
 
-			redo(&q->m_context);
-
-			context_reset(&q->m_context,q->m_start);
+			assert(stack_top(q->m_context.m_exec_stack) == q->m_start);
 		}
 
 		stack_compact(q->m_context.m_exec_stack);

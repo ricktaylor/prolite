@@ -12,7 +12,7 @@ struct builtin_string_t
 };
 
 #undef DECLARE_BUILTIN_STRING
-#define DECLARE_BUILTIN_STRING(s) { sizeof(#s),(const unsigned char*)(#s) },
+#define DECLARE_BUILTIN_STRING(s) { sizeof(#s)-1,(const unsigned char*)(#s) },
 
 const struct builtin_string_t s_builtin_strings[] =
 {
@@ -88,7 +88,7 @@ static int box_builtin_string(enum tag_type_t type, struct context_t* context, u
 	f.m_len = len;
 	f.m_str = str;
 
-	r = bsearch(&f,s_builtin_strings,sizeof(s_builtin_strings) / sizeof(s_builtin_strings[0]),sizeof(s_builtin_strings),&builtin_string_compare);
+	r = bsearch(&f,s_builtin_strings,sizeof(s_builtin_strings) / sizeof(s_builtin_strings[0]),sizeof(s_builtin_strings[0]),&builtin_string_compare);
 	if (r)
 	{
 		b->m_u64val = BOX_TYPE(type) | BOX_HI16(0x4000) | BOX_LOW32((uint32_t)(r - s_builtin_strings));

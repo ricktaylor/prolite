@@ -8,7 +8,6 @@
 #include <stdarg.h>
 #include <assert.h>
 
-void context_reset(struct context_t* context, size_t pos);
 uint32_t convert_char(struct context_t* context, uint32_t in_char);
 
 /* Try to find a infix/suffix op, otherwise find prefix */
@@ -2369,7 +2368,10 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	}
 
 	if (status != EMIT_OK)
-		context_reset(context,stack_base);
+	{
+		// TODO: Undo pointers...
+		stack_reset(&context->m_exec_stack,stack_base);
+	}
 
 	if (status != EMIT_THROW)
 		stack_reset(&context->m_scratch_stack,scratch_base);
