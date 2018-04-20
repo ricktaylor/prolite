@@ -103,18 +103,11 @@ struct string_ptr_t
 	unsigned char        m_str[];
 };
 
-struct continuation_t
-{
-	struct term_t          m_goal;
-	struct continuation_t* m_next;
-};
-
 struct context_t
 {
 	struct stack_t*        m_scratch_stack;
 	struct stack_t*        m_exec_stack;
 
-	struct continuation_t* m_cont;
 	struct string_ptr_t*   m_strings;
 	struct module_t*       m_module;
 };
@@ -160,9 +153,10 @@ enum eSolveResult
 	SOLVE_THROW = -3,
 	SOLVE_NOMEM = -4,
 	SOLVE_NOT_CALLABLE = -5,
+	SOLVE_UNWIND = -6,
 };
 
-typedef enum eSolveResult (*solve_fn_t)(struct context_t*);
+typedef enum eSolveResult (*redo_fn_t)(struct context_t*,int);
 
 union box_t* first_arg(union box_t* v);
 union box_t* next_arg(union box_t* v);

@@ -7,10 +7,9 @@
 #include <string.h>
 #include <assert.h>
 
-enum eSolveResult rewind_context(struct context_t* context);
 enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term);
 enum eSolveResult call(struct context_t* context, struct term_t* goal);
-enum eSolveResult redo(struct context_t* context);
+enum eSolveResult redo(struct context_t* context, int unwind);
 
 struct text_stream_t
 {
@@ -121,8 +120,8 @@ enum eProliteResult prolite_solve(prolite_query_t query)
 	{
 		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
 		{
-			solve_fn_t fn = stack_pop_ptr(&q->m_context.m_exec_stack);
-			switch ((*fn)(&q->m_context))
+			redo_fn_t fn = stack_pop_ptr(&q->m_context.m_exec_stack);
+			switch ((*fn)(&q->m_context,0))
 			{
 			case SOLVE_TRUE:
 				return PROLITE_TRUE;
@@ -153,14 +152,18 @@ enum eProliteResult prolite_reset(prolite_query_t query)
 		result = PROLITE_TRUE;
 		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
 		{
-			rewind_context(&q->m_context);
+			result = redo(&q->m_context,1);
+			if (result != SOLVE_UNWIND)
+			{
+				assert(0);
+			}
 
 			assert(stack_top(q->m_context.m_exec_stack) == q->m_start);
 		}
 
 		stack_compact(q->m_context.m_exec_stack);
 		if (stack_push_ptr(&q->m_context.m_exec_stack,&solve_start) == -1)
-			result = SOLVE_NOMEM;
+			result = PROLITE_NOMEM;
 
 		stack_reset(&q->m_context.m_scratch_stack,0);
 		stack_compact(q->m_context.m_scratch_stack);
