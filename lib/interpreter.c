@@ -68,11 +68,10 @@ static enum eSolveResult copy_term(struct context_t* context, struct term_t* src
 		*dest = *src;
 		return SOLVE_TRUE;
 	}
+
 	// TODO: Walk src, copying vars into scratch, copying body into exec
 
 	// Copy vars into exec
-
-	// This is going to do bad things to our stack assumptions!!
 
 	assert(0);
 
