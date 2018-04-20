@@ -413,7 +413,7 @@ static enum eSolveResult catch(struct context_t* context, enum eSolveResult resu
 		union box_t* ball = NULL;
 		int unified = 0;
 
-		// TODO : Copy ball from scratch stack to exec_stack
+		// TODO : *Copy* ball from scratch stack to exec_stack
 
 		// Unify ball and recovery
 		assert(0);
@@ -429,19 +429,17 @@ static enum eSolveResult redo_catch_goal(struct context_t* context, int unwind)
 {
 	enum eSolveResult result;
 	struct term_t catcher,recovery;
-	size_t stack_base;
 
 	stack_pop_term(context,&recovery);
-	stack_pop_term(context,&catcher);
-
-	stack_base = stack_top(context->m_exec_stack);
+	catcher.m_value = stack_pop_ptr(&context->m_exec_stack);
+	catcher.m_vars = recovery.m_vars;
 
 	result = redo(context,unwind);
 	if (result == SOLVE_NOMEM || result == SOLVE_THROW)
 		result = catch(context,result,&catcher,&recovery);
 	else if (result == SOLVE_TRUE)
 	{
-		if (stack_push_term(context,&catcher) == -1 ||
+		if (stack_push_ptr(&context->m_exec_stack,catcher.m_value) == -1 ||
 			stack_push_term(context,&recovery) == -1 ||
 			stack_push_ptr(&context->m_exec_stack,&redo_catch_goal) == -1)
 		{
@@ -454,20 +452,19 @@ static enum eSolveResult redo_catch_goal(struct context_t* context, int unwind)
 
 enum eSolveResult solve_catch(struct context_t* context, struct term_t* goal)
 {
-	struct term_t fresh_goal,catcher,recovery;
-	size_t stack_base = stack_top(context->m_exec_stack);
+	struct term_t catcher,recovery;
 
-	fresh_goal.m_vars = catcher.m_vars = recovery.m_vars = goal->m_vars;
-	fresh_goal.m_value = first_arg(goal->m_value);
-	catcher.m_value = next_arg(fresh_goal.m_value);
+	catcher.m_vars = recovery.m_vars = goal->m_vars;
+	goal->m_value = first_arg(goal->m_value);
+	catcher.m_value = next_arg(goal->m_value);
 	recovery.m_value = next_arg(catcher.m_value);
 
-	enum eSolveResult result = call(context,&fresh_goal);
+	enum eSolveResult result = call(context,goal);
 	if (result == SOLVE_NOMEM || result == SOLVE_THROW)
 		result = catch(context,result,&catcher,&recovery);
 	else if (result == SOLVE_TRUE)
 	{
-		if (stack_push_term(context,&catcher) == -1 ||
+		if (stack_push_ptr(&context->m_exec_stack,catcher.m_value) == -1 ||
 			stack_push_term(context,&recovery) == -1 ||
 			stack_push_ptr(&context->m_exec_stack,&redo_catch_goal) == -1)
 		{
