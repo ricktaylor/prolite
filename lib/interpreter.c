@@ -221,6 +221,27 @@ static enum eSolveResult redo_or(struct context_t* context, int unwind)
 	return result;
 }
 
+static enum eSolveResult redo_or2(struct context_t* context, int unwind)
+{
+	enum eSolveResult result;
+	size_t stack_base = stack_pop(&context->m_exec_stack);
+
+	result = redo(context,unwind);
+	if (result == SOLVE_TRUE)
+	{
+		if (stack_push(&context->m_exec_stack,stack_base) == -1 ||
+			stack_push_ptr(&context->m_exec_stack,&redo_or2) == -1)
+		{
+			result = SOLVE_NOMEM;
+		}
+	}
+
+	if (result != SOLVE_TRUE)
+		stack_reset(&context->m_exec_stack,stack_base);
+
+	return result;
+}
+
 static inline enum eSolveResult inline_solve_or(struct context_t* context, struct term_t* goal)
 {
 	enum eSolveResult result;
@@ -250,7 +271,17 @@ static inline enum eSolveResult inline_solve_or(struct context_t* context, struc
 
 			result = copy_term(context,&or_goal,&or_goal);
 			if (result == SOLVE_TRUE)
+			{
 				result = solve(context,&or_goal);
+				if (result == SOLVE_TRUE)
+				{
+					if (stack_push(&context->m_exec_stack,stack_base) == -1 ||
+						stack_push_ptr(&context->m_exec_stack,&redo_or2) == -1)
+					{
+						result = SOLVE_NOMEM;
+					}
+				}
+			}
 		}
 	}
 
@@ -288,7 +319,7 @@ static enum eSolveResult redo_call(struct context_t* context, int unwind)
 	else if (result == SOLVE_NOT_CALLABLE)
 	{
 		assert(0);
-		// TODO: throw callable term fresh_goal
+		// TODO: throw(callable_term,fresh_goal)
 	}
 
 	if (result != SOLVE_TRUE)
@@ -327,7 +358,7 @@ enum eSolveResult call(struct context_t* context, struct term_t* goal)
 		else if (result == SOLVE_NOT_CALLABLE)
 		{
 			assert(0);
-			// TODO: throw callable term fresh_goal
+			// TODO: throw(callable_term,fresh_goal)
 		}
 	}
 
@@ -343,21 +374,14 @@ static inline enum eSolveResult inline_solve_call(struct context_t* context, str
 	return call(context,goal);
 }
 
-static enum eSolveResult throw(struct context_t* context, union box_t* ball)
-{
-	// TODO: Copy ball onto scratch stack...
-
-	if (stack_push(&context->m_scratch_stack,ball->m_u64val) == -1)
-	{
-		return SOLVE_NOMEM;
-	}
-
-	return SOLVE_THROW;
-}
-
 static inline enum eSolveResult inline_solve_throw(struct context_t* context, struct term_t* goal)
 {
-	return throw(context,first_arg(goal->m_value));
+	goal->m_value = first_arg(goal->m_value);
+
+	if (UNBOX_TYPE(goal->m_value->m_u64val) == prolite_var)
+		return throw_instantiation_error(context,goal->m_value);
+
+	return stack_push(&context->m_scratch_stack,goal->m_value->m_u64val) == -1 ? SOLVE_NOMEM : SOLVE_THROW;
 }
 
 static enum eSolveResult redo_repeat(struct context_t* context, int unwind)
@@ -390,13 +414,13 @@ static enum eSolveResult catch(struct context_t* context, enum eSolveResult resu
 		union box_t* ball = NULL;
 		int unified = 0;
 
-		// TODO : Pop ball from scratch stack to exec_stack
+		// TODO : Copy ball from scratch stack to exec_stack
 
 		// Unify ball and recovery
 		assert(0);
 
 		if (!unified)
-			return throw(context,ball);
+			return SOLVE_THROW;
 	}
 
 	return call(context,recovery);
@@ -512,12 +536,7 @@ enum eSolveResult solve_once(struct context_t* context, struct term_t* goal)
 
 static inline enum eSolveResult inline_solve_halt(struct context_t* context, struct term_t* goal)
 {
-	// Halt/0
-
-	// Push 0 as the exit_code
-	if (stack_push(&context->m_scratch_stack,BOX_TYPE(prolite_int32)) == -1)
-		return SOLVE_NOMEM;
-
+	// halt/0
 	return SOLVE_HALT;
 }
 
@@ -603,11 +622,11 @@ enum eSolveResult redo(struct context_t* context, int unwind)
 	enum eSolveResult result;
 	redo_fn_t fn = stack_pop_ptr(&context->m_exec_stack);
 
-	// TODO: tracepoint *redo*
+	// TODO: if (!unwind) tracepoint *redo*
 
 	result = (*fn)(context,unwind);
 
-	// TODO: tracepoint *exit*/*throw*/*fail*
+	// TODO: if (!unwind) tracepoint *exit*/*throw*/*fail*
 
 	return result;
 }
