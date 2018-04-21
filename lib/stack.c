@@ -2,12 +2,31 @@
 #include "stack.h"
 
 #include <stdlib.h>
-#include <string.h>
+#include <strings.h>
 
 static const uint64_t PAGE_SIZE = 4096 * sizeof(uint64_t);
 
 #define ALIGN(x,y) (((x)+((y)-1)) & ~((y)-1))
 #define ALIGN_DIV(x,y) (((x)+((y)-1)) / (y))
+
+struct stack_t* stack_new(void*(*fn_malloc)(size_t), void(*fn_free)(void*))
+{
+	size_t align_size = PAGE_SIZE;
+	size_t count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
+
+	struct stack_t* stack = (*fn_malloc)(align_size);
+	if (stack)
+	{
+		stack->m_top = 0;
+		stack->m_count = count;
+		stack->m_prev = NULL;
+		stack->m_next = NULL;
+		stack->m_fn_malloc = fn_malloc;
+		stack->m_fn_free = fn_free;
+		stack->m_base = 0;
+	}
+	return stack;
+}
 
 static struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
 {
@@ -15,7 +34,7 @@ static struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
 	size_t count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
 
 	struct stack_t* stack;
-	if (after && after->m_next && after->m_next->m_count >= count)
+	if (after->m_next && after->m_next->m_count >= count)
 	{
 		stack = after->m_next;
 		stack->m_top = 0;
@@ -23,25 +42,22 @@ static struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
 	}
 	else
 	{
-		stack = malloc(align_size);
+		stack = (*after->m_fn_malloc)(align_size);
 		if (stack)
 		{
 			stack->m_top = 0;
 			stack->m_count = count;
+			stack->m_fn_malloc = after->m_fn_malloc;
+			stack->m_fn_free = after->m_fn_free;
 			stack->m_prev = after;
 			stack->m_next = NULL;
-			stack->m_base = 0;
-
-			if (stack->m_prev)
+			if (stack->m_prev->m_next)
 			{
-				if (stack->m_prev->m_next)
-				{
-					stack->m_next = stack->m_prev->m_next;
-					stack->m_next->m_prev = stack;
-				}
-				stack->m_prev->m_next = stack;
-				stack->m_base = stack->m_prev->m_base + stack->m_prev->m_top;
+				stack->m_next = stack->m_prev->m_next;
+				stack->m_next->m_prev = stack;
 			}
+			stack->m_prev->m_next = stack;
+			stack->m_base = stack->m_prev->m_base + stack->m_prev->m_top;
 		}
 	}
 	return stack;
@@ -52,7 +68,7 @@ void stack_delete(struct stack_t* s)
 	while (s)
 	{
 		struct stack_t* p = s->m_prev;
-		free(s);
+		(*s->m_fn_free)(s);
 		s = p;
 	}
 }
@@ -65,15 +81,12 @@ void* stack_at(struct stack_t* stack, uint64_t pos)
 	while (stack && stack->m_base > pos)
 		stack = stack->m_prev;
 
-	if (!stack)
-		return NULL;
-
 	return &stack->m_data[pos - stack->m_base];
 }
 
 uint64_t stack_push(struct stack_t** stack, uint64_t val)
 {
-	if (!(*stack) || (*stack)->m_top == (*stack)->m_count)
+	if ((*stack)->m_top == (*stack)->m_count)
 	{
 		struct stack_t* s = stack_insert_page(sizeof(val),*stack);
 		if (!s)
@@ -108,16 +121,12 @@ void stack_reset(struct stack_t** stack, uint64_t pos)
 
 void stack_compact(struct stack_t* stack)
 {
-	if (!stack)
-		return;
-
 	for (struct stack_t* next = stack->m_next;next;)
 	{
 		struct stack_t* s = next->m_next;
-		free(next);
+		(*next->m_fn_free)(next);
 		next = s;
 	}
-
 	stack->m_next = NULL;
 }
 
@@ -126,7 +135,7 @@ void* stack_malloc(struct stack_t** stack, size_t len)
 	void* ptr = NULL;
 	uint32_t align_len = ALIGN_DIV(len,sizeof(uint64_t));
 
-	if (!(*stack) || (*stack)->m_top + align_len > (*stack)->m_count)
+	if ((*stack)->m_top + align_len > (*stack)->m_count)
 	{
 		struct stack_t* s = stack_insert_page(len,*stack);
 		if (!s)
@@ -158,9 +167,6 @@ void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t ne
 	void* new_ptr;
 	uint32_t align_old_len = ALIGN_DIV(old_len,sizeof(uint64_t));
 	uint32_t align_new_len = ALIGN_DIV(new_len,sizeof(uint64_t));
-
-	if (!(*stack))
-		return stack_malloc(stack,new_len);
 
 	if ((*stack)->m_top >= align_old_len && ptr == &(*stack)->m_data[(*stack)->m_top - align_old_len])
 	{

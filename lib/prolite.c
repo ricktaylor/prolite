@@ -54,18 +54,32 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 
 	struct query_t* q = NULL;
 	{
-		struct stack_t* s = NULL;
+		struct stack_t* s = stack_new(&malloc,&free);
+		if (!s)
+			return PROLITE_NOMEM;
+
 		q = stack_malloc(&s,sizeof(struct query_t));
 		if (!q)
+		{
+			stack_delete(s);
 			return PROLITE_NOMEM;
+		}
 
 		memset(q,0,sizeof(struct query_t));
 		q->m_context.m_exec_stack = s;
 	}
 
+	q->m_context.m_scratch_stack = stack_new(&malloc,&free);
+	if (!q->m_context.m_scratch_stack)
+	{
+		stack_delete(q->m_context.m_exec_stack);
+		return PROLITE_NOMEM;
+	}
+
 	q->m_context.m_module = stack_malloc(&q->m_context.m_exec_stack,sizeof(struct module_t));
 	if (!q->m_context.m_module)
 	{
+		stack_delete(q->m_context.m_scratch_stack);
 		stack_delete(q->m_context.m_exec_stack);
 		return PROLITE_NOMEM;
 	}
@@ -102,6 +116,8 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 		return PROLITE_TRUE;
 
 	case SOLVE_NOMEM:
+		stack_delete(q->m_context.m_scratch_stack);
+		stack_delete(q->m_context.m_exec_stack);
 		return PROLITE_NOMEM;
 
 	case SOLVE_THROW:
@@ -177,6 +193,7 @@ void prolite_finalize(prolite_query_t query)
 	if (q)
 	{
 		prolite_reset(query);
+		stack_delete(q->m_context.m_scratch_stack);
 		stack_delete(q->m_context.m_exec_stack);
 	}
 }

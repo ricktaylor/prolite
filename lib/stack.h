@@ -16,9 +16,12 @@ struct stack_t
 	uint32_t        m_count;
 	uint32_t        m_top;
 	uint64_t        m_base;
+	void*         (*m_fn_malloc)(size_t);
+	void          (*m_fn_free)(void*);
 	uint64_t        m_data[];
 };
 
+struct stack_t* stack_new(void*(*fn_malloc)(size_t), void(*fn_free)(void*));
 void stack_delete(struct stack_t* s);
 
 static inline uint64_t stack_top(const struct stack_t* stack)
