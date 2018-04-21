@@ -372,6 +372,10 @@ static inline enum eSolveResult inline_solve_throw(struct context_t* context, st
 	if (UNBOX_TYPE(goal->m_value->m_u64val) == prolite_var)
 		return throw_instantiation_error(context,goal->m_value);
 
+	stack_reset(&context->m_scratch_stack,0);
+
+	// TODO: Copy goal->m_value onto scratch stack
+
 	return stack_push(&context->m_scratch_stack,goal->m_value->m_u64val) == -1 ? SOLVE_NOMEM : SOLVE_THROW;
 }
 
@@ -402,7 +406,7 @@ static enum eSolveResult catch(struct context_t* context, enum eSolveResult resu
 	}
 	else
 	{
-		union box_t* ball = NULL;
+		union box_t* ball = stack_at(context->m_scratch_stack,0);
 		int unified = 0;
 
 		// TODO : *Copy* ball from scratch stack to exec_stack
@@ -531,29 +535,15 @@ static inline enum eSolveResult inline_solve_halt(struct context_t* context, str
 enum eSolveResult solve_halt(struct context_t* context, struct term_t* goal)
 {
 	// halt/1
-	enum eSolveResult result;
-	struct term_t fresh_goal;
-	size_t stack_base = stack_top(context->m_exec_stack);
-
 	goal->m_value = first_arg(goal->m_value);
 
+	if (UNBOX_TYPE(goal->m_value->m_u64val) == prolite_var)
+		return throw_instantiation_error(context,goal->m_value);
+	else if (UNBOX_TYPE(goal->m_value->m_u64val) != prolite_int32)
+		return throw_type_error(context,BOX_ATOM_BUILTIN(integer),goal->m_value);
 
-	// TODO: Broken - copying to all the wrong places!
-	assert(0);
-
-	result = copy_term(context,goal,&fresh_goal);
-	if (result == SOLVE_TRUE)
-	{
-		// TODO: Check fresh_goal.m_value
-
-		if (stack_push(&context->m_scratch_stack,fresh_goal.m_value->m_u64val) == -1)
-			result = SOLVE_NOMEM;
-	}
-
-	if (result != SOLVE_TRUE)
-		stack_reset(&context->m_exec_stack,stack_base);
-
-	return result;
+	stack_reset(&context->m_scratch_stack,0);
+	return stack_push(&context->m_scratch_stack,goal->m_value->m_u64val) == -1 ? SOLVE_NOMEM : SOLVE_HALT;
 }
 
 static enum eSolveResult solve_user_defined(struct context_t* context, struct term_t* goal)

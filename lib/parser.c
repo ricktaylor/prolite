@@ -2229,10 +2229,14 @@ static enum eEmitStatus emit_error_line_info(struct context_t* context, struct l
 
 static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t* info, uint64_t error_functor, unsigned int arity, ...)
 {
+	enum eEmitStatus status;
+
 	va_list args;
 	va_start(args,arity);
 
-	enum eEmitStatus status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2);
+	stack_reset(&context->m_scratch_stack,0);
+
+	status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2);
 	if (status == EMIT_OK)
 		status = emit_compound(&context->m_scratch_stack,error_functor,arity);
 	if (status == EMIT_OK)
@@ -2253,7 +2257,11 @@ static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t
 
 static enum eEmitStatus emit_syntax_error_missing(struct context_t* context, uint64_t missing_atom, struct line_info_t* info)
 {
-	enum eEmitStatus status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2);
+	enum eEmitStatus status;
+
+	stack_reset(&context->m_scratch_stack,0);
+
+	status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2);
 	if (status == EMIT_OK)
 		status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1);
 	if (status == EMIT_OK)
@@ -2327,7 +2335,6 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	enum eEmitStatus status = EMIT_OK;
 	enum eASTError ast_err = AST_ERR_NONE;
 	uint64_t stack_base = stack_top(context->m_exec_stack);
-	uint64_t scratch_base = stack_top(context->m_scratch_stack);
 
 	struct token_t next = {0};
 	enum eTokenType next_type = token_next(context,parser,&next);
@@ -2335,7 +2342,7 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	if (!node || next_type != tokEnd)
 	{
 		/* Reset scratch stack */
-		stack_reset(&context->m_scratch_stack,scratch_base);
+		stack_reset(&context->m_scratch_stack,0);
 
 		/* Reset token because we just trashed it */
 		next.m_alloc = 0;
@@ -2374,9 +2381,7 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	}
 
 	if (status != EMIT_THROW)
-		stack_reset(&context->m_scratch_stack,scratch_base);
-
-	/* TODO: Emit out of memory last */
+		stack_reset(&context->m_scratch_stack,0);
 
 	return status;
 }
@@ -2508,9 +2513,8 @@ static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 	if (status == EMIT_EOF)
 		status = EMIT_OK;
 
-	/* Compact the stacks because we may have allocated a lot */
+	/* Compact the scratch stack because we may have allocated a lot */
 	stack_compact(context->m_scratch_stack);
-	stack_compact(context->m_exec_stack);
 
 	return status;
 }
