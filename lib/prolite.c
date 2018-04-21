@@ -52,6 +52,7 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 	struct text_stream_t ts = {0};
 	struct term_t term = {0};
 
+	// Create a new context
 	struct query_t* q = NULL;
 	{
 		struct stack_t* s = stack_new(&malloc,&free);
@@ -108,6 +109,9 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 				result = SOLVE_NOMEM;
 		}
 	}
+
+	// We have just made heavy use of the scratch stack
+	stack_compact(q->m_context.m_scratch_stack);
 
 	switch (result)
 	{
@@ -169,11 +173,8 @@ enum eProliteResult prolite_reset(prolite_query_t query)
 		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
 		{
 			result = redo(&q->m_context,1);
-			if (result != SOLVE_UNWIND)
-			{
-				assert(0);
-			}
 
+			assert(result == SOLVE_UNWIND);
 			assert(stack_top(q->m_context.m_exec_stack) == q->m_start);
 		}
 
