@@ -1,7 +1,6 @@
 
 
 #include "types.h"
-#include "builtin_functions.h"
 
 #include <assert.h>
 #include <math.h>
@@ -551,6 +550,13 @@ static enum eSolveResult solve_user_defined(struct context_t* context, struct te
 	assert(0);
 	return SOLVE_FAIL;
 }
+
+#define DECLARE_BUILTIN_CONTROL(f,n)
+
+#define DECLARE_BUILTIN_FUNCTION(f,n) \
+	enum eSolveResult solve_##f(struct context_t* context, struct term_t* goal);
+
+#include "builtin_functions.h"
 
 static enum eSolveResult solve(struct context_t* context, struct term_t* goal)
 {

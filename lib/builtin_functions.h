@@ -1,12 +1,6 @@
 
-#if !defined(BUILTIN_FUNCTIONS_H_INCLUDED_) || defined(DECLARE_BUILTIN_FUNCTION)
-
-#if !defined(DECLARE_BUILTIN_FUNCTION)
-#define BUILTIN_FUNCTIONS_H_INCLUDED_
-#define DECLARE_BUILTIN_FUNCTION(f,n) \
-	enum eSolveResult solve_##f(struct context_t* context, struct term_t* goal);
-
-#define DECLARE_BUILTIN_CONTROL(f,n)
+#if !defined(DECLARE_BUILTIN_CONTROL) || !defined(DECLARE_BUILTIN_FUNCTION)
+#error Do not directly include this file
 #endif
 
 // These are the inline control functions
@@ -29,5 +23,3 @@ DECLARE_BUILTIN_FUNCTION(halt,BOX_COMPOUND_EMBED_4(1,'h','a','l','t'))
 DECLARE_BUILTIN_FUNCTION(set_prolog_flag,BOX_COMPOUND_BUILTIN(set_prolog_flag,2))
 DECLARE_BUILTIN_FUNCTION(char_conversion,BOX_COMPOUND_BUILTIN(char_conversion,2))
 DECLARE_BUILTIN_FUNCTION(op,BOX_COMPOUND_EMBED_2(3,'o','p'))
-
-#endif /* BUILTIN_FUNCTIONS_H_INCLUDED_ */
