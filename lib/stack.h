@@ -67,6 +67,4 @@ void stack_free(struct stack_t* stack, void* ptr, size_t len);
 
 void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t new_len);
 
-int stack_copy(struct stack_t** dest, struct stack_t** src, size_t start);
-
 #endif /* STACK_H_INCLUDED_ */

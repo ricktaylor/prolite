@@ -193,6 +193,7 @@ void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t ne
 	return ptr;
 }
 
+#if 0
 int stack_copy(struct stack_t** dest, struct stack_t** src, size_t start)
 {
 	/* Bulk copy without extra splitting */
@@ -233,3 +234,4 @@ int stack_copy(struct stack_t** dest, struct stack_t** src, size_t start)
 
 	return 0;
 }
+#endif
