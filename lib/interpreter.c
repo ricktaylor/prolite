@@ -4,6 +4,7 @@
 #include "builtin_functions.h"
 
 #include <assert.h>
+#include <math.h>
 
 static enum eSolveResult solve(struct context_t* context, struct term_t* goal);
 enum eSolveResult redo(struct context_t* context, int unwind);
@@ -12,30 +13,29 @@ union box_t* next_arg(union box_t* v);
 
 union box_t* first_arg(union box_t* v)
 {
-	int extra_functor = 0;
+	int debug = (UNBOX_EXP_16(v->m_u64val) & 0x8000);
 
 	assert(UNBOX_TYPE(v->m_u64val) == prolite_compound);
 
+	// Skip functor atom
 	if ((UNBOX_HI16(v->m_u64val) & 0xC000) == 0)
-		extra_functor = 1;
+		++v;
 
-	// TODO: debug info
-	//if (v->m_u64val < 0)
+	if (debug)
+		++v;
 
-	++v;
-
-	if (extra_functor)
-	{
-		// Skip functor atom
-		v = next_arg(v);
-	}
-	return v;
+	return ++v;
 }
 
 union box_t* next_arg(union box_t* v)
 {
-	enum tag_type_t type = UNBOX_TYPE(v->m_u64val);
-	if (type == prolite_compound)
+	if (!isnan(v->m_dval))
+	{
+		++v;
+
+		// TODO: Check v->m_u64val for some kind of magic marker?
+	}
+	else if (UNBOX_TYPE(v->m_u64val) == prolite_compound)
 	{
 		uint64_t all48 = UNBOX_MANT_48(v->m_u64val);
 		uint64_t arity;
@@ -53,8 +53,8 @@ union box_t* next_arg(union box_t* v)
 	}
 	else
 	{
-		// TODO: debug info
-		//if (v->m_u64val < 0)
+		if (UNBOX_EXP_16(v->m_u64val) & 0x8000)
+			++v;
 
 		++v;
 	}
