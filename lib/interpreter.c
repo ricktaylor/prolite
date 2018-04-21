@@ -371,8 +371,6 @@ static inline enum eSolveResult inline_solve_throw(struct context_t* context, st
 	if (UNBOX_TYPE(goal->m_value->m_u64val) == prolite_var)
 		return throw_instantiation_error(context,goal->m_value);
 
-	stack_reset(&context->m_scratch_stack,0);
-
 	// TODO: Copy goal->m_value onto scratch stack
 
 	return stack_push(&context->m_scratch_stack,goal->m_value->m_u64val) == -1 ? SOLVE_NOMEM : SOLVE_THROW;
@@ -395,12 +393,16 @@ static enum eSolveResult catch(struct context_t* context, enum eSolveResult resu
 {
 	if (result == SOLVE_NOMEM)
 	{
-		int unified = 0;
+		if (catcher->m_value->m_u64val != BOX_COMPOUND_BUILTIN(resource_error,1))
+			return SOLVE_NOMEM;
 
-		// TODO: Unify catcher with 'resource_error' here
-		assert(0);
-
-		if (!unified)
+		catcher->m_value = first_arg(catcher->m_value);
+		if (UNBOX_TYPE(catcher->m_value->m_u64val) == prolite_var)
+		{
+			// TODO: Unify catcher with 'memory' here
+			assert(0);
+		}
+		else if (catcher->m_value->m_u64val != BOX_ATOM_BUILTIN(memory))
 			return SOLVE_NOMEM;
 	}
 	else
@@ -410,7 +412,7 @@ static enum eSolveResult catch(struct context_t* context, enum eSolveResult resu
 
 		// TODO : *Copy* ball from scratch stack to exec_stack
 
-		// Unify ball and recovery
+		// Unify ball and catcher
 		assert(0);
 
 		if (!unified)
@@ -541,7 +543,6 @@ enum eSolveResult solve_halt(struct context_t* context, struct term_t* goal)
 	else if (UNBOX_TYPE(goal->m_value->m_u64val) != prolite_int32)
 		return throw_type_error(context,BOX_ATOM_BUILTIN(integer),goal->m_value);
 
-	stack_reset(&context->m_scratch_stack,0);
 	return stack_push(&context->m_scratch_stack,goal->m_value->m_u64val) == -1 ? SOLVE_NOMEM : SOLVE_HALT;
 }
 
