@@ -315,11 +315,6 @@ static enum eSolveResult redo_call(struct context_t* context, int unwind)
 	}
 	else if (result == SOLVE_CUT)
 		result = SOLVE_FAIL;
-	else if (result == SOLVE_NOT_CALLABLE)
-	{
-		assert(0);
-		// TODO: throw(callable_term,fresh_goal)
-	}
 
 	if (result != SOLVE_TRUE)
 		stack_reset(&context->m_exec_stack,stack_base);
@@ -355,10 +350,7 @@ enum eSolveResult call(struct context_t* context, struct term_t* goal)
 		else if (result == SOLVE_CUT)
 			result = SOLVE_FAIL;
 		else if (result == SOLVE_NOT_CALLABLE)
-		{
-			assert(0);
-			// TODO: throw(callable_term,fresh_goal)
-		}
+			result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),fresh_goal.m_value);
 	}
 
 	if (result != SOLVE_TRUE)
