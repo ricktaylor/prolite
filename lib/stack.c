@@ -33,10 +33,9 @@ static struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
 	size_t align_size = ALIGN(size,PAGE_SIZE);
 	size_t count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
 
-	struct stack_t* stack;
-	if (after->m_next && after->m_next->m_count >= count)
+	struct stack_t* stack = after->m_next;
+	if (stack && stack->m_count >= count)
 	{
-		stack = after->m_next;
 		stack->m_top = 0;
 		stack->m_base = after->m_base + after->m_top;
 	}
@@ -100,7 +99,7 @@ uint64_t stack_push(struct stack_t** stack, uint64_t val)
 	return (*stack)->m_base + (*stack)->m_top++;
 }
 
-void stack_reset(struct stack_t** stack, uint64_t pos)
+void stack_reset_(struct stack_t** stack, uint64_t pos)
 {
 	if (pos >= stack_top(*stack))
 		return;
@@ -108,7 +107,7 @@ void stack_reset(struct stack_t** stack, uint64_t pos)
 	pos = ((*stack)->m_base + (*stack)->m_top) - pos;
 	while (pos)
 	{
-		if (pos < (*stack)->m_top)
+		if (pos <= (*stack)->m_top)
 		{
 			(*stack)->m_top -= pos;
 			break;
@@ -152,6 +151,9 @@ void* stack_malloc(struct stack_t** stack, size_t len)
 
 void stack_free(struct stack_t* stack, void* ptr, size_t len)
 {
+	while (stack && (ptr < (void*)&stack->m_data[0] || ptr >= (void*)&stack->m_data[stack->m_top]))
+		stack = stack->m_prev;
+
 	if (stack)
 	{
 		uint32_t align_len = ALIGN_DIV(len,sizeof(uint64_t));
@@ -163,44 +165,32 @@ void stack_free(struct stack_t* stack, void* ptr, size_t len)
 
 void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t new_len)
 {
-	struct stack_t* s;
-	void* new_ptr;
 	uint32_t align_old_len = ALIGN_DIV(old_len,sizeof(uint64_t));
-	uint32_t align_new_len = ALIGN_DIV(new_len,sizeof(uint64_t));
 
 	if ((*stack)->m_top >= align_old_len && ptr == &(*stack)->m_data[(*stack)->m_top - align_old_len])
 	{
+		uint32_t align_new_len = ALIGN_DIV(new_len,sizeof(uint64_t));
 		if ((*stack)->m_top + (align_new_len - align_old_len) <= (*stack)->m_count)
 		{
 			(*stack)->m_top += (align_new_len - align_old_len);
 			return ptr;
 		}
-
-		(*stack)->m_top -= align_old_len;
-
-		s = stack_insert_page(new_len,*stack);
-		if (!s)
-		{
-			(*stack)->m_top += align_old_len;
-			return NULL;
-		}
 	}
-	else
+
+	if (old_len < new_len)
 	{
-		if (old_len >= new_len)
-			return ptr;
-
-		s = stack_insert_page(new_len,*stack);
-		if (!s)
-			return NULL;
+		struct stack_t* s = *stack;
+		void* new_ptr = stack_malloc(&s,new_len);
+		if (old_len)
+		{
+			memcpy(new_ptr,ptr,old_len);
+			stack_free(*stack,ptr,old_len);
+		}
+		*stack = s;
+		ptr = new_ptr;
 	}
 
-	*stack = s;
-	new_ptr = &(*stack)->m_data[(*stack)->m_top];
-	(*stack)->m_top += align_new_len;
-
-	memcpy(new_ptr,ptr,old_len);
-	return new_ptr;
+	return ptr;
 }
 
 int stack_copy(struct stack_t** dest, struct stack_t** src, size_t start)
