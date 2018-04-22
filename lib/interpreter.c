@@ -257,7 +257,7 @@ static enum eSolveResult redo_call(struct context_t* context, int unwind)
 	return result;
 }
 
-static enum eSolveResult clone_term(struct context_t* context, struct var_info_t* vars, union box_t** v)
+static enum eSolveResult clone_term(struct context_t* context, struct var_info_t* vars, union box_t** v, int* have_vars)
 {
 	enum eSolveResult result = SOLVE_TRUE;
 	int debug = (UNBOX_EXP_16((*v)->m_u64val) & 0x8000);
@@ -288,7 +288,7 @@ static enum eSolveResult clone_term(struct context_t* context, struct var_info_t
 			}
 
 			while (result == SOLVE_TRUE && arity--)
-				result = clone_term(context,vars,v);
+				result = clone_term(context,vars,v,have_vars);
 		}
 		return result;
 
@@ -301,12 +301,14 @@ static enum eSolveResult clone_term(struct context_t* context, struct var_info_t
 			if (vars->m_vars[var_idx].m_value)
 			{
 				*v = vars->m_vars[var_idx].m_value;
-				return clone_term(context,vars,v);
+				return clone_term(context,vars,v,have_vars);
 			}
 
 			if (stack_push(&context->m_exec_stack,(*v)->m_u64val) == -1)
 				return SOLVE_NOMEM;
 			++(*v);
+
+			*have_vars = 1;
 		}
 		break;
 
@@ -341,7 +343,7 @@ static enum eSolveResult clone_term(struct context_t* context, struct var_info_t
 	return result;
 }
 
-static enum eSolveResult term_to_goal_r(struct context_t* context, struct var_info_t* vars, union box_t** v)
+static enum eSolveResult term_to_goal_r(struct context_t* context, struct var_info_t* vars, union box_t** v, int* have_vars)
 {
 	enum eSolveResult result = SOLVE_TRUE;
 	switch (UNBOX_TYPE((*v)->m_u64val))
@@ -382,12 +384,12 @@ static enum eSolveResult term_to_goal_r(struct context_t* context, struct var_in
 			if (control)
 			{
 				while (result == SOLVE_TRUE && arity--)
-					result = term_to_goal_r(context,vars,v);
+					result = term_to_goal_r(context,vars,v,have_vars);
 			}
 			else
 			{
 				while (result == SOLVE_TRUE && arity--)
-					result = clone_term(context,vars,v);
+					result = clone_term(context,vars,v,have_vars);
 			}
 		}
 		return result;
@@ -401,17 +403,17 @@ static enum eSolveResult term_to_goal_r(struct context_t* context, struct var_in
 			if (vars->m_vars[var_idx].m_value)
 			{
 				*v = vars->m_vars[var_idx].m_value;
-				return clone_term(context,vars,v);
+				return clone_term(context,vars,v,have_vars);
 			}
 
 			// Convert V -> call(V)
 			if (stack_push(&context->m_exec_stack,BOX_COMPOUND_EMBED_4(1,'c','a','l','l')) == -1)
 				return SOLVE_NOMEM;
 		}
-		return clone_term(context,vars,v);
+		return clone_term(context,vars,v,have_vars);
 
 	case prolite_atom:
-		return clone_term(context,vars,v);
+		return clone_term(context,vars,v,have_vars);
 
 	default:
 		return SOLVE_NOT_CALLABLE;
@@ -422,16 +424,24 @@ static enum eSolveResult term_to_goal(struct context_t* context, struct term_t* 
 {
 	enum eSolveResult result = SOLVE_TRUE;
 
-	dest->m_vars = src->m_vars;
 	if (!src->m_vars || src->m_vars->m_count == 0)
-		dest->m_value = src->m_value;
+		*dest = *src;
 	else
 	{
 		size_t top = stack_top(context->m_exec_stack);
 		union box_t* v = src->m_value;
-		result = term_to_goal_r(context,src->m_vars,&v);
+		int have_vars = 0;
+
+		result = term_to_goal_r(context,src->m_vars,&v,&have_vars);
 		if (result == SOLVE_TRUE)
+		{
+			if (have_vars)
+				dest->m_vars = src->m_vars;
+			else
+				dest->m_vars = NULL;
+
 			dest->m_value = stack_at(context->m_exec_stack,top);
+		}
 		else
 			stack_reset(&context->m_exec_stack,top);
 	}
