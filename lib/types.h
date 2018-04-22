@@ -38,9 +38,8 @@ enum tag_type_t
 	prolite_atom = 2,
 	prolite_compound = 3,
 	prolite_var = 4,
-
-	//prolite_chars = 5,
-	//prolite_charcodes = 6,
+	prolite_chars = 5,
+	prolite_charcodes = 6,
 
 };
 

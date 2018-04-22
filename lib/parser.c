@@ -1825,11 +1825,10 @@ static struct ast_node_t* parse_chars_and_codes(struct context_t* context, int c
 	node->m_type = chars ? AST_TYPE_CHARS : AST_TYPE_CODES;
 	node->m_arity = 0;
 
-	// TODO: Fix char codes
-//	if (!box_string(node->m_type == AST_TYPE_CHARS ? prolite_chars : prolite_charcodes,context,&node->m_boxed,token->m_str,token->m_len))
+	if (!box_string(node->m_type == AST_TYPE_CHARS ? prolite_chars : prolite_charcodes,context,&node->m_boxed,token->m_str,token->m_len))
 		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
-	//return node;
+	return node;
 }
 
 static struct ast_node_t* parse_term_base(struct context_t* context, struct parser_t* parser, unsigned int* max_prec, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
