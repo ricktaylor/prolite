@@ -2115,45 +2115,29 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 	if (node->m_type == AST_TYPE_VAR)
 	{
 		size_t var_count = (*varinfo) ? (*varinfo)->m_count : 0;
-		size_t i;
-		for (i = 0; i < var_count; ++i)
+		size_t i = var_count;
+		if (node->m_boxed.m_u64val != BOX_ATOM_EMBED_1('_'))
 		{
-			if (node->m_boxed.m_u64val == (*varinfo)->m_vars[i].m_name.m_u64val)
+			for (i = 0; i < var_count; ++i)
 			{
-				node->m_arity = i;
-				break;
+				if (node->m_boxed.m_u64val == (*varinfo)->m_vars[i].m_name.m_u64val)
+				{
+					node->m_arity = i;
+					break;
+				}
 			}
 		}
 
 		if (i == var_count)
 		{
-			if (var_count >= (UINT64_C(1) << 49))
-			{
-				/* There is not an ISO standard error for 'too many vars'
-				 * but we will be out of memory soon anyway, so that will do */
+			struct var_info_t* new_varinfo = stack_realloc(&context->m_exec_stack,*varinfo,sizeof(struct var_info_t) + (var_count * sizeof(struct var_t)),sizeof(struct var_info_t) + ((var_count+1) * sizeof(struct var_t)));
+			if (!new_varinfo)
 				return EMIT_NOMEM;
-			}
 
-			if (*varinfo)
-			{
-				struct var_info_t* new_varinfo = stack_realloc(&context->m_exec_stack,*varinfo,sizeof(struct var_info_t) + (var_count * sizeof(struct var_t)),sizeof(struct var_info_t) + ((var_count+1) * sizeof(struct var_t)));
-				if (!new_varinfo)
-					return EMIT_NOMEM;
-
-				*varinfo = new_varinfo;
-			}
-			else
-			{
-				*varinfo = stack_malloc(&context->m_exec_stack,sizeof(struct var_info_t) + sizeof(struct var_t));
-				if (!(*varinfo))
-					return EMIT_NOMEM;
-
-				(*varinfo)->m_count = 0;
-			}
-
+			*varinfo = new_varinfo;
 			(*varinfo)->m_vars[var_count].m_name = node->m_boxed;
 			(*varinfo)->m_vars[var_count].m_value = NULL;
-			++(*varinfo)->m_count;
+			(*varinfo)->m_count = var_count+1;
 		}
 	}
 	else if (node->m_type == AST_TYPE_COMPOUND)
