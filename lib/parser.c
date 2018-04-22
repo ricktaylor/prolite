@@ -2121,7 +2121,6 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 			{
 				if (node->m_boxed.m_u64val == (*varinfo)->m_vars[i].m_name.m_u64val)
 				{
-					node->m_arity = i;
 					break;
 				}
 			}
@@ -2138,6 +2137,8 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 			(*varinfo)->m_vars[var_count].m_value = NULL;
 			(*varinfo)->m_count = var_count+1;
 		}
+
+		node->m_arity = i;
 	}
 	else if (node->m_type == AST_TYPE_COMPOUND)
 	{

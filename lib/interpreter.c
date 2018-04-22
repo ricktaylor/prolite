@@ -20,61 +20,170 @@ union box_t* first_arg(union box_t* v)
 	if ((UNBOX_HI16(v->m_u64val) & 0xC000) == 0)
 		++v;
 
-	if (debug)
-		++v;
+	++v;
 
-	return ++v;
+	if (debug)
+	{
+		// TODO: Debug info
+		++v;
+	}
+
+	return v;
 }
 
 union box_t* next_arg(union box_t* v)
 {
-	if (!isnan(v->m_dval))
+	int debug = 0;
+	switch (UNBOX_TYPE(v->m_u64val))
 	{
+	case prolite_compound:
+		{
+			uint64_t all48 = UNBOX_MANT_48(v->m_u64val);
+			uint64_t arity;
+			unsigned int hi16 = (all48 >> 32);
+			if (hi16 & 0x8000)
+				arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
+			else if ((hi16 & 0xC000) == 0x4000)
+				arity = (hi16 & MAX_ARITY_BUILTIN);
+			else
+				arity = all48 & MAX_ARITY;
+
+			v = first_arg(v);
+			while (arity--)
+				v = next_arg(v);
+		}
+		return v;
+
+	case prolite_int32:
+	case prolite_atom:
+	case prolite_var:
+	case prolite_chars:
+	case prolite_charcodes:
+		debug = (UNBOX_EXP_16(v->m_u64val) & 0x8000);
+		++v;
+		break;
+
+	default:
+		// prolite_double
 		++v;
 
-		// TODO: Check v->m_u64val for some kind of magic marker?
+		// TODO: Check v->m_u64val for some kind of debug_info magic marker?
+		break;
 	}
-	else if (UNBOX_TYPE(v->m_u64val) == prolite_compound)
-	{
-		uint64_t all48 = UNBOX_MANT_48(v->m_u64val);
-		uint64_t arity;
-		unsigned int hi16 = (all48 >> 32);
-		if (hi16 & 0x8000)
-			arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
-		else if ((hi16 & 0xC000) == 0x4000)
-			arity = (hi16 & MAX_ARITY_BUILTIN);
-		else
-			arity = all48 & MAX_ARITY;
 
-		v = first_arg(v);
-		while (--arity)
-			v = next_arg(v);
-	}
-	else
+	if (debug)
 	{
-		if (UNBOX_EXP_16(v->m_u64val) & 0x8000)
-			++v;
-
+		// TODO: Debug info
 		++v;
 	}
 	return v;
 }
 
-static enum eSolveResult copy_term(struct context_t* context, struct term_t* src, struct term_t* dest)
+static union box_t* copy_term_r(struct context_t* context, struct var_info_t* vars, union box_t* v)
 {
-	if (!src->m_vars || src->m_vars->m_count == 0)
+	int debug = (UNBOX_EXP_16(v->m_u64val) & 0x8000);
+	switch (UNBOX_TYPE(v->m_u64val))
 	{
-		*dest = *src;
-		return SOLVE_TRUE;
+	case prolite_compound:
+		{
+			uint64_t all48 = UNBOX_MANT_48(v->m_u64val);
+			uint64_t arity;
+			unsigned int hi16 = (all48 >> 32);
+			if (hi16 & 0x8000)
+				arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
+			else if ((hi16 & 0xC000) == 0x4000)
+				arity = (hi16 & MAX_ARITY_BUILTIN);
+			else
+				arity = all48 & MAX_ARITY;
+
+			if ((UNBOX_HI16(v->m_u64val) & 0xC000) == 0)
+			{
+				// Copy functor atom
+				if (stack_push(&context->m_exec_stack,v->m_u64val) == -1)
+					return NULL;
+				++v;
+			}
+
+			if (stack_push(&context->m_exec_stack,v->m_u64val) == -1)
+				return NULL;
+			++v;
+
+			if (debug)
+			{
+				// TODO: Debug info
+				if (stack_push(&context->m_exec_stack,v->m_u64val) == -1)
+					return NULL;
+				++v;
+			}
+
+			while (arity--)
+				v = copy_term_r(context,vars,v);
+		}
+		return v;
+
+	case prolite_var:
+		{
+			uint64_t var_idx = UNBOX_MANT_48(v->m_u64val);
+
+			assert(var_idx < vars->m_count);
+
+			if (vars->m_vars[var_idx].m_value)
+				return copy_term_r(context,vars,vars->m_vars[var_idx].m_value);
+		}
+
+		if (stack_push(&context->m_exec_stack,v->m_u64val) == -1)
+			return NULL;
+		++v;
+		break;
+
+	case prolite_int32:
+	case prolite_atom:
+	case prolite_chars:
+	case prolite_charcodes:
+		if (stack_push(&context->m_exec_stack,v->m_u64val) == -1)
+			return NULL;
+		++v;
+		break;
+
+	default:
+		// prolite_double
+		if (stack_push(&context->m_exec_stack,v->m_u64val) == -1)
+			return NULL;
+		++v;
+
+		// TODO: Check v->m_u64val for some kind of debug_info magic marker?
+		debug = 0;
+		break;
 	}
 
-	// TODO: Walk src, copying vars into scratch, copying body into exec
+	if (debug)
+	{
+		// TODO: Debug info
+		if (stack_push(&context->m_exec_stack,v->m_u64val) == -1)
+			return NULL;
+		++v;
+	}
 
-	// Copy vars into exec
+	return v;
+}
 
-	assert(0);
+static enum eSolveResult copy_term(struct context_t* context, struct term_t* src, struct term_t* dest)
+{
+	enum eSolveResult result = SOLVE_TRUE;
 
-	return SOLVE_FAIL;
+	dest->m_vars = src->m_vars;
+	if (!src->m_vars || src->m_vars->m_count == 0)
+		dest->m_value = src->m_value;
+	else
+	{
+		size_t top = stack_top(context->m_exec_stack);
+		if (copy_term_r(context,src->m_vars,src->m_value) == NULL)
+			return SOLVE_NOMEM;
+
+		dest->m_value = stack_at(context->m_exec_stack,top);
+	}
+
+	return result;
 }
 
 static inline int stack_push_term(struct context_t* context, const struct term_t* t)
@@ -548,7 +657,9 @@ enum eSolveResult solve_halt(struct context_t* context, struct term_t* goal)
 
 static enum eSolveResult solve_user_defined(struct context_t* context, struct term_t* goal)
 {
-	assert(0);
+	if (context->m_module->m_flags.unknown == 0)
+		return throw_existence_error(context,BOX_ATOM_BUILTIN(procedure),goal->m_value);
+
 	return SOLVE_FAIL;
 }
 
