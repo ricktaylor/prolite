@@ -174,7 +174,6 @@ enum eProliteResult prolite_reset(prolite_query_t query)
 		{
 			result = redo(&q->m_context,1);
 
-			assert(result == SOLVE_UNWIND);
 			assert(stack_top(q->m_context.m_exec_stack) == q->m_start);
 		}
 
