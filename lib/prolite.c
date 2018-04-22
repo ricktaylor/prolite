@@ -8,7 +8,7 @@
 #include <assert.h>
 
 enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term);
-enum eSolveResult call(struct context_t* context, struct term_t* goal);
+enum eSolveResult solve(struct context_t* context, struct term_t* goal);
 enum eSolveResult redo(struct context_t* context, int unwind);
 
 struct text_stream_t
@@ -37,7 +37,7 @@ static enum eSolveResult solve_start(struct context_t* context)
 	uint64_t top = stack_top(context->m_exec_stack);
 	goal.m_value = *(union box_t**)stack_at(context->m_exec_stack,top-1);
 	goal.m_vars = *(struct var_info_t**)stack_at(context->m_exec_stack,top-2);
-	return call(context,&goal);
+	return solve(context,&goal);
 }
 
 struct query_t
