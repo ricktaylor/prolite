@@ -16,23 +16,36 @@ int main(int argc, char* argv[])
 
 	if (prolite_prepare(dummy,"repeat,!,true.",-1,&q,NULL) == PROLITE_TRUE)
 	{
-		while (prolite_solve(q) == PROLITE_TRUE)
+		enum eProliteResult r;
+		do
 		{
-			printf("TRUE\r\n");
+			r = prolite_solve(q);
+			switch (r)
+			{
+			case PROLITE_TRUE:
+				printf("TRUE\r\n");
+				break;
+
+			case PROLITE_HALT:
+				printf("HALT\r\n");
+				break;
+
+			case PROLITE_NOMEM:
+				printf("NOMEM\r\n");
+				break;
+
+			case PROLITE_ERROR:
+				printf("ERROR\r\n");
+				break;
+
+			case PROLITE_FALSE:
+				printf("FALSE\r\n");
+				break;
+			}
 		}
-
-		printf("RESET\r\n\r\n");
-
-		prolite_reset(q);
-
-		if (prolite_solve(q) == PROLITE_TRUE)
-		{
-			printf("TRUE\r\n");
-		}
+		while (r == PROLITE_TRUE);
 
 		prolite_finalize(q);
-
-		printf("DONE\r\n");
 	}
 
 	return 0;
