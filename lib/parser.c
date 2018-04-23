@@ -1500,8 +1500,7 @@ static struct ast_node_t* atom_to_compound(struct context_t* context, struct ast
 		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	new_node->m_type = AST_TYPE_COMPOUND;
-	new_node->m_arity = 1;
-	new_node->m_params[0] = NULL;
+	new_node->m_arity = 0;
 
 	return new_node;
 }
@@ -1649,6 +1648,7 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 		node = atom_to_compound(context,node,ast_err);
 		if (node)
 		{
+			node->m_arity = 1;
 			node->m_params[0] = parse_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
 			if (!node->m_params[0])
 				node = NULL;
@@ -1660,7 +1660,6 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 
 static struct ast_node_t* parse_compound_term(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
-	uint64_t arity = 0;
 	uint64_t alloc_arity = 1;
 	node = atom_to_compound(context,node,ast_err);
 	if (!node)
@@ -1672,12 +1671,8 @@ static struct ast_node_t* parse_compound_term(struct context_t* context, struct 
 
 		if (node->m_arity == alloc_arity)
 		{
-			struct ast_node_t* new_node;
-			uint32_t new_arity = 4;
-			if (alloc_arity > 2)
-				new_arity = alloc_arity * 2;
-							
-			new_node = stack_realloc(&context->m_scratch_stack,node,sizeof(struct ast_node_t) + (alloc_arity * sizeof(struct ast_node_t*)),sizeof(struct ast_node_t) + (new_arity * sizeof(struct ast_node_t*)));
+			uint32_t new_arity = alloc_arity * 2;
+			struct ast_node_t* new_node = stack_realloc(&context->m_scratch_stack,node,sizeof(struct ast_node_t) + (alloc_arity * sizeof(struct ast_node_t*)),sizeof(struct ast_node_t) + (new_arity * sizeof(struct ast_node_t*)));
 			if (!new_node)
 				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
@@ -1685,14 +1680,13 @@ static struct ast_node_t* parse_compound_term(struct context_t* context, struct 
 			node = new_node;
 		}
 
-		if (arity > MAX_ARITY)
-			return syntax_error(AST_ERR_MAX_ARITY,ast_err);
-
-		node->m_params[arity] = parse_arg(context,parser,next_type,next,ast_err);
-		if (!node->m_params[arity])
+		node->m_params[node->m_arity] = parse_arg(context,parser,next_type,next,ast_err);
+		if (!node->m_params[node->m_arity])
 			return NULL;
 
-		++arity;
+		++node->m_arity;
+		if (node->m_arity > MAX_ARITY)
+			return syntax_error(AST_ERR_MAX_ARITY,ast_err);
 	}
 	while (*next_type == tokComma);
 
@@ -2108,19 +2102,20 @@ enum eEmitStatus
 	EMIT_NOMEM
 };
 
-static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_info_t** varinfo, struct ast_node_t* node)
+static enum eEmitStatus emit_node_vars(struct context_t* context, struct substs_t** substs, struct var_info_t** varinfo, struct ast_node_t* node)
 {
 	enum eEmitStatus status = EMIT_OK;
 	if (node->m_type == AST_TYPE_VAR)
 	{
-		size_t var_count = (*varinfo) ? (*varinfo)->m_count : 0;
+		size_t var_count = (*substs) ? (*substs)->m_count : 0;
 		size_t i = var_count;
 		if (node->m_boxed.m_u64val != BOX_ATOM_EMBED_1('_'))
 		{
 			for (i = 0; i < var_count; ++i)
 			{
-				if (node->m_boxed.m_u64val == (*varinfo)->m_vars[i].m_name.m_u64val)
+				if (node->m_boxed.m_u64val == (*varinfo)[i].m_name.m_u64val)
 				{
+					++(*varinfo)[i].m_use_count;
 					break;
 				}
 			}
@@ -2128,14 +2123,21 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 
 		if (i == var_count)
 		{
-			struct var_info_t* new_varinfo = stack_realloc(&context->m_exec_stack,*varinfo,sizeof(struct var_info_t) + (var_count * sizeof(struct var_t)),sizeof(struct var_info_t) + ((var_count+1) * sizeof(struct var_t)));
+			struct substs_t* new_substs = stack_realloc(&context->m_exec_stack,*substs,sizeof(struct substs_t) + (var_count * sizeof(union box_t)),sizeof(struct substs_t) + ((var_count+1) * sizeof(union box_t)));
+			if (!new_substs)
+				return EMIT_NOMEM;
+
+			struct var_info_t* new_varinfo = stack_realloc(&context->m_scratch_stack,*varinfo,sizeof(struct var_info_t) * var_count,sizeof(struct var_info_t) * (var_count+1));
 			if (!new_varinfo)
 				return EMIT_NOMEM;
 
 			*varinfo = new_varinfo;
-			(*varinfo)->m_vars[var_count].m_name = node->m_boxed;
-			(*varinfo)->m_vars[var_count].m_value = NULL;
-			(*varinfo)->m_count = var_count+1;
+			(*varinfo)[var_count].m_name = node->m_boxed;
+			(*varinfo)[var_count].m_use_count = 1;
+
+			*substs = new_substs;
+			(*substs)->m_values[var_count] = NULL;
+			(*substs)->m_count = var_count+1;
 		}
 
 		node->m_arity = i;
@@ -2144,7 +2146,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 	{
 		uint64_t i;
 		for (i = 0; !status && i < node->m_arity; ++i)
-			status = emit_node_vars(context,varinfo,node->m_params[i]);
+			status = emit_node_vars(context,substs,varinfo,node->m_params[i]);
 	}
 
 	return status;
@@ -2314,7 +2316,7 @@ static enum eEmitStatus emit_ast_error(struct context_t* context, enum eASTError
 	}
 }
 
-static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term, struct parser_t* parser)
+static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser_t* parser, union box_t** term, struct var_info_t** varinfo)
 {
 	enum eEmitStatus status = EMIT_OK;
 	enum eASTError ast_err = AST_ERR_NONE;
@@ -2347,14 +2349,13 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	else
 	{
 		/* Emit the node */
-		term->m_vars = NULL;
-		status = emit_node_vars(context,&term->m_vars,node);
+		status = emit_node_vars(context,&context->m_substs,varinfo,node);
 		if (status == EMIT_OK)
 		{
 			size_t top = stack_top(context->m_exec_stack);
 			status = emit_node_value(context,node);
 			if (status == EMIT_OK)
-				term->m_value = stack_at(context->m_exec_stack,top);
+				*term = stack_at(context->m_exec_stack,top);
 		}
 	}
 
@@ -2370,33 +2371,49 @@ static enum eEmitStatus emit_term(struct context_t* context, struct term_t* term
 	return status;
 }
 
-static enum eEmitStatus clause_directive(struct context_t* context, struct term_t* term)
+enum eSolveResult read_term(struct context_t* context, struct stream_t* s, union box_t** term, struct var_info_t** varinfo)
+{
+	struct parser_t parser = {0};
+	parser.m_s = s;
+	parser.m_line_info.m_end_line = 1;
+
+	switch (parse_emit_term(context,&parser,term,varinfo))
+	{
+	case EMIT_EOF:
+		return (emit_error(context,&parser.m_line_info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(past_end_of_stream)) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
+
+	case EMIT_NOMEM:
+		return SOLVE_NOMEM;
+
+	case EMIT_THROW:
+		return SOLVE_THROW;
+
+	default:
+		return SOLVE_TRUE;
+	}
+}
+
+static enum eEmitStatus clause_directive(struct context_t* context, union box_t* directive)
 {
 	assert(0);
 }
 
-static enum eEmitStatus ensure_loaded(struct context_t* context, struct term_t* term)
+static enum eEmitStatus ensure_loaded(struct context_t* context, union box_t* directive)
 {
 	assert(0);
 }
 
-static enum eEmitStatus compile_initializer(struct context_t* context, struct term_t* term)
+static enum eEmitStatus compile_initializer(struct context_t* context, union box_t* directive)
 {
 	assert(0);
 }
 
-static enum eEmitStatus assert_clause(struct context_t* context, struct term_t* term, int assert_z)
-{
-	assert(0);
-}
+enum eSolveResult solve(struct context_t* context, union box_t* goal);
+enum eSolveResult assert_clause(struct context_t* context, union box_t* clause, int z);
 
-enum eSolveResult solve_op(struct context_t* context, struct term_t* goal);
-enum eSolveResult solve_char_conversion(struct context_t* context, struct term_t* goal);
-enum eSolveResult solve_set_prolog_flag(struct context_t* context, struct term_t* goal);
-
-static enum eEmitStatus directive_solve(struct context_t* context, struct term_t* term, enum eSolveResult (*solve_fn)(struct context_t*,struct term_t*))
+static enum eEmitStatus directive_solve(struct context_t* context, union box_t* directive)
 {
-	switch ((*solve_fn)(context,term))
+	switch (solve(context,directive))
 	{
 	case SOLVE_TRUE:
 		return EMIT_OK;
@@ -2410,84 +2427,66 @@ static enum eEmitStatus directive_solve(struct context_t* context, struct term_t
 	default:
 		// Should never happen
 		assert(0);
-		return (emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(system_error),0) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
+		return (emit_error(context,get_debug_info(directive),BOX_ATOM_BUILTIN(system_error),0) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
 	}
 }
 
-static enum eEmitStatus include(struct context_t* context, struct term_t* term);
-
-/* 'Do' a directive */
-static enum eEmitStatus directive(struct context_t* context, struct term_t* term)
-{
-	enum tag_type_t type;
-
-	term->m_value = first_arg(term->m_value);
-
-	switch (term->m_value->m_u64val)
-	{
-	case BOX_COMPOUND_BUILTIN(dynamic,1):
-	case BOX_COMPOUND_BUILTIN(multifile,1):
-	case BOX_COMPOUND_BUILTIN(discontiguous,1):
-		return clause_directive(context,term);
-
-	case BOX_COMPOUND_BUILTIN(include,1):
-		return include(context,term);
-
-	case BOX_COMPOUND_BUILTIN(ensure_loaded,1):
-		return ensure_loaded(context,term);
-
-	case BOX_COMPOUND_BUILTIN(initialization,1):
-		return compile_initializer(context,term);
-
-	case BOX_COMPOUND_EMBED_2(3,'o','p'):
-		return directive_solve(context,term,&solve_op);
-
-	case BOX_COMPOUND_BUILTIN(char_conversion,2):
-		return directive_solve(context,term,&solve_char_conversion);
-
-	case BOX_COMPOUND_BUILTIN(set_prolog_flag,2):
-		return directive_solve(context,term,&solve_set_prolog_flag);
-
-	default:
-		break;
-	}
-
-	type = UNBOX_TYPE(term->m_value->m_u64val);
-	if (type == prolite_var)
-		return emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(instantiation_error),0);
-
-	if (type != prolite_atom && type != prolite_compound)
-		return emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(type_error),2,BOX_ATOM_BUILTIN(callable),term->m_value->m_u64val);
-
-	if (context->m_module->m_flags.unknown == 0)
-		return emit_error(context,get_debug_info(term->m_value),BOX_ATOM_BUILTIN(existence_error),2,BOX_ATOM_BUILTIN(procedure),term->m_value->m_u64val);
-
-	/* TODO: Warn? */
-	return 0;
-}
+static enum eEmitStatus include(struct context_t* context, union box_t* directive);
 
 static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 {
 	enum eEmitStatus status;
+
 	struct parser_t parser = {0};
 	parser.m_s = s;
 	parser.m_line_info.m_end_line = 1;
 
 	do
 	{
-		struct term_t term = {0};
+		union box_t* term = NULL;
 		uint64_t stack_base = stack_top(context->m_exec_stack);
+		struct var_info_t* varinfo = NULL;
 
-		status = emit_term(context,&term,&parser);
+		status = parse_emit_term(context,&parser,&term,&varinfo);
 		if (status == EMIT_OK)
 		{
-			if (term.m_value->m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
-				status = directive(context,&term);
+			if (term->m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
+			{
+				term = first_arg(term);
+				switch (term->m_u64val)
+				{
+				case BOX_COMPOUND_BUILTIN(dynamic,1):
+				case BOX_COMPOUND_BUILTIN(multifile,1):
+				case BOX_COMPOUND_BUILTIN(discontiguous,1):
+					status = clause_directive(context,term);
+					break;
+
+				case BOX_COMPOUND_BUILTIN(include,1):
+					status = include(context,term);
+					break;
+
+				case BOX_COMPOUND_BUILTIN(ensure_loaded,1):
+					status = ensure_loaded(context,term);
+					break;
+
+				case BOX_COMPOUND_BUILTIN(initialization,1):
+					status = compile_initializer(context,term);
+					break;
+
+				default:
+					status = directive_solve(context,term);
+					break;
+				}
+			}
 			else
 			{
 				/* Assert the term */
-				status = assert_clause(context,&term,1);
+				status = assert_clause(context,term,1);
 			}
+
+			/* Free varinfo */
+			if (status == EMIT_OK)
+				stack_reset(&context->m_scratch_stack,0);
 		}
 
 		stack_reset(&context->m_exec_stack,stack_base);
@@ -2503,14 +2502,12 @@ static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 	return status;
 }
 
-static enum eEmitStatus include(struct context_t* context, struct term_t* term)
+static enum eEmitStatus include(struct context_t* context, union box_t* directive)
 {
 	enum eEmitStatus status;
 	struct stream_t* s = NULL;
 
-	term->m_value = first_arg(term->m_value);
-
-	/* TODO: Open stream term->m_value[0] */
+	/* TODO: Open stream 'directive' */
 
 	/* TODO: Twiddle with context */
 
@@ -2521,31 +2518,6 @@ static enum eEmitStatus include(struct context_t* context, struct term_t* term)
 	}
 
 	return status;
-}
-
-enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term)
-{
-	enum eEmitStatus status = EMIT_OK;
-	struct parser_t parser = {0};
-	parser.m_s = s;
-	parser.m_line_info.m_end_line = 1;
-
-	/* TODO: Check for permission errors first */
-
-	status = emit_term(context,term,&parser);
-	if (status == EMIT_NOMEM)
-	{
-		// TODO: emit the error
-	}
-	else if (status == EMIT_EOF)
-	{
-		status = (emit_error(context,&parser.m_line_info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(past_end_of_stream)) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
-	}
-
-	if (status == EMIT_THROW)
-		return SOLVE_THROW;
-
-	return SOLVE_TRUE;
 }
 
 enum eSolveResult throw_instantiation_error(struct context_t* context, const union box_t* culprit)

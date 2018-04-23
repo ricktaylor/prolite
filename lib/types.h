@@ -43,22 +43,16 @@ enum tag_type_t
 
 };
 
-struct var_t
+struct substs_t
 {
-	union box_t* m_value;
-	union box_t  m_name;
+	size_t       m_count;
+	union box_t* m_values[];
 };
 
 struct var_info_t
 {
-	size_t       m_count;
-	struct var_t m_vars[];
-};
-
-struct term_t
-{
-	struct var_info_t* m_vars;
-	union box_t*       m_value;
+	uint64_t    m_use_count;
+	union box_t m_name;
 };
 
 enum eOpSpec
@@ -106,6 +100,7 @@ struct context_t
 {
 	struct stack_t*        m_scratch_stack;
 	struct stack_t*        m_exec_stack;
+	struct substs_t*       m_substs;
 
 	struct string_ptr_t*   m_strings;
 	struct module_t*       m_module;
@@ -113,7 +108,7 @@ struct context_t
 
 struct clause_t
 {
-	struct term_t m_term;
+	//struct term_t m_term;
 
 	uint64_t* m_opcodes;
 };
@@ -150,8 +145,7 @@ enum eSolveResult
 	SOLVE_CUT = -1,
 	SOLVE_HALT = -2,
 	SOLVE_THROW = -3,
-	SOLVE_NOMEM = -4,
-	SOLVE_NOT_CALLABLE = -5
+	SOLVE_NOMEM = -4
 };
 
 typedef enum eSolveResult (*redo_fn_t)(struct context_t*,int);

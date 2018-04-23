@@ -7,8 +7,8 @@
 #include <string.h>
 #include <assert.h>
 
-enum eSolveResult read_term(struct context_t* context, struct stream_t* s, struct term_t* term);
-enum eSolveResult solve(struct context_t* context, struct term_t* goal);
+enum eSolveResult read_term(struct context_t* context, struct stream_t* s, union box_t** term, struct var_info_t** varinfo);
+enum eSolveResult solve(struct context_t* context, union box_t* goal);
 enum eSolveResult redo(struct context_t* context, int unwind);
 
 struct text_stream_t
@@ -33,11 +33,9 @@ static int64_t text_stream_read(struct stream_t* s, void* dest, size_t len)
 
 static enum eSolveResult solve_start(struct context_t* context)
 {
-	struct term_t goal;
 	uint64_t top = stack_top(context->m_exec_stack);
-	goal.m_value = *(union box_t**)stack_at(context->m_exec_stack,top-1);
-	goal.m_vars = *(struct var_info_t**)stack_at(context->m_exec_stack,top-2);
-	return solve(context,&goal);
+	union box_t* goal = *(union box_t**)stack_at(context->m_exec_stack,top-1);
+	return solve(context,goal);
 }
 
 struct query_t
@@ -50,7 +48,8 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 {
 	enum eSolveResult result = SOLVE_TRUE;
 	struct text_stream_t ts = {0};
-	struct term_t term = {0};
+	union box_t* term = NULL;
+	struct var_info_t* varinfo = NULL;
 
 	// Create a new context
 	struct query_t* q = NULL;
@@ -95,42 +94,32 @@ enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, s
 		*tail = query_text;
 
 	// Read a term and prepare it
-	result = read_term(&q->m_context,&ts.m_proto,&term);
+	result = read_term(&q->m_context,&ts.m_proto,&term,&varinfo);
 	if (result == SOLVE_TRUE)
 	{
-		if (stack_push_ptr(&q->m_context.m_exec_stack,term.m_vars) == -1 ||
-			stack_push_ptr(&q->m_context.m_exec_stack,term.m_value) == -1)
+		// TODO: Do something with varinfo!
+
+		if (stack_push_ptr(&q->m_context.m_exec_stack,term) == -1 ||
+			(q->m_start = stack_push_ptr(&q->m_context.m_exec_stack,&solve_start)) == -1)
 		{
 			result = SOLVE_NOMEM;
 		}
-		else
-		{
-			if ((q->m_start = stack_push_ptr(&q->m_context.m_exec_stack,&solve_start)) == -1)
-				result = SOLVE_NOMEM;
-		}
+
+		stack_reset(&q->m_context.m_scratch_stack,0);
+	}
+
+	if (result == SOLVE_NOMEM)
+	{
+		stack_delete(q->m_context.m_scratch_stack);
+		stack_delete(q->m_context.m_exec_stack);
+		return PROLITE_NOMEM;
 	}
 
 	// We have just made heavy use of the scratch stack
 	stack_compact(q->m_context.m_scratch_stack);
 
-	switch (result)
-	{
-	case SOLVE_TRUE:
-		*query = (prolite_query_t)q;
-		return PROLITE_TRUE;
-
-	case SOLVE_NOMEM:
-		stack_delete(q->m_context.m_scratch_stack);
-		stack_delete(q->m_context.m_exec_stack);
-		return PROLITE_NOMEM;
-
-	case SOLVE_THROW:
-		*query = (prolite_query_t)q;
-		return PROLITE_ERROR;
-
-	default:
-		return PROLITE_FALSE;
-	}
+	*query = (prolite_query_t)q;
+	return result == SOLVE_THROW ? PROLITE_ERROR : PROLITE_TRUE;
 }
 
 enum eProliteResult prolite_solve(prolite_query_t query)

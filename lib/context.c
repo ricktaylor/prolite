@@ -84,12 +84,12 @@ static uint32_t atom_to_code(const union box_t* b)
 	return val;
 }
 
-enum eSolveResult solve_char_conversion(struct context_t* context, struct term_t* goal)
+enum eSolveResult solve_char_conversion(struct context_t* context, union box_t* goal)
 {
 	uint32_t in_char = -1;
 	uint32_t out_char = -1;
 
-	union box_t* arg = first_arg(goal->m_value);
+	union box_t* arg = first_arg(goal);
 
 	/* Check value[0] first, otherwise we don't know what value[1] is! */
 	enum tag_type_t type = UNBOX_TYPE(arg->m_u64val);
@@ -258,45 +258,56 @@ struct operator_t* lookup_prefix_op(struct context_t* context, const union box_t
 	return op;
 }
 
-static int add_op(struct context_t* context, unsigned int priority, enum eOpSpec op_spec, uint64_t atom)
+static enum eSolveResult add_op(struct context_t* context, unsigned int priority, enum eOpSpec op_spec, union box_t* atom)
 {
 	/* TODO */
-	return -1;
+	assert(0);
+	return SOLVE_FAIL;
 }
 
-static int remove_op(struct context_t* context, enum eOpSpec op_spec, uint64_t atom)
+static enum eSolveResult remove_op(struct context_t* context, enum eOpSpec op_spec, union box_t* atom)
 {
 	/* TODO */
-	return -1;
+	assert(0);
+	return SOLVE_FAIL;
 }
 
-enum eSolveResult solve_op(struct context_t* context, struct term_t* term)
+enum eSolveResult solve_op(struct context_t* context, union box_t* goal)
 {
-	// TODO: ARGS ARE ALL WRONG
-
-	/* Check value[0] first, otherwise we don't know what value[1 and 2] is! */
 	int priority;
 	enum eOpSpec op_spec;
-	enum tag_type_t type = UNBOX_TYPE(term->m_value[0].m_u64val);
 
-	if (type == prolite_var)
+	goal = first_arg(goal);
+	switch (UNBOX_TYPE(goal->m_u64val))
+	{
+	case prolite_var:
 		return throw_instantiation_error(context,NULL);
 
-	if (type != prolite_int32)
-		return throw_type_error(context,BOX_ATOM_BUILTIN(integer),&term->m_value[0]);
+	case prolite_int32:
+		break;
 
-	priority = UNBOX_LOW32(term->m_value[0].m_u64val);
+	default:
+		return throw_type_error(context,BOX_ATOM_BUILTIN(integer),goal);
+	}
+
+	priority = UNBOX_LOW32(goal->m_u64val);
 	if (priority < 0 || priority > 1200)
-		return throw_domain_error(context,BOX_ATOM_BUILTIN(operator_priority),&term->m_value[0]);
+		return throw_domain_error(context,BOX_ATOM_BUILTIN(operator_priority),goal);
 
-	type = UNBOX_TYPE(term->m_value[1].m_u64val);
-	if (type == prolite_var)
+	goal = next_arg(goal);
+	switch (UNBOX_TYPE(goal->m_u64val))
+	{
+	case prolite_var:
 		return throw_instantiation_error(context,NULL);
 
-	if (type != prolite_atom)
-		return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),&term->m_value[1]);
+	case prolite_atom:
+		break;
 
-	switch (term->m_value[1].m_u64val)
+	default:
+		return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),goal);
+	}
+
+	switch (goal->m_u64val)
 	{
 	case BOX_ATOM_EMBED_2('f','x'):
 		op_spec = eFX;
@@ -320,44 +331,53 @@ enum eSolveResult solve_op(struct context_t* context, struct term_t* term)
 		op_spec = eYF;
 		break;
 	default:
-		return throw_domain_error(context,BOX_ATOM_BUILTIN(operator_specifier),&term->m_value[1]);
+		return throw_domain_error(context,BOX_ATOM_BUILTIN(operator_specifier),goal);
 	}
 
-	type = UNBOX_TYPE(term->m_value[2].m_u64val);
-	if (type == prolite_var ||
-		term->m_value[2].m_u64val == BOX_COMPOUND_EMBED_1(2,'|'))
+	goal = next_arg(goal);
+	switch (UNBOX_TYPE(goal->m_u64val))
 	{
+	case prolite_var:
 		return throw_instantiation_error(context,NULL);
+
+	case prolite_atom:
+		if (priority == 0)
+			return remove_op(context,op_spec,goal);
+		return add_op(context,priority,op_spec,goal);
+
+	default:
+		break;
 	}
 
-	if (type == prolite_atom)
+	if (goal->m_u64val == BOX_COMPOUND_EMBED_1(2,'|'))
+		return throw_instantiation_error(context,NULL);
+
+	if (goal->m_u64val == BOX_COMPOUND_EMBED_1(2,'.'))
 	{
-		if (priority == 0)
-			return remove_op(context,op_spec,term->m_value[2].m_u64val);
-		return add_op(context,priority,op_spec,term->m_value[2].m_u64val);
-	}
-	else if (term->m_value[2].m_u64val == BOX_COMPOUND_EMBED_1(2,'.'))
-	{
-		union box_t* list = first_arg(term->m_value);
+		union box_t* list = first_arg(goal);
 		do
 		{
 			/* List - enumerate */
-			type = UNBOX_TYPE(list->m_u64val);
-			if (type == prolite_var)
+			switch (UNBOX_TYPE(list->m_u64val))
+			{
+			case prolite_var:
 				return throw_instantiation_error(context,NULL);
 
-			if (type == prolite_atom)
-			{
-				int err;
-				if (priority == 0)
-					err = remove_op(context,op_spec,term->m_value[2].m_u64val);
-				else
-					err = add_op(context,priority,op_spec,term->m_value[2].m_u64val);
-				if (err)
-					return err;
+			case prolite_atom:
+				{
+					enum eSolveResult result;
+					if (priority == 0)
+						result = remove_op(context,op_spec,list);
+					else
+						result = add_op(context,priority,op_spec,list);
+					if (result != SOLVE_TRUE)
+						return result;
+				}
+				break;
+
+			default:
+				return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),list);
 			}
-			else
-				return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),&list[1]);
 
 			list = next_arg(list);
 			if (list->m_u64val == BOX_ATOM_EMBED_2('[',']'))
@@ -365,8 +385,7 @@ enum eSolveResult solve_op(struct context_t* context, struct term_t* term)
 		}
 		while (list->m_u64val == BOX_COMPOUND_EMBED_1(2,'.'));
 
-		type = UNBOX_TYPE(list->m_u64val);
-		if (type == prolite_var ||
+		if (UNBOX_TYPE(list->m_u64val) == prolite_var ||
 			list->m_u64val == BOX_COMPOUND_EMBED_1(2,'|'))
 		{
 			return throw_instantiation_error(context,NULL);
@@ -375,10 +394,10 @@ enum eSolveResult solve_op(struct context_t* context, struct term_t* term)
 		return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),list);
 	}
 
-	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),&term->m_value[2]);
+	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),goal);
 }
 
-enum eSolveResult solve_set_prolog_flag(struct context_t* context, struct term_t* goal)
+enum eSolveResult solve_set_prolog_flag(struct context_t* context, union box_t* goal)
 {
 	assert(0);
 }

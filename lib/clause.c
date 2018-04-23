@@ -1,19 +1,19 @@
 
-#include "clause.h"
+#include "types.h"
 
-int check_callable_term(union box_t* v);
+enum eSolveResult term_to_goal(struct context_t* context, union box_t* src, union box_t** dest);
 
 /* Assert a clause */
-int assert_clause(struct context_t* context, struct term_t* term, int z)
+enum eSolveResult assert_clause(struct context_t* context, union box_t* clause, int z)
 {
-	union box_t* head = term->m_value;
+	union box_t* head = clause;
 	union box_t* body = NULL;
 	union box_t t;
 	uint64_t stack_base = stack_top(context->m_exec_stack);
 
-	if (term->m_value->m_u64val == BOX_COMPOUND_EMBED_2(2,':','-'))
+	if (clause->m_u64val == BOX_COMPOUND_EMBED_2(2,':','-'))
 	{
-		head = first_arg(term->m_value);
+		head = first_arg(clause);
 		body = next_arg(head);
 	}
 
@@ -32,41 +32,25 @@ int assert_clause(struct context_t* context, struct term_t* term, int z)
 
 	/* TODO: Check for static procedure */
 
-	if (!body)
+	if (body)
 	{
-		uint64_t top = stack_top(context->m_exec_stack);
-		if (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_4('t','r','u','e')) == -1)
-			return -1;
+		enum eSolveResult result = term_to_goal(context,body,&body);
+		if (result == SOLVE_FAIL)
+			result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),body);
 
-		body = stack_at(context->m_exec_stack,top);
-	}
-	else if (UNBOX_TYPE(body->m_u64val) == prolite_var)
-	{
-		/* Convert to call(V) */
-		if (stack_push(&context->m_exec_stack,body->m_u64val) == -1)
-		{
-			stack_reset(&context->m_exec_stack,stack_base);
-			return -1;
-		}
-		t.m_u64val = BOX_COMPOUND_EMBED_4(1,'c','a','l','l');
-		body = &t;
-		++body;
+		if (result != SOLVE_TRUE)
+			return result;
 	}
 	else
 	{
-		switch (check_callable_term(body))
-		{
-		case -1:
-			stack_reset(&context->m_exec_stack,stack_base);
-			return throw_instantiation_error(context,NULL);
+		uint64_t top = stack_top(context->m_exec_stack);
+		if (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_4('t','r','u','e')) == -1)
+			return SOLVE_NOMEM;
 
-		case 1:
-			stack_reset(&context->m_exec_stack,stack_base);
-			return throw_type_error(context,BOX_ATOM_BUILTIN(callable),body);
-		}
+		body = stack_at(context->m_exec_stack,top);
 	}
 
 	/* TODO Make a clause(head,body)!! */
 
-	return 0;
+	return SOLVE_TRUE;
 }
