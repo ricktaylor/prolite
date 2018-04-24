@@ -2,7 +2,7 @@
 #include "stack.h"
 
 #include <stdlib.h>
-#include <strings.h>
+#include <string.h>
 
 static const uint64_t PAGE_SIZE = 4096 * sizeof(uint64_t);
 
