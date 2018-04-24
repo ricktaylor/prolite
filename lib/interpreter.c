@@ -10,6 +10,19 @@ enum eSolveResult redo(struct context_t* context, int unwind);
 
 union box_t* next_arg(union box_t* v);
 
+static inline uint64_t get_arity(uint64_t c)
+{
+	uint64_t all48 = UNBOX_MANT_48(c);
+	unsigned int hi16 = (all48 >> 32);
+	if (hi16 & 0x8000)
+		return (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
+
+	if ((hi16 & 0xC000) == 0x4000)
+		return (hi16 & MAX_ARITY_BUILTIN);
+
+	return all48 & MAX_ARITY;
+}
+
 union box_t* first_arg(union box_t* v)
 {
 	int debug = (UNBOX_EXP_16(v->m_u64val) & 0x8000);
@@ -29,19 +42,6 @@ union box_t* first_arg(union box_t* v)
 	}
 
 	return v;
-}
-
-static inline uint64_t get_arity(uint64_t c)
-{
-	uint64_t all48 = UNBOX_MANT_48(c);
-	unsigned int hi16 = (all48 >> 32);
-	if (hi16 & 0x8000)
-		return (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
-
-	if ((hi16 & 0xC000) == 0x4000)
-		return (hi16 & MAX_ARITY_BUILTIN);
-
-	return all48 & MAX_ARITY;
 }
 
 union box_t* next_arg(union box_t* v)

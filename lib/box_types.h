@@ -52,8 +52,6 @@
  *  duk_tval values.  See: misc/clang_aliasing.c.
  */
 
-#include <stdint.h>
-
 #if defined(__aarch64__) || defined(__arm__)
 #define BOX_EXP_16(v)    ((UINT64_C(0xFFFF) & (v)) << 24)
 #define UNBOX_EXP_16(v)  ((v) & (UINT64_C(0xFFFF) << 24) >> 24)
@@ -66,9 +64,8 @@
 #define UNBOX_MANT_48(v) BOX_MANT_48(v)
 #endif
 
-#define BOX_TYPE(type)       BOX_EXP_16(0x7FF0 | ((type) & 7))
-#define BOX_TYPE_DEBUG(type) BOX_EXP_16(0xFFF0 | ((type) & 7))
-#define UNBOX_TYPE(v)        (UNBOX_EXP_16(v) & 7)
+#define BOX_TYPE(type)       BOX_EXP_16(0x7FF0 | ((type) & 0x8007))
+#define UNBOX_TYPE(v)        (UNBOX_EXP_16(v) & 0x8007)
 
 #define BOX_HI16(u16)    BOX_MANT_48((UINT64_C(0xFFFF) & (u16)) << 32)
 #define UNBOX_HI16(v)    (UNBOX_MANT_48(v) >> 32)
@@ -105,6 +102,6 @@ enum builtin_atoms_t
 #define BOX_ATOM_BUILTIN(name)        (BOX_TYPE(prolite_atom) | BOX_HI16(0x4000) | BOX_LOW32(BUILTIN_ATOM_##name))
 #define BOX_COMPOUND_BUILTIN(f,a)     (BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | (a)) | BOX_LOW32(BUILTIN_ATOM_##f))
 
-#define UNBOX_IS_TYPE_BUILTIN(v,type) (UNBOX_TYPE(v) == (type) && (UNBOX_HI16(v) & 0xc000) == 0x4000)
+#define UNBOX_IS_TYPE_BUILTIN(v,type) (UNBOX_TYPE(v) == (type) && (UNBOX_HI16(v) & 0xC000) == 0x4000)
 
 #endif /* BOX_TYPES_H_ */

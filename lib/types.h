@@ -36,11 +36,18 @@ enum tag_type_t
 	// Values 1..7 are available
 	prolite_int32 = 1,
 	prolite_atom = 2,
-	prolite_compound = 3,
+	prolite_compound = 3,  // Compound could be reused as atom, as f/0 is an atom
 	prolite_var = 4,
 	prolite_chars = 5,
 	prolite_charcodes = 6,
-
+	// unused = 7,
+	// unused = 0x8001,
+	// unused = 0x8002,
+	// unused = 0x8003,
+	// unused = 0x8004,
+	// unused = 0x8005,
+	// unused = 0x8006,
+	// unused = 0x8007,
 };
 
 struct substs_t
