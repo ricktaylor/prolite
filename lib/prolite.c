@@ -161,7 +161,7 @@ enum eProliteResult prolite_reset(prolite_query_t query)
 		result = PROLITE_TRUE;
 		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
 		{
-			result = redo(&q->m_context,1);
+			redo(&q->m_context,1);
 
 			assert(stack_top(q->m_context.m_exec_stack) == q->m_start);
 		}

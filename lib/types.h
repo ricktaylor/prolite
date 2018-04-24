@@ -145,7 +145,8 @@ enum eSolveResult
 	SOLVE_CUT = -1,
 	SOLVE_HALT = -2,
 	SOLVE_THROW = -3,
-	SOLVE_NOMEM = -4
+	SOLVE_NOMEM = -4,
+	SOLVE_UNWIND = -5
 };
 
 typedef enum eSolveResult (*redo_fn_t)(struct context_t*,int);

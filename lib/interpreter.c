@@ -91,7 +91,7 @@ static inline enum eSolveResult inline_solve_fail(struct context_t* context, uni
 
 static enum eSolveResult redo_true(struct context_t* context, int unwind)
 {
-	return unwind ? SOLVE_TRUE : SOLVE_FAIL;
+	return unwind ? SOLVE_UNWIND : SOLVE_FAIL;
 }
 
 static inline enum eSolveResult inline_solve_true(struct context_t* context, union box_t* goal)
@@ -205,7 +205,7 @@ static inline enum eSolveResult inline_solve_or(struct context_t* context, union
 
 static enum eSolveResult redo_cut(struct context_t* context, int unwind)
 {
-	return unwind ? SOLVE_TRUE : SOLVE_CUT;
+	return unwind ? SOLVE_UNWIND : SOLVE_CUT;
 }
 
 static inline enum eSolveResult inline_solve_cut(struct context_t* context, union box_t* goal)
@@ -470,7 +470,7 @@ static inline enum eSolveResult inline_solve_throw(struct context_t* context, un
 static enum eSolveResult redo_repeat(struct context_t* context, int unwind)
 {
 	if (unwind)
-		return SOLVE_TRUE;
+		return SOLVE_UNWIND;
 
 	return stack_push_ptr(&context->m_exec_stack,&redo_repeat) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
 }
