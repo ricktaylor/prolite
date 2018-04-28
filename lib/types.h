@@ -158,8 +158,8 @@ enum eSolveResult
 
 typedef enum eSolveResult (*redo_fn_t)(struct context_t*,int);
 
-union box_t* first_arg(union box_t* v);
-union box_t* next_arg(union box_t* v);
+const union box_t* first_arg(const union box_t* v);
+const union box_t* next_arg(const union box_t* v);
 
 enum eSolveResult throw_instantiation_error(struct context_t* context, const union box_t* culprit);
 enum eSolveResult throw_type_error(struct context_t* context, uint64_t valid_type, const union box_t* culprit);
