@@ -4,6 +4,7 @@
 #endif
 
 /* These MUST be sorted by length then text */
+DECLARE_BUILTIN_STRING(call)  // <- For support for call/128
 DECLARE_BUILTIN_STRING(memory)
 DECLARE_BUILTIN_STRING(repeat)
 DECLARE_BUILTIN_STRING(dynamic)
