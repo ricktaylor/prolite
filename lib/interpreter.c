@@ -157,6 +157,8 @@ enum eSolveResult solve_and(struct context_t* context, const union box_t* goal)
 {
 	enum eSolveResult result;
 
+	// TODO: Copy substs!!
+
 	goal = first_arg(goal);
 	result = solve(context,goal);
 	if (result == SOLVE_TRUE)
@@ -175,6 +177,8 @@ again:
 		}
 		else if (result == SOLVE_FAIL)
 		{
+			// TODO: Revert substs!!!
+
 			result = redo(context,0);
 			if (result == SOLVE_TRUE)
 				goto again;
@@ -213,13 +217,14 @@ static enum eSolveResult solve_if_then_else(struct context_t* context, const uni
 enum eSolveResult solve_or(struct context_t* context, const union box_t* goal)
 {
 	enum eSolveResult result;
-	const union box_t *either_goal,*or_goal;
+	const union box_t* either_goal = first_arg(goal);
+	const union box_t* or_goal = next_arg(either_goal);
 
-	either_goal = first_arg(goal);
+	either_goal = deref_arg(context,either_goal);
 	if (either_goal->m_u64val == BOX_COMPOUND_EMBED_2(2,'-','>'))
 		return solve_if_then_else(context,goal);
 
-	or_goal = next_arg(either_goal);
+	// TODO: Copy substs!!
 
 	result = solve(context,either_goal);
 	if (result == SOLVE_TRUE)
@@ -309,8 +314,7 @@ static enum eSolveResult clone_term(struct context_t* context, struct stack_t** 
 
 	case prolite_var:
 		{
-			const union box_t* r = deref_arg(context,*v);
-			++(*v);
+			const union box_t* r = deref_arg(context,*v++);
 			return clone_term(context,stack,&r,new_term,term_size);
 		}
 		break;
@@ -396,17 +400,18 @@ static enum eSolveResult term_to_goal_r(struct context_t* context, union box_t c
 
 	case prolite_var:
 		{
-			const union box_t* r = deref_arg(context,*v);
+			const union box_t* r = deref_arg(context,*v++);
 			if (UNBOX_TYPE(r->m_u64val) == prolite_var)
 			{
 				// Convert V -> call(V)
 				*new_term = stack_realloc(&context->m_exec_stack,*new_term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 				if (!*new_term)
 					return SOLVE_NOMEM;
+
+				return clone_term(context,&context->m_exec_stack,&r,new_term,term_size);
 			}
 
-			++(*v);
-			return clone_term(context,&context->m_exec_stack,&r,new_term,term_size);
+			return term_to_goal_r(context,&r,new_term,term_size);
 		}
 
 	case prolite_atom:
@@ -430,17 +435,19 @@ static enum eSolveResult call(struct context_t* context, const union box_t* goal
 	union box_t* fresh_goal;
 	size_t stack_base = stack_top(context->m_exec_stack);
 
+	if (!context->m_module->m_flags.debug)
+	{
+		// Optimize call(call(_)) -> call(_)
+		while (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'c','a','l','l'))
+			goal = deref_arg(context,first_arg(goal));
+	}
+
 	result = term_to_goal(context,goal,&fresh_goal);
 	if (result == SOLVE_FAIL)
 		result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
 	else if (result == SOLVE_TRUE)
 	{
-		if (!context->m_module->m_flags.debug)
-		{
-			// Optimize call(call(_)) -> call(_)
-			while (fresh_goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'c','a','l','l'))
-				fresh_goal = (union box_t*)first_arg(fresh_goal);
-		}
+
 
 		result = solve(context,fresh_goal);
 		if (result == SOLVE_TRUE)
@@ -466,7 +473,7 @@ enum eSolveResult solve_throw(struct context_t* context, const union box_t* goal
 	union box_t* new_term = NULL;
 	size_t term_size = 0;
 
-	goal = first_arg(goal);
+	goal = deref_arg(context,first_arg(goal));
 
 	if (UNBOX_TYPE(goal->m_u64val) == prolite_var)
 		return throw_instantiation_error(context,goal);
@@ -542,6 +549,9 @@ enum eSolveResult solve_catch(struct context_t* context, const union box_t* goal
 	catcher = next_arg(goal);
 	recovery = next_arg(catcher);
 
+	catcher = deref_arg(context,catcher);
+	recovery = deref_arg(context,recovery);
+
 	enum eSolveResult result = call(context,goal);
 	if (result == SOLVE_NOMEM || result == SOLVE_THROW)
 		result = catch(context,result,catcher,recovery);
@@ -577,13 +587,13 @@ enum eSolveResult solve_once(struct context_t* context, const union box_t* goal)
 {
 	enum eSolveResult result;
 
-	goal = first_arg(goal);
+	goal = deref_arg(context,first_arg(goal));
 
 	if (!context->m_module->m_flags.debug)
 	{
 		// Optimize once(once(_)) -> once(_)
 		while (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'o','n','c','e'))
-			goal = first_arg(goal);
+			goal = deref_arg(context,first_arg(goal));
 	}
 
 	result = call(context,goal);
@@ -596,7 +606,7 @@ enum eSolveResult solve_once(struct context_t* context, const union box_t* goal)
 static enum eSolveResult solve_halt(struct context_t* context, const union box_t* goal)
 {
 	// halt/1
-	goal = first_arg(goal);
+	goal = deref_arg(context,first_arg(goal));
 
 	if (UNBOX_TYPE(goal->m_u64val) == prolite_var)
 		return throw_instantiation_error(context,goal);
@@ -625,6 +635,8 @@ enum eSolveResult solve(struct context_t* context, const union box_t* goal)
 {
 	enum eSolveResult result;
 
+	goal = deref_arg(context,goal);
+
 	// TODO: tracepoint *call*
 
 	switch (goal->m_u64val)
@@ -647,7 +659,7 @@ enum eSolveResult solve(struct context_t* context, const union box_t* goal)
 		break;
 
 	case BOX_COMPOUND_EMBED_4(1,'c','a','l','l'):
-		result = call(context,first_arg(goal));
+		result = call(context,deref_arg(context,first_arg(goal)));
 		break;
 
 	case BOX_ATOM_BUILTIN(repeat):
@@ -674,6 +686,9 @@ enum eSolveResult solve(struct context_t* context, const union box_t* goal)
 			break;
 
 		case prolite_compound:
+			// TODO: call/N
+
+
 		case prolite_atom:
 			result = solve_user_defined(context,goal);
 			break;
