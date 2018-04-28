@@ -1,14 +1,15 @@
 
 #include "types.h"
 
-enum eSolveResult term_to_goal(struct context_t* context, union box_t* src, union box_t** dest);
+enum eSolveResult term_to_goal(struct context_t* context, const union box_t* src, union box_t** dest);
 
 /* Assert a clause */
-enum eSolveResult assert_clause(struct context_t* context, union box_t* clause, int z)
+enum eSolveResult assert_clause(struct context_t* context, const union box_t* clause, int z)
 {
-	union box_t* head = clause;
-	union box_t* body = NULL;
-	union box_t t;
+	const union box_t* head = clause;
+	const union box_t* body = NULL;
+	union box_t* goal = NULL;
+
 	uint64_t stack_base = stack_top(context->m_exec_stack);
 
 	if (clause->m_u64val == BOX_COMPOUND_EMBED_2(2,':','-'))
@@ -34,7 +35,7 @@ enum eSolveResult assert_clause(struct context_t* context, union box_t* clause, 
 
 	if (body)
 	{
-		enum eSolveResult result = term_to_goal(context,body,&body);
+		enum eSolveResult result = term_to_goal(context,body,&goal);
 		if (result == SOLVE_FAIL)
 			result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),body);
 
@@ -47,10 +48,10 @@ enum eSolveResult assert_clause(struct context_t* context, union box_t* clause, 
 		if (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_4('t','r','u','e')) == -1)
 			return SOLVE_NOMEM;
 
-		body = stack_at(context->m_exec_stack,top);
+		goal = stack_at(context->m_exec_stack,top);
 	}
 
-	/* TODO Make a clause(head,body)!! */
+	/* TODO Make a clause(head,goal)!! */
 
 	return SOLVE_TRUE;
 }

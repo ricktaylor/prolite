@@ -84,12 +84,12 @@ static uint32_t atom_to_code(const union box_t* b)
 	return val;
 }
 
-enum eSolveResult solve_char_conversion(struct context_t* context, union box_t* goal)
+enum eSolveResult solve_char_conversion(struct context_t* context, const union box_t* goal)
 {
 	uint32_t in_char = -1;
 	uint32_t out_char = -1;
 
-	union box_t* arg = first_arg(goal);
+	const union box_t* arg = first_arg(goal);
 
 	/* Check value[0] first, otherwise we don't know what value[1] is! */
 	enum tag_type_t type = UNBOX_TYPE(arg->m_u64val);
@@ -258,21 +258,21 @@ struct operator_t* lookup_prefix_op(struct context_t* context, const union box_t
 	return op;
 }
 
-static enum eSolveResult add_op(struct context_t* context, unsigned int priority, enum eOpSpec op_spec, union box_t* atom)
+static enum eSolveResult add_op(struct context_t* context, unsigned int priority, enum eOpSpec op_spec, const union box_t* atom)
 {
 	/* TODO */
 	assert(0);
 	return SOLVE_FAIL;
 }
 
-static enum eSolveResult remove_op(struct context_t* context, enum eOpSpec op_spec, union box_t* atom)
+static enum eSolveResult remove_op(struct context_t* context, enum eOpSpec op_spec, const union box_t* atom)
 {
 	/* TODO */
 	assert(0);
 	return SOLVE_FAIL;
 }
 
-enum eSolveResult solve_op(struct context_t* context, union box_t* goal)
+enum eSolveResult solve_op(struct context_t* context, const union box_t* goal)
 {
 	int priority;
 	enum eOpSpec op_spec;
@@ -354,7 +354,7 @@ enum eSolveResult solve_op(struct context_t* context, union box_t* goal)
 
 	if (goal->m_u64val == BOX_COMPOUND_EMBED_1(2,'.'))
 	{
-		union box_t* list = first_arg(goal);
+		const union box_t* list = first_arg(goal);
 		do
 		{
 			/* List - enumerate */
@@ -397,7 +397,7 @@ enum eSolveResult solve_op(struct context_t* context, union box_t* goal)
 	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),goal);
 }
 
-enum eSolveResult solve_set_prolog_flag(struct context_t* context, union box_t* goal)
+enum eSolveResult solve_set_prolog_flag(struct context_t* context, const union box_t* goal)
 {
 	assert(0);
 }

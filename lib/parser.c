@@ -2152,7 +2152,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct substs_
 	return status;
 }
 
-enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_t arity, union box_t** term, uint64_t* term_size)
+enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_t arity, union box_t** term, size_t* term_size)
 {
 	if (arity <= MAX_ARITY_EMBED && UNBOX_IS_TYPE_EMBED(functor,prolite_atom))
 	{
@@ -2160,7 +2160,7 @@ enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_
 		uint16_t hi16 = UNBOX_HI16(functor);
 		hi16 |= (arity << 11);
 
-		*term = stack_realloc(stack,*term,*term_size,(*term_size)+1);
+		*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 		if (!*term)
 			return EMIT_NOMEM;
 
@@ -2170,7 +2170,7 @@ enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_
 	{
 		// Convert builtin atom to builtin compound
 
-		*term = stack_realloc(stack,*term,*term_size,(*term_size)+1);
+		*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 		if (!*term)
 			return EMIT_NOMEM;
 
@@ -2178,7 +2178,7 @@ enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_
 	}
 	else
 	{
-		*term = stack_realloc(stack,*term,*term_size,(*term_size)+2);
+		*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+2) * sizeof(union box_t));
 		if (!*term)
 			return EMIT_NOMEM;
 
@@ -2188,7 +2188,7 @@ enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_
 	return EMIT_OK;
 }
 
-static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_node_t* node, union box_t** term, uint64_t* term_size)
+static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_node_t* node, union box_t** term, size_t* term_size)
 {
 	enum eEmitStatus status = EMIT_OK;
 	if (node->m_type == AST_TYPE_COMPOUND)
@@ -2203,7 +2203,7 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 	}
 	else
 	{
-		*term = stack_realloc(&context->m_exec_stack,*term,*term_size,(*term_size)+1);
+		*term = stack_realloc(&context->m_exec_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 		if (!*term)
 			return EMIT_NOMEM;
 
@@ -2224,9 +2224,9 @@ static struct line_info_t* get_debug_info(const union box_t* v)
 	return NULL;
 }
 
-static enum eEmitStatus emit_error_line_info(struct context_t* context, struct line_info_t* info, union box_t** term, uint64_t* term_size)
+static enum eEmitStatus emit_error_line_info(struct context_t* context, struct line_info_t* info, union box_t** term, size_t* term_size)
 {
-	*term = stack_realloc(&context->m_scratch_stack,*term,*term_size,(*term_size)+1);
+	*term = stack_realloc(&context->m_scratch_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 	if (!*term)
 		return EMIT_NOMEM;
 
@@ -2245,7 +2245,7 @@ static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t
 {
 	enum eEmitStatus status;
 	union box_t* term = NULL;
-	uint64_t term_size = 0;
+	size_t term_size = 0;
 
 	va_list args;
 	va_start(args,arity);
@@ -2257,7 +2257,7 @@ static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t
 		status = emit_compound(&context->m_scratch_stack,error_functor,arity,&term,&term_size);
 	if (status == EMIT_OK)
 	{
-		term = stack_realloc(&context->m_exec_stack,term,term_size,term_size + arity);
+		term = stack_realloc(&context->m_exec_stack,term,term_size * sizeof(union box_t),(term_size + arity) * sizeof(union box_t));
 		if (!term)
 			status = EMIT_NOMEM;
 		else
@@ -2282,7 +2282,7 @@ static enum eEmitStatus emit_syntax_error_missing(struct context_t* context, uin
 {
 	enum eEmitStatus status;
 	union box_t* term = NULL;
-	uint64_t term_size = 0;
+	size_t term_size = 0;
 
 	stack_reset(&context->m_scratch_stack,0);
 
@@ -2293,7 +2293,7 @@ static enum eEmitStatus emit_syntax_error_missing(struct context_t* context, uin
 		status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(missing),1,&term,&term_size);
 	if (status == EMIT_OK)
 	{
-		term = stack_realloc(&context->m_exec_stack,term,term_size,term_size + 1);
+		term = stack_realloc(&context->m_exec_stack,term,term_size * sizeof(union box_t),(term_size + 1) * sizeof(union box_t));
 		if (!term)
 			status = EMIT_NOMEM;
 		else
@@ -2437,25 +2437,25 @@ enum eSolveResult read_term(struct context_t* context, struct stream_t* s, union
 	}
 }
 
-static enum eEmitStatus clause_directive(struct context_t* context, union box_t* directive)
+static enum eEmitStatus clause_directive(struct context_t* context, const union box_t* directive)
 {
 	assert(0);
 }
 
-static enum eEmitStatus ensure_loaded(struct context_t* context, union box_t* directive)
+static enum eEmitStatus ensure_loaded(struct context_t* context, const union box_t* directive)
 {
 	assert(0);
 }
 
-static enum eEmitStatus compile_initializer(struct context_t* context, union box_t* directive)
+static enum eEmitStatus compile_initializer(struct context_t* context, const union box_t* directive)
 {
 	assert(0);
 }
 
-enum eSolveResult solve(struct context_t* context, union box_t* goal);
-enum eSolveResult assert_clause(struct context_t* context, union box_t* clause, int z);
+enum eSolveResult solve(struct context_t* context, const union box_t* goal);
+enum eSolveResult assert_clause(struct context_t* context, const union box_t* clause, int z);
 
-static enum eEmitStatus directive_solve(struct context_t* context, union box_t* directive)
+static enum eEmitStatus directive_solve(struct context_t* context, const union box_t* directive)
 {
 	switch (solve(context,directive))
 	{
@@ -2475,7 +2475,7 @@ static enum eEmitStatus directive_solve(struct context_t* context, union box_t* 
 	}
 }
 
-static enum eEmitStatus include(struct context_t* context, union box_t* directive);
+static enum eEmitStatus include(struct context_t* context, const union box_t* directive);
 
 static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 {
@@ -2496,7 +2496,7 @@ static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 		{
 			if (term->m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
 			{
-				term = first_arg(term);
+				term = (union box_t*)first_arg(term);
 				switch (term->m_u64val)
 				{
 				case BOX_COMPOUND_BUILTIN(dynamic,1):
@@ -2546,7 +2546,7 @@ static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 	return status;
 }
 
-static enum eEmitStatus include(struct context_t* context, union box_t* directive)
+static enum eEmitStatus include(struct context_t* context, const union box_t* directive)
 {
 	enum eEmitStatus status;
 	struct stream_t* s = NULL;
