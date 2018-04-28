@@ -2152,7 +2152,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct substs_
 	return status;
 }
 
-enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_t arity, union box_t** term, size_t* term_size)
+static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_t arity, union box_t** term, size_t* term_size)
 {
 	if (arity <= MAX_ARITY_EMBED && UNBOX_IS_TYPE_EMBED(functor,prolite_atom))
 	{
@@ -2164,7 +2164,7 @@ enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_
 		if (!*term)
 			return EMIT_NOMEM;
 
-		(*term)[*term_size++].m_u64val = BOX_TYPE(prolite_compound) | BOX_HI16(hi16) | UNBOX_LOW32(functor);
+		(*term)[(*term_size)++].m_u64val = BOX_TYPE(prolite_compound) | BOX_HI16(hi16) | UNBOX_LOW32(functor);
 	}
 	else if (arity < MAX_ARITY_BUILTIN && UNBOX_IS_TYPE_BUILTIN(functor,prolite_atom))
 	{
@@ -2174,7 +2174,7 @@ enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_
 		if (!*term)
 			return EMIT_NOMEM;
 
-		(*term)[*term_size++].m_u64val = BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | arity) | UNBOX_LOW32(functor);
+		(*term)[(*term_size)++].m_u64val = BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | arity) | UNBOX_LOW32(functor);
 	}
 	else
 	{
@@ -2182,8 +2182,8 @@ enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_
 		if (!*term)
 			return EMIT_NOMEM;
 
-		(*term)[*term_size++].m_u64val = BOX_TYPE(prolite_compound) | BOX_MANT_48(arity);
-		(*term)[*term_size++].m_u64val = functor;
+		(*term)[(*term_size)++].m_u64val = BOX_TYPE(prolite_compound) | BOX_MANT_48(arity);
+		(*term)[(*term_size)++].m_u64val = functor;
 	}
 	return EMIT_OK;
 }
@@ -2208,9 +2208,9 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 			return EMIT_NOMEM;
 
 		if (node->m_type == AST_TYPE_VAR)
-			(*term)[*term_size++].m_u64val = BOX_TYPE(prolite_var) | BOX_MANT_48(node->m_arity);
+			(*term)[(*term_size)++].m_u64val = BOX_TYPE(prolite_var) | BOX_MANT_48(node->m_arity);
 		else
-			(*term)[*term_size++] = node->m_boxed;
+			(*term)[(*term_size)++] = node->m_boxed;
 	}
 
 	// TODO: Debug Info!!
@@ -2231,11 +2231,11 @@ static enum eEmitStatus emit_error_line_info(struct context_t* context, struct l
 		return EMIT_NOMEM;
 
 	if (!info)
-		(*term)[*term_size++].m_u64val = BOX_ATOM_EMBED_5('f','a','l','s','e');
+		(*term)[(*term_size)++].m_u64val = BOX_ATOM_EMBED_5('f','a','l','s','e');
 	else
 	{
 		// TODO: !!
-		(*term)[*term_size++].m_u64val = BOX_ATOM_EMBED_4('T','o','d','o');
+		(*term)[(*term_size)++].m_u64val = BOX_ATOM_EMBED_4('T','o','d','o');
 	}
 
 	return EMIT_OK;

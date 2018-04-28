@@ -21,7 +21,7 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* cl
 	switch (UNBOX_TYPE(head->m_u64val))
 	{
 	case prolite_var:
-		return throw_instantiation_error(context,NULL);
+		return throw_instantiation_error(context,head);
 
 	case prolite_compound:
 	case prolite_atom:
@@ -38,17 +38,29 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* cl
 		enum eSolveResult result = term_to_goal(context,body,&goal);
 		if (result == SOLVE_FAIL)
 			result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),body);
-
 		if (result != SOLVE_TRUE)
 			return result;
+
+		switch (UNBOX_TYPE(goal->m_u64val))
+		{
+		case prolite_var:
+			return throw_instantiation_error(context,goal);
+
+		case prolite_compound:
+		case prolite_atom:
+			break;
+
+		default:
+			return throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
+		}
 	}
 	else
 	{
-		uint64_t top = stack_top(context->m_exec_stack);
-		if (stack_push(&context->m_exec_stack,BOX_ATOM_EMBED_4('t','r','u','e')) == -1)
+		goal = stack_malloc(&context->m_exec_stack,sizeof(union box_t));
+		if (!goal)
 			return SOLVE_NOMEM;
 
-		goal = stack_at(context->m_exec_stack,top);
+		goal->m_u64val = BOX_ATOM_EMBED_4('t','r','u','e');
 	}
 
 	/* TODO Make a clause(head,goal)!! */

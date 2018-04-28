@@ -9,44 +9,51 @@
 
 #include <stdio.h>
 
+static void dump(enum eProliteResult r)
+{
+	switch (r)
+	{
+	case PROLITE_TRUE:
+		printf("TRUE\r\n");
+		break;
+
+	case PROLITE_HALT:
+		printf("HALT\r\n");
+		break;
+
+	case PROLITE_NOMEM:
+		printf("NOMEM\r\n");
+		break;
+
+	case PROLITE_ERROR:
+		printf("ERROR\r\n");
+		break;
+
+	case PROLITE_FALSE:
+		printf("FALSE\r\n");
+		break;
+	}
+}
+
 int main(int argc, char* argv[])
 {
 	prolite_env_t dummy;
 	prolite_query_t q;
 
-	if (prolite_prepare(dummy,"repeat,!,true.",-1,&q,NULL) == PROLITE_TRUE)
+	enum eProliteResult r = prolite_prepare(dummy,"(!,fail) -> true ; true.",-1,&q,NULL);
+	if (r == PROLITE_TRUE)
 	{
-		enum eProliteResult r;
 		do
 		{
 			r = prolite_solve(q);
-			switch (r)
-			{
-			case PROLITE_TRUE:
-				printf("TRUE\r\n");
-				break;
-
-			case PROLITE_HALT:
-				printf("HALT\r\n");
-				break;
-
-			case PROLITE_NOMEM:
-				printf("NOMEM\r\n");
-				break;
-
-			case PROLITE_ERROR:
-				printf("ERROR\r\n");
-				break;
-
-			case PROLITE_FALSE:
-				printf("FALSE\r\n");
-				break;
-			}
+			dump(r);
 		}
 		while (r == PROLITE_TRUE);
 
 		prolite_finalize(q);
 	}
+	else
+		dump(r);
 
 	return 0;
 }
