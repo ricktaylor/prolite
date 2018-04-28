@@ -181,6 +181,9 @@ void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t ne
 	{
 		struct stack_t* s = *stack;
 		void* new_ptr = stack_malloc(&s,new_len);
+		if (!new_ptr)
+			return NULL;
+
 		if (ptr && old_len)
 		{
 			memcpy(new_ptr,ptr,old_len);
