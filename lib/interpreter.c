@@ -648,12 +648,6 @@ enum eSolveResult unify(struct context_t* context, const union box_t* a, const u
 	return result;
 }
 
-enum eSolveResult solve_unify(struct context_t* context, const union box_t* goal)
-{
-	goal = first_arg(goal);
-	return unify(context,goal,next_arg(goal),0);
-}
-
 enum eSolveResult solve_not_unifiable(struct context_t* context, const union box_t* goal)
 {
 	enum eSolveResult result;
@@ -876,6 +870,11 @@ enum eSolveResult solve(struct context_t* context, const union box_t* goal)
 	case BOX_COMPOUND_EMBED_4(1,'h','a','l','t'):
 		return solve_halt(context,goal);
 
+	case BOX_COMPOUND_EMBED_1(2,'='):
+		goal = first_arg(goal);
+		result = unify(context,goal,next_arg(goal),0);
+		break;
+
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
 	case (n): result = solve_##f(context,goal); break;
@@ -891,7 +890,6 @@ enum eSolveResult solve(struct context_t* context, const union box_t* goal)
 
 		case prolite_compound:
 			// TODO: call/N
-
 
 		case prolite_atom:
 			result = solve_user_defined(context,goal);
