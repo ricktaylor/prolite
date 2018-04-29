@@ -51,8 +51,8 @@ enum tag_type_t
 
 struct substs_t
 {
-	size_t       m_count;
-	union box_t* m_values[];
+	size_t             m_count;
+	const union box_t* m_values[];
 };
 
 struct var_info_t
