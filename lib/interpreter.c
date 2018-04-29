@@ -287,14 +287,16 @@ static enum eSolveResult redo_or(struct context_t* context, int unwind)
 enum eSolveResult solve_or(struct context_t* context, const union box_t* goal)
 {
 	enum eSolveResult result;
-	const union box_t* either_goal = first_arg(goal);
-	const union box_t* or_goal = next_arg(either_goal);
+	const union box_t* or_goal;
 
-	either_goal = deref_arg(context,either_goal);
-	if (either_goal->m_u64val == BOX_COMPOUND_EMBED_2(2,'-','>'))
-		return solve_if_then_else(context,either_goal,or_goal);
+	goal = first_arg(goal);
+	or_goal = next_arg(goal);
 
-	result = solve(context,either_goal);
+	goal = deref_arg(context,goal);
+	if (goal->m_u64val == BOX_COMPOUND_EMBED_2(2,'-','>'))
+		return solve_if_then_else(context,goal,or_goal);
+
+	result = solve(context,goal);
 	if (result == SOLVE_TRUE)
 	{
 		if (stack_push_ptr(&context->m_exec_stack,or_goal) == -1 ||
