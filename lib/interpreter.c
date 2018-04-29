@@ -539,41 +539,7 @@ static enum eSolveResult unify_r(struct context_t* context, const union box_t* a
 	{
 		enum tag_type_t t_a = UNBOX_TYPE(a->m_u64val);
 		enum tag_type_t t_b = UNBOX_TYPE(b->m_u64val);
-		if (t_a == t_b)
-		{
-			if (t_a == prolite_compound)
-			{
-				uint64_t arity;
-				uint64_t all48 = UNBOX_MANT_48(a->m_u64val);
-				unsigned int hi16 = (all48 >> 32);
-
-				if (hi16 & 0x8000)
-					arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
-				else if ((hi16 & 0xC000) == 0x4000)
-					arity = (hi16 & MAX_ARITY_BUILTIN);
-				else
-				{
-					// Check embedded functor
-					if ((a+1)->m_u64val != (b+1)->m_u64val)
-						return SOLVE_FAIL;
-
-					arity = all48 & MAX_ARITY;
-				}
-
-				a = first_arg(a);
-				b = first_arg(b);
-				while (arity--)
-				{
-					enum eSolveResult result = unify_r(context,a,b,sto);
-					if (result != SOLVE_TRUE)
-						return result;
-
-					a = next_arg(a);
-					b = next_arg(b);
-				}
-			}
-		}
-		else if (t_a == prolite_var)
+		if (t_a == prolite_var)
 		{
 			uint64_t var_idx = UNBOX_MANT_48(a->m_u64val);
 			assert(context->m_substs && var_idx < context->m_substs->m_count);
@@ -591,8 +557,42 @@ static enum eSolveResult unify_r(struct context_t* context, const union box_t* a
 
 			context->m_substs->m_values[var_idx] = a;
 		}
-		else
+		else if (a->m_u64val != b->m_u64val)
+		{
+			// TODO: char_codes and compounds?
 			return SOLVE_FAIL;
+		}
+		else if (t_a == prolite_compound)
+		{
+			uint64_t arity;
+			uint64_t all48 = UNBOX_MANT_48(a->m_u64val);
+			unsigned int hi16 = (all48 >> 32);
+
+			if (hi16 & 0x8000)
+				arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
+			else if ((hi16 & 0xC000) == 0x4000)
+				arity = (hi16 & MAX_ARITY_BUILTIN);
+			else
+			{
+				// Check embedded functor
+				if ((a+1)->m_u64val != (b+1)->m_u64val)
+					return SOLVE_FAIL;
+
+				arity = all48 & MAX_ARITY;
+			}
+
+			a = first_arg(a);
+			b = first_arg(b);
+			while (arity--)
+			{
+				enum eSolveResult result = unify_r(context,a,b,sto);
+				if (result != SOLVE_TRUE)
+					return result;
+
+				a = next_arg(a);
+				b = next_arg(b);
+			}
+		}
 	}
 
 	return SOLVE_TRUE;
