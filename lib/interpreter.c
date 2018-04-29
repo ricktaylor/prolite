@@ -824,8 +824,6 @@ static enum eSolveResult solve_user_defined(struct context_t* context, const uni
 	return SOLVE_FAIL;
 }
 
-#define DECLARE_BUILTIN_CONTROL(f,n)
-
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
 	enum eSolveResult solve_##f(struct context_t* context, const union box_t* goal);
 
@@ -841,10 +839,6 @@ enum eSolveResult solve(struct context_t* context, const union box_t* goal)
 
 	switch (goal->m_u64val)
 	{
-
-#undef DECLARE_BUILTIN_CONTROL
-#define DECLARE_BUILTIN_CONTROL(f,n)
-
 	case BOX_ATOM_EMBED_4('t','r','u','e'):
 		result = stack_push_ptr(&context->m_exec_stack,&redo_true) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
 		break;
