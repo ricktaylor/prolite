@@ -400,35 +400,12 @@ again:
 			}
 		}
 
-		if (result == SOLVE_FAIL)
+		if (result != SOLVE_TRUE)
 		{
-			result = redo(context,0);
+			result = redo(context,result != SOLVE_FAIL);
 			if (result == SOLVE_TRUE)
 				goto again;
 		}
-		else
-		{
-			// Unwind the first goal on cut/halt/error etc...
-			redo(context,1);
-		}
-	}
-
-	return result;
-}
-
-static enum eSolveResult redo_if(struct context_t* context, int unwind)
-{
-	enum eSolveResult result = redo(context,unwind);
-	if (result == SOLVE_TRUE)
-	{
-		if (stack_push_ptr(&context->m_exec_stack,&redo_if) == -1)
-			result = SOLVE_NOMEM;
-	}
-
-	if (result != SOLVE_TRUE)
-	{
-		// Discard the if
-		redo(context,1);
 	}
 
 	return result;
@@ -445,19 +422,11 @@ enum eSolveResult solve_if_then(struct context_t* context, const union box_t* go
 
 	if (result == SOLVE_TRUE)
 	{
+		// Discard the if
+		redo(context,1);
+
 		goal = next_arg(goal);
 		result = solve(context,goal);
-		if (result == SOLVE_TRUE)
-		{
-			if (stack_push_ptr(&context->m_exec_stack,&redo_if) == -1)
-				result = SOLVE_NOMEM;
-		}
-
-		if (result != SOLVE_TRUE)
-		{
-			// Discard the if
-			redo(context,1);
-		}
 	}
 
 	return result;
@@ -471,19 +440,11 @@ static enum eSolveResult solve_if_then_else(struct context_t* context, const uni
 	result = solve(context,if_then_goal);
 	if (result == SOLVE_TRUE)
 	{
+		// Discard the if
+		redo(context,1);
+
 		if_then_goal = next_arg(if_then_goal);
 		result = solve(context,if_then_goal);
-		if (result == SOLVE_TRUE)
-		{
-			if (stack_push_ptr(&context->m_exec_stack,&redo_if) == -1)
-				result = SOLVE_NOMEM;
-		}
-
-		if (result != SOLVE_TRUE)
-		{
-			// Discard the if
-			redo(context,1);
-		}
 	}
 	else if (result == SOLVE_FAIL || result == SOLVE_CUT)
 		result = solve(context,else_goal);
