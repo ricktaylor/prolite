@@ -595,7 +595,7 @@ static enum eSolveResult call(struct context_t* context, const union box_t* goal
 	return result;
 }
 
-static enum eSolveResult undo_unify(struct context_t* context, int unwind)
+static enum eSolveResult redo_unify(struct context_t* context, int unwind)
 {
 	struct substs_t* prev_substs = stack_pop_ptr(&context->m_exec_stack);
 	if (prev_substs)
@@ -631,7 +631,7 @@ enum eSolveResult solve_unify(struct context_t* context, const union box_t* goal
 	{
 		if ((prev_substs && stack_push(&context->m_exec_stack,stack_base) == -1) ||
 			stack_push_ptr(&context->m_exec_stack,prev_substs) == -1 ||
-			stack_push_ptr(&context->m_exec_stack,&undo_unify) == -1)
+			stack_push_ptr(&context->m_exec_stack,&redo_unify) == -1)
 		{
 			result = SOLVE_NOMEM;
 		}
@@ -717,15 +717,50 @@ static enum eSolveResult catch(struct context_t* context, enum eSolveResult resu
 	if (result == SOLVE_THROW)
 	{
 		// Unify catcher and ball
-		result = unify(context,catcher,stack_at(context->m_scratch_stack,0),0);
-		if (result == SOLVE_FAIL)
-			result = SOLVE_THROW;
+		struct substs_t* prev_substs = context->m_substs;
+		uint64_t stack_base = stack_top(context->m_exec_stack);
 
-		if (result != SOLVE_TRUE)
-			return result;
+		if (prev_substs)
+		{
+			context->m_substs = stack_malloc(&context->m_exec_stack,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
+			if (!context->m_substs)
+			{
+				context->m_substs = prev_substs;
+				result = SOLVE_NOMEM;
+			}
+			else
+				memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
+		}
+
+		if (result == SOLVE_THROW)
+		{
+			result = unify(context,catcher,stack_at(context->m_scratch_stack,0),0);
+			if (result == SOLVE_FAIL)
+				result = SOLVE_THROW;
+
+			if (result == SOLVE_TRUE)
+			{
+				result = call(context,recovery);
+				if (result == SOLVE_TRUE)
+				{
+					if ((prev_substs && stack_push(&context->m_exec_stack,stack_base) == -1) ||
+						stack_push_ptr(&context->m_exec_stack,prev_substs) == -1 ||
+						stack_push_ptr(&context->m_exec_stack,&redo_unify) == -1)
+					{
+						result = SOLVE_NOMEM;
+					}
+				}
+			}
+
+			if (result != SOLVE_TRUE && prev_substs)
+			{
+				stack_reset(&context->m_exec_stack,stack_base);
+				context->m_substs = prev_substs;
+			}
+		}
 	}
 
-	return call(context,recovery);
+	return result;
 }
 
 static enum eSolveResult redo_catch(struct context_t* context, int unwind)
