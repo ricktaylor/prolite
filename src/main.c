@@ -14,7 +14,8 @@ static void dump(enum eProliteResult r)
 	switch (r)
 	{
 	case PROLITE_TRUE:
-		printf("TRUE\r\n");
+		printf("Succeeds.");
+		printf("\r\n");
 		break;
 
 	case PROLITE_HALT:
@@ -22,15 +23,15 @@ static void dump(enum eProliteResult r)
 		break;
 
 	case PROLITE_NOMEM:
-		printf("NOMEM\r\n");
+		printf("resource_error(memory).\r\n");
 		break;
 
 	case PROLITE_ERROR:
-		printf("ERROR\r\n");
+		printf("ERROR!\r\n");
 		break;
 
 	case PROLITE_FALSE:
-		printf("FALSE\r\n");
+		printf("Fails.\r\n");
 		break;
 	}
 }
@@ -40,7 +41,7 @@ int main(int argc, char* argv[])
 	prolite_env_t dummy;
 	prolite_query_t q;
 
-	enum eProliteResult r = prolite_prepare(dummy,"X = 1,X = 2.",-1,&q,NULL);
+	enum eProliteResult r = prolite_prepare(dummy,"X = 1,X = 1.",-1,&q,NULL);
 	if (r == PROLITE_TRUE)
 	{
 		do
