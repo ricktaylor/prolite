@@ -15,7 +15,7 @@ struct stack_t
 	struct stack_t* m_next;
 	uint32_t        m_count;
 	uint32_t        m_top;
-	uint64_t        m_base;
+	size_t          m_base;
 	void*         (*m_fn_malloc)(size_t);
 	void          (*m_fn_free)(void*);
 	uint64_t        m_data[];
@@ -24,14 +24,14 @@ struct stack_t
 struct stack_t* stack_new(void*(*fn_malloc)(size_t), void(*fn_free)(void*));
 void stack_delete(struct stack_t* s);
 
-static inline uint64_t stack_top(const struct stack_t* stack)
+static inline size_t stack_top(const struct stack_t* stack)
 {
 	return (!stack ? 0 : (stack->m_base + stack->m_top));
 }
 
-uint64_t stack_push(struct stack_t** stack, uint64_t val);
+size_t stack_push(struct stack_t** stack, uint64_t val);
 
-static inline uint64_t stack_push_ptr(struct stack_t** stack, const void* ptr)
+static inline size_t stack_push_ptr(struct stack_t** stack, const void* ptr)
 {
 	return stack_push(stack,(uintptr_t)ptr);
 }
@@ -49,11 +49,11 @@ static inline void* stack_pop_ptr(struct stack_t** stack)
 	return (void*)(uintptr_t)stack_pop(stack);
 }
 
-void* stack_at(struct stack_t* stack, uint64_t pos);
+void* stack_at(struct stack_t* stack, size_t pos);
 
-void stack_reset_(struct stack_t** stack, uint64_t pos);
+void stack_reset_(struct stack_t** stack, size_t pos);
 
-static inline void stack_reset(struct stack_t** stack, uint64_t pos)
+static inline void stack_reset(struct stack_t** stack, size_t pos)
 {
 	if (pos < stack_top(*stack))
 		return stack_reset_(stack,pos);

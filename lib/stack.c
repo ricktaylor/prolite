@@ -72,7 +72,7 @@ void stack_delete(struct stack_t* s)
 	}
 }
 
-void* stack_at(struct stack_t* stack, uint64_t pos)
+void* stack_at(struct stack_t* stack, size_t pos)
 {
 	while (stack && stack->m_base + stack->m_top < pos)
 		stack = stack->m_next;
@@ -83,7 +83,7 @@ void* stack_at(struct stack_t* stack, uint64_t pos)
 	return &stack->m_data[pos - stack->m_base];
 }
 
-uint64_t stack_push(struct stack_t** stack, uint64_t val)
+size_t stack_push(struct stack_t** stack, uint64_t val)
 {
 	if ((*stack)->m_top == (*stack)->m_count)
 	{
@@ -99,7 +99,7 @@ uint64_t stack_push(struct stack_t** stack, uint64_t val)
 	return (*stack)->m_base + (*stack)->m_top++;
 }
 
-void stack_reset_(struct stack_t** stack, uint64_t pos)
+void stack_reset_(struct stack_t** stack, size_t pos)
 {
 	if (pos >= stack_top(*stack))
 		return;
