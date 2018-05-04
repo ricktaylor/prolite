@@ -56,7 +56,7 @@ void stack_reset_(struct stack_t** stack, size_t pos);
 static inline void stack_reset(struct stack_t** stack, size_t pos)
 {
 	if (pos < stack_top(*stack))
-		return stack_reset_(stack,pos);
+		stack_reset_(stack,pos);
 }
 
 void stack_compact(struct stack_t* stack);
