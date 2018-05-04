@@ -353,7 +353,65 @@ static enum eSolveResult redo_repeat(struct context_t* context, int unwind)
 }
 
 enum eSolveResult solve(struct context_t* context, const union box_t* goal);
-enum eSolveResult redo(struct context_t* context, int unwind);
+
+typedef enum eSolveResult (*solve_fn_t)(struct context_t* context, size_t frame);
+
+static enum eSolveResult solve_compiled(struct context_t* context, size_t frame)
+{
+	enum eSolveResult result;
+	solve_fn_t fn = *(solve_fn_t*)stack_at(context->m_exec_stack,frame++);
+
+	if (context->m_module->m_flags.debug)
+	{
+		// TODO: tracepoint *call*
+	}
+
+	result = (*fn)(context,frame);
+
+	if (context->m_module->m_flags.debug)
+	{
+		// TODO: tracepoint *exit*/*throw*/*fail*
+	}
+
+	return result;
+}
+
+#define INLINE_SOLVE(result,context,frame)                                     \
+	if ((context)->m_module->m_flags.debug)                                    \
+		(result) = solve_compiled((context),(frame));                          \
+	else {                                                                     \
+		solve_fn_t fn = *(solve_fn_t*)stack_at(context->m_exec_stack,frame++); \
+		(result) = (*fn)((context),(frame));                                   \
+	}
+
+static enum eSolveResult solve_jmp(struct context_t* context, size_t frame)
+{
+	solve_fn_t fn;
+
+	frame = *(size_t*)stack_at(context->m_exec_stack,frame);
+	fn = *(solve_fn_t*)stack_at(context->m_exec_stack,frame++);
+	return (*fn)(context,frame);
+}
+
+enum eSolveResult redo(struct context_t* context, int unwind)
+{
+	enum eSolveResult result;
+	redo_fn_t fn = stack_pop_ptr(&context->m_exec_stack);
+
+	if (!unwind && context->m_module->m_flags.debug)
+	{
+		// TODO: tracepoint *redo*
+	}
+
+	result = (*fn)(context,unwind);
+
+	if (!unwind && context->m_module->m_flags.debug)
+	{
+		// TODO: tracepoint *exit*/*throw*/*fail*
+	}
+
+	return result;
+}
 
 #define INLINE_REDO(result,context,unwind)                      \
 	if (!(unwind) && (context)->m_module->m_flags.debug)        \
@@ -366,19 +424,19 @@ enum eSolveResult redo(struct context_t* context, int unwind);
 static enum eSolveResult redo_and(struct context_t* context, int unwind)
 {
 	enum eSolveResult result;
-	union box_t* cont_goal = stack_pop_ptr(&context->m_exec_stack);
+	size_t cont_frame = stack_pop(&context->m_exec_stack);
 
 	INLINE_REDO(result,context,unwind);
 	if (result != SOLVE_TRUE)
 	{
 		INLINE_REDO(result,context,result != SOLVE_FAIL);
 		if (result == SOLVE_TRUE)
-			result = solve(context,cont_goal);
+			INLINE_SOLVE(result,context,cont_frame);
 	}
 
 	if (result == SOLVE_TRUE)
 	{
-		if (stack_push_ptr(&context->m_exec_stack,cont_goal) == -1 ||
+		if (stack_push_ptr(&context->m_exec_stack,cont_frame) == -1 ||
 			stack_push_ptr(&context->m_exec_stack,&redo_and) == -1)
 		{
 			result = SOLVE_NOMEM;
@@ -388,21 +446,18 @@ static enum eSolveResult redo_and(struct context_t* context, int unwind)
 	return result;
 }
 
-static enum eSolveResult solve_and(struct context_t* context, const union box_t* goal)
+static enum eSolveResult solve_and(struct context_t* context, size_t frame)
 {
 	enum eSolveResult result;
 
-	goal = first_arg(goal);
-	result = solve(context,goal);
+	INLINE_SOLVE(result,context,frame++);
 	if (result == SOLVE_TRUE)
 	{
-		goal = next_arg(goal);
-
 again:
-		result = solve(context,goal);
+		INLINE_SOLVE(result,context,frame);
 		if (result == SOLVE_TRUE)
 		{
-			if (stack_push_ptr(&context->m_exec_stack,goal) == -1 ||
+			if (stack_push(&context->m_exec_stack,frame) == -1 ||
 				stack_push_ptr(&context->m_exec_stack,&redo_and) == -1)
 			{
 				result = SOLVE_NOMEM;
@@ -414,6 +469,50 @@ again:
 			INLINE_REDO(result,context,result != SOLVE_FAIL);
 			if (result == SOLVE_TRUE)
 				goto again;
+		}
+	}
+
+	return result;
+}
+
+enum eCompileResult
+{
+	COMPILE_OK = 0,
+	COMPILE_NOT_CALLABLE,
+	COMPILE_ALWAYS_TRUE,
+	COMPILE_ALWAYS_FAILS,
+	COMPILE_NOMEM,
+};
+
+static enum eCompileResult compile_and(struct context_t* context, const union box_t* goal)
+{
+	enum eCompileResult result;
+	size_t frame = stack_top(context->m_exec_stack);
+
+	if (stack_push_ptr(&context->m_exec_stack,&solve_and) == -1 ||
+		stack_push_ptr(&context->m_exec_stack,frame+3) == -1 ||
+		stack_push_ptr(&context->m_exec_stack,0) == -1)
+	{
+		return COMPILE_NOMEM;
+	}
+
+	goal = first_arg(goal);
+	result = compile(context,goal);
+	if (result == COMPILE_ALWAYS_TRUE)
+	{
+		stack_reset(&context->m_exec_stack,frame);
+
+		result = compile(context,next_arg(goal));
+	}
+	else if (result == COMPILE_OK)
+	{
+		*(size_t*)stack_at(context->m_exec_stack,frame+2) = stack_top(context->m_exec_stack);
+
+		result = compile(context,next_arg(goal));
+		if (result == COMPILE_ALWAYS_TRUE)
+		{
+			*(void**)stack_at(context->m_exec_stack,frame) = &solve_jmp;
+			*(size_t*)stack_at(context->m_exec_stack,frame+1) = frame+3;
 		}
 	}
 
@@ -930,16 +1029,3 @@ enum eSolveResult solve(struct context_t* context, const union box_t* goal)
 	return result;
 }
 
-enum eSolveResult redo(struct context_t* context, int unwind)
-{
-	enum eSolveResult result;
-	redo_fn_t fn = stack_pop_ptr(&context->m_exec_stack);
-
-	// TODO: if (!unwind) tracepoint *redo*
-
-	result = (*fn)(context,unwind);
-
-	// TODO: if (!unwind) tracepoint *exit*/*throw*/*fail*
-
-	return result;
-}
