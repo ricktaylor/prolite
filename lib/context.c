@@ -89,20 +89,21 @@ enum eSolveResult solve_char_conversion(struct context_t* context, const union b
 	uint32_t in_char = -1;
 	uint32_t out_char = -1;
 
-	const union box_t* arg = first_arg(goal);
+	const union box_t* arg;
+	goal = first_arg(goal);
+	arg = deref_term(context,next_arg(goal));
+	goal = deref_term(context,arg);
 
-	/* Check value[0] first, otherwise we don't know what value[1] is! */
-	enum tag_type_t type = UNBOX_TYPE(arg->m_u64val);
+	enum tag_type_t type = UNBOX_TYPE(goal->m_u64val);
 	if (type == prolite_var)
 		return throw_instantiation_error(context,NULL);
 
-	if (!UNBOX_IS_TYPE_EMBED(arg->m_u64val,prolite_atom) ||
-		(in_char = atom_to_code(arg)) == -1)
+	if (!UNBOX_IS_TYPE_EMBED(goal->m_u64val,prolite_atom) ||
+		(in_char = atom_to_code(goal)) == -1)
 	{
-		return throw_representation_error(context,BOX_ATOM_BUILTIN(character),arg);
+		return throw_representation_error(context,BOX_ATOM_BUILTIN(character),goal);
 	}
 
-	arg = next_arg(arg);
 	type = UNBOX_TYPE(arg->m_u64val);
 	if (type == prolite_var)
 		return throw_instantiation_error(context,NULL);

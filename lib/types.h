@@ -46,7 +46,7 @@ enum tag_type_t
 	// unused = 0x8004,
 	// unused = 0x8005,
 	// unused = 0x8006,
-	// unused = 0x8007,
+	PROLITE_DEBUG_INFO = 0x8007
 };
 
 struct substs_t
@@ -154,8 +154,6 @@ enum eSolveResult
 	SOLVE_NOMEM = -4,
 	SOLVE_UNWIND = -5
 };
-
-typedef enum eSolveResult (*redo_fn_t)(struct context_t*,int);
 
 const union box_t* first_arg(const union box_t* v);
 const union box_t* next_arg(const union box_t* v);
