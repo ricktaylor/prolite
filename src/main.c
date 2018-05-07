@@ -36,11 +36,12 @@ static void dump(enum eProliteResult r)
 
 int main(int argc, char* argv[])
 {
+	const char* cmd = argc > 1 ? argv[1] : "true.";
 	prolite_env_t dummy;
 	prolite_query_t q = prolite_new_query(dummy);
 	if (q)
 	{
-		enum eProliteResult r = prolite_prepare(q,"X = 1,X = 1.",-1,NULL);
+		enum eProliteResult r = prolite_prepare(q,cmd,-1,NULL);
 		if (r == PROLITE_TRUE)
 		{
 			do
