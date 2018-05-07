@@ -1377,7 +1377,7 @@ static enum eCompileResult compile(struct context_t* context, const union box_t*
 	return result;
 }
 
-static enum eSolveResult redo_read_term(struct context_t* context, int unwind)
+static enum eSolveResult redo_prepare(struct context_t* context, int unwind)
 {
 	enum eSolveResult result;
 	size_t stack_base = stack_pop(&context->m_exec_stack);
@@ -1386,7 +1386,7 @@ static enum eSolveResult redo_read_term(struct context_t* context, int unwind)
 	if (result == SOLVE_TRUE)
 	{
 		if (stack_push(&context->m_exec_stack,stack_base) == -1 ||
-			stack_push_ptr(&context->m_exec_stack,&redo_read_term) == -1)
+			stack_push_ptr(&context->m_exec_stack,&redo_prepare) == -1)
 		{
 			result = SOLVE_NOMEM;
 		}
@@ -1504,7 +1504,7 @@ enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s,
 		if (result == SOLVE_TRUE)
 		{
 			if (stack_push(&context->m_exec_stack,term_base) == -1 ||
-				stack_push_ptr(&context->m_exec_stack,&redo_read_term) == -1)
+				stack_push_ptr(&context->m_exec_stack,&redo_prepare) == -1)
 			{
 				result = SOLVE_NOMEM;
 			}
