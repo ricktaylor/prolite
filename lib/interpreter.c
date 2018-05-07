@@ -7,6 +7,8 @@
 #include <string.h>
 #include <math.h>
 
+#include <stdio.h>
+
 const union box_t* next_arg(const union box_t* v);
 
 static uint64_t get_arity(uint64_t c)
@@ -345,17 +347,19 @@ static enum eSolveResult solve_and(struct context_t* context, size_t frame)
 	if (result == SOLVE_TRUE)
 	{
 		size_t cont_frame = *(size_t*)stack_at(context->m_exec_stack,frame);
+		if (cont_frame && cont_frame != -1)
+			cont_frame += (frame-1);
 again:
 		if (cont_frame == -1)
 			result = SOLVE_FAIL;
 		else if (!cont_frame)
 			result = stack_push_ptr(&context->m_exec_stack,&redo_true) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
 		else
-			INLINE_SOLVE(result,context,frame+cont_frame);
+			INLINE_SOLVE(result,context,cont_frame);
 
 		if (result == SOLVE_TRUE)
 		{
-			if (stack_push(&context->m_exec_stack,frame+cont_frame) == -1 ||
+			if (stack_push(&context->m_exec_stack,cont_frame) == -1 ||
 				stack_push_ptr(&context->m_exec_stack,&redo_and) == -1)
 			{
 				result = SOLVE_NOMEM;
@@ -384,10 +388,15 @@ static enum eCompileResult compile_and(struct context_t* context, const union bo
 		return COMPILE_NOMEM;
 	}
 
+	//printf("%u: &solve_and\n",frame);
+	//printf("%u: cont_frame = 0\n",frame+1);
+
 	goal = first_arg(goal);
 	result = compile(context,goal);
 	if (result == COMPILE_ALWAYS_TRUE)
 	{
+		//printf("%u: RESET\n",frame);
+
 		stack_reset(&context->m_exec_stack,frame);
 		result = compile(context,next_arg(goal));
 	}
@@ -395,6 +404,8 @@ static enum eCompileResult compile_and(struct context_t* context, const union bo
 	{
 		size_t* cont_frame = stack_at(context->m_exec_stack,frame+1);
 		*cont_frame = stack_top(context->m_exec_stack) - frame;
+
+		//printf("cont_frame (@%u) = %d\n",frame+1,(int)*cont_frame);
 
 		result = compile(context,next_arg(goal));
 		if (result == COMPILE_ALWAYS_TRUE)
@@ -620,7 +631,7 @@ static enum eSolveResult solve_or(struct context_t* context, size_t frame)
 	enum eSolveResult result;
 	size_t else_frame = *(size_t*)stack_at(context->m_exec_stack,frame);
 	if (else_frame && else_frame != -1)
-		else_frame += frame;
+		else_frame += (frame-1);
 
 	INLINE_SOLVE(result,context,frame+1);
 	if (result == SOLVE_TRUE)
@@ -868,21 +879,8 @@ static enum eSolveResult redo_unify(struct context_t* context, int unwind)
 	size_t stack_base;
 	struct substs_t* prev_substs = stack_pop_ptr(&context->m_exec_stack);
 	if (prev_substs)
+	{
 		stack_base = stack_pop(&context->m_exec_stack);
-
-	INLINE_REDO(result,context,unwind);
-	if (result == SOLVE_TRUE)
-	{
-		if ((prev_substs && stack_push(&context->m_exec_stack,stack_base) == -1) ||
-			stack_push_ptr(&context->m_exec_stack,prev_substs) == -1 ||
-			stack_push_ptr(&context->m_exec_stack,&redo_unify) == -1)
-		{
-			result = SOLVE_NOMEM;
-		}
-	}
-
-	if (result != SOLVE_TRUE && prev_substs)
-	{
 		stack_reset(&context->m_exec_stack,stack_base);
 		context->m_substs = prev_substs;
 	}
@@ -934,7 +932,6 @@ static enum eSolveResult solve_unify(struct context_t* context, size_t frame)
 static enum eCompileResult compile_unify(struct context_t* context, const union box_t* goal, int debug)
 {
 	const union box_t* arg1;
-	size_t frame = stack_top(context->m_exec_stack);
 
 	goal = first_arg(goal);
 	arg1 = deref_term(context,next_arg(goal));
@@ -946,6 +943,11 @@ static enum eCompileResult compile_unify(struct context_t* context, const union 
 	{
 		return COMPILE_NOMEM;
 	}
+
+	/*size_t frame = stack_top(context->m_exec_stack) - 3;
+	printf("%u: &solve_unify\n",frame);
+	printf("%u: goal = %p\n",frame+1,goal);
+	printf("%u: goal = %p\n",frame+2,arg1);*/
 
 	return COMPILE_OK;
 }
@@ -1139,7 +1141,7 @@ static enum eSolveResult solve_catch(struct context_t* context, size_t frame)
 	const union box_t* catcher = *(const union box_t**)stack_at(context->m_exec_stack,frame);
 	size_t recovery_frame = *(size_t*)stack_at(context->m_exec_stack,frame+1);
 	if (recovery_frame && recovery_frame != -1)
-		recovery_frame += frame;
+		recovery_frame += (frame-1);
 
 	INLINE_SOLVE(result,context,frame+2)
 	if (result == SOLVE_NOMEM || result == SOLVE_THROW)
