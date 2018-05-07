@@ -908,7 +908,7 @@ static enum eSolveResult solve_unify(struct context_t* context, size_t frame)
 	enum eSolveResult result;
 	struct substs_t* prev_substs = context->m_substs;
 	size_t stack_base = stack_top(context->m_exec_stack);
-	const union box_t *arg1,*arg2;
+	const union box_t *goal = first_arg(*(const union box_t**)stack_at(context->m_exec_stack,frame));
 
 	if (prev_substs)
 	{
@@ -921,10 +921,7 @@ static enum eSolveResult solve_unify(struct context_t* context, size_t frame)
 		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
 	}
 
-	arg1 = *(const union box_t**)stack_at(context->m_exec_stack,frame);
-	arg2 = *(const union box_t**)stack_at(context->m_exec_stack,frame+1);
-
-	result = unify(context,arg1,arg2,0);
+	result = unify(context,goal,next_arg(goal),0);
 	if (result == SOLVE_TRUE)
 	{
 		if ((prev_substs && stack_push(&context->m_exec_stack,stack_base) == -1) ||
@@ -944,35 +941,12 @@ static enum eSolveResult solve_unify(struct context_t* context, size_t frame)
 	return result;
 }
 
-static enum eCompileResult compile_unify(struct context_t* context, const union box_t* goal, int debug)
-{
-	const union box_t* arg1;
-
-	goal = first_arg(goal);
-	arg1 = deref_term(context,next_arg(goal));
-	goal = deref_term(context,goal);
-
-	if (stack_push_ptr(&context->m_exec_stack,&solve_unify) == -1 ||
-		stack_push_ptr(&context->m_exec_stack,goal) == -1 ||
-		stack_push_ptr(&context->m_exec_stack,arg1) == -1)
-	{
-		return COMPILE_NOMEM;
-	}
-
-	/*size_t frame = stack_top(context->m_exec_stack) - 3;
-	printf("%u: &solve_unify\n",frame);
-	printf("%u: goal = %p\n",frame+1,goal);
-	printf("%u: goal = %p\n",frame+2,arg1);*/
-
-	return COMPILE_OK;
-}
-
 static enum eSolveResult solve_not_unifiable(struct context_t* context, size_t frame)
 {
 	enum eSolveResult result;
 	struct substs_t* prev_substs = context->m_substs;
 	size_t stack_base = stack_top(context->m_exec_stack);
-	const union box_t *arg1,*arg2;
+	const union box_t *goal = first_arg(*(const union box_t**)stack_at(context->m_exec_stack,frame));
 
 	if (prev_substs)
 	{
@@ -985,10 +959,7 @@ static enum eSolveResult solve_not_unifiable(struct context_t* context, size_t f
 		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
 	}
 
-	arg1 = *(const union box_t**)stack_at(context->m_exec_stack,frame);
-	arg2 = *(const union box_t**)stack_at(context->m_exec_stack,frame+1);
-
-	result = unify(context,arg1,arg2,0);
+	result = unify(context,goal,next_arg(goal),0);
 	if (result == SOLVE_TRUE)
 		result = SOLVE_FAIL;
 	else if (result == SOLVE_FAIL)
@@ -1000,31 +971,14 @@ static enum eSolveResult solve_not_unifiable(struct context_t* context, size_t f
 	return result;
 }
 
-static enum eCompileResult compile_not_unifiable(struct context_t* context, const union box_t* goal, int debug)
-{
-	const union box_t* arg1;
-	size_t frame = stack_top(context->m_exec_stack);
-
-	goal = first_arg(goal);
-	arg1 = deref_term(context,next_arg(goal));
-	goal = deref_term(context,goal);
-
-	if (stack_push_ptr(&context->m_exec_stack,&solve_not_unifiable) == -1 ||
-		stack_push_ptr(&context->m_exec_stack,goal) == -1 ||
-		stack_push_ptr(&context->m_exec_stack,arg1) == -1)
-	{
-		return COMPILE_NOMEM;
-	}
-
-	return COMPILE_OK;
-}
-
 static enum eSolveResult solve_throw(struct context_t* context, size_t frame)
 {
 	enum eSolveResult result;
 	union box_t* new_term = NULL;
 	size_t term_size = 0;
-	const union box_t* ball = deref_term(context,*(const union box_t**)stack_at(context->m_exec_stack,frame));
+	const union box_t* ball = *(const union box_t**)stack_at(context->m_exec_stack,frame);
+
+	ball = deref_term(context,first_arg(ball));
 
 	if (UNBOX_TYPE(ball->m_u64val) == prolite_var)
 		return throw_instantiation_error(context,ball);
@@ -1036,19 +990,6 @@ static enum eSolveResult solve_throw(struct context_t* context, size_t frame)
 		result = SOLVE_THROW;
 
 	return result;
-}
-
-static enum eCompileResult compile_throw(struct context_t* context, const union box_t* goal, int debug)
-{
-	goal = deref_term(context,first_arg(goal));
-
-	if (stack_push_ptr(&context->m_exec_stack,&solve_throw) == -1 ||
-		stack_push_ptr(&context->m_exec_stack,goal) == -1)
-	{
-		return COMPILE_NOMEM;
-	}
-
-	return COMPILE_OK;
 }
 
 static enum eSolveResult catch(struct context_t* context, enum eSolveResult result, const union box_t* catcher, size_t recovery_frame)
@@ -1302,9 +1243,9 @@ static enum eSolveResult solve_halt(struct context_t* context, size_t frame)
 	enum eSolveResult result = SOLVE_HALT;
 
 	const union box_t* goal = *(const union box_t**)stack_at(context->m_exec_stack,frame);
-	if (goal)
+	if (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'h','a','l','t'))
 	{
-		goal = deref_term(context,goal);
+		goal = deref_term(context,first_arg(goal));
 
 		// halt/1
 		if (UNBOX_TYPE(goal->m_u64val) == prolite_var)
@@ -1322,27 +1263,6 @@ static enum eSolveResult solve_halt(struct context_t* context, size_t frame)
 	return result;
 }
 
-static enum eCompileResult compile_halt(struct context_t* context, const union box_t* goal, int debug)
-{
-	enum eCompileResult result;
-
-	if (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'h','a','l','t'))
-	{
-		// halt/1
-		goal = deref_term(context,first_arg(goal));
-	}
-	else
-		goal = NULL;
-
-	if (stack_push_ptr(&context->m_exec_stack,&solve_halt) == -1 ||
-		stack_push_ptr(&context->m_exec_stack,goal) == -1)
-	{
-		return COMPILE_NOMEM;
-	}
-
-	return COMPILE_OK;
-}
-
 static enum eSolveResult solve_user_defined(struct context_t* context, size_t frame)
 {
 	//if (context->m_module->m_flags.unknown == 0)
@@ -1357,6 +1277,8 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 
 static enum eCompileResult compile_user_defined(struct context_t* context, const union box_t* goal)
 {
+	// TODO: Check to see if the user-defined goal is static and emit the relevant jumps
+
 	if (stack_push_ptr(&context->m_exec_stack,&solve_user_defined) == -1 ||
 		stack_push_ptr(&context->m_exec_stack,goal) == -1)
 	{
@@ -1367,13 +1289,14 @@ static enum eCompileResult compile_user_defined(struct context_t* context, const
 }
 
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
-enum eCompileResult solve_##f(struct context_t* context, size_t frame);
+enum eSolveResult solve_##f(struct context_t* context, size_t frame);
 
 #include "builtin_functions.h"
 
 static enum eCompileResult compile(struct context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result;
+	size_t frame = stack_top(context->m_exec_stack);
 	int debug = 0;
 
 	goal = deref_term(context,goal);
@@ -1419,7 +1342,8 @@ static enum eCompileResult compile(struct context_t* context, const union box_t*
 				// TODO: call/N
 				assert(0);
 			}
-			result = compile_user_defined(context,goal);
+			else
+				result = compile_user_defined(context,goal);
 			break;
 
 		case prolite_atom:
@@ -1435,7 +1359,19 @@ static enum eCompileResult compile(struct context_t* context, const union box_t*
 
 	if (debug)
 	{
-		// TODO: Emit tracepoint
+		if (result != COMPILE_OK)
+		{
+			stack_reset(&context->m_exec_stack,frame);
+
+			if (result == COMPILE_ALWAYS_FAILS)
+			{
+				// TODO: Emit tracepoint
+			}
+			else if (result == COMPILE_ALWAYS_TRUE)
+			{
+				// TODO: Emit tracepoint
+			}
+		}
 	}
 
 	return result;
