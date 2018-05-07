@@ -7,10 +7,6 @@
 #include <string.h>
 #include <assert.h>
 
-enum eSolveResult read_term(struct context_t* context, struct stream_t* s, union box_t** term, struct var_info_t** varinfo);
-enum eSolveResult solve(struct context_t* context, union box_t* goal);
-enum eSolveResult redo(struct context_t* context, int unwind);
-
 struct text_stream_t
 {
 	struct stream_t m_proto;
@@ -18,6 +14,11 @@ struct text_stream_t
 	const char** m_str;
 	const char*  m_end;
 };
+
+enum eSolveResult context_init(struct context_t* context);
+enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, struct var_info_t** varinfo);
+enum eSolveResult context_solve(struct context_t* context);
+enum eSolveResult context_reset(struct context_t* context);
 
 static int64_t text_stream_read(struct stream_t* s, void* dest, size_t len)
 {
@@ -31,158 +32,178 @@ static int64_t text_stream_read(struct stream_t* s, void* dest, size_t len)
 	return r;
 }
 
-static enum eSolveResult solve_start(struct context_t* context)
+static struct module_t* module_new(struct context_t* context, const char* name)
 {
-	uint64_t top = stack_top(context->m_exec_stack);
-	union box_t* goal = *(union box_t**)stack_at(context->m_exec_stack,top-1);
-	return solve(context,goal);
+	// TODO: Much more here!!
+
+	struct module_t* module = stack_malloc(&context->m_exec_stack,sizeof(struct module_t));
+	if (module)
+	{
+		memset(module,0,sizeof(struct module_t));
+		module->m_flags.char_conversion = 1;
+		module->m_flags.back_quotes = 1;
+	}
+
+	return module;
+}
+
+static void module_delete(struct module_t* module)
+{
+	// TODO
 }
 
 struct query_t
 {
-	struct context_t m_context;
-	size_t           m_start;
+	struct context_t   m_context;
+	struct var_info_t* m_varinfo;
 };
 
-enum eProliteResult prolite_prepare(prolite_env_t env, const char* query_text, size_t query_len, prolite_query_t* query, const char** tail)
+static struct query_t* query_new(prolite_env_t env)
 {
-	enum eSolveResult result = SOLVE_TRUE;
-	struct text_stream_t ts = {0};
-	union box_t* term = NULL;
-	struct var_info_t* varinfo = NULL;
-
 	// Create a new context
-	struct query_t* q = NULL;
+	struct query_t* retval = NULL;
+	struct stack_t* s = stack_new(&malloc,&free);
+	if (s)
 	{
-		struct stack_t* s = stack_new(&malloc,&free);
-		if (!s)
-			return PROLITE_NOMEM;
-
-		q = stack_malloc(&s,sizeof(struct query_t));
-		if (!q)
+		struct query_t* q = stack_malloc(&s,sizeof(struct query_t));
+		if (q)
 		{
-			stack_delete(s);
-			return PROLITE_NOMEM;
-		}
-
-		memset(q,0,sizeof(struct query_t));
-		q->m_context.m_exec_stack = s;
-	}
-
-	q->m_context.m_scratch_stack = stack_new(&malloc,&free);
-	if (!q->m_context.m_scratch_stack)
-	{
-		stack_delete(q->m_context.m_exec_stack);
-		return PROLITE_NOMEM;
-	}
-
-	q->m_context.m_module = stack_malloc(&q->m_context.m_exec_stack,sizeof(struct module_t));
-	if (!q->m_context.m_module)
-	{
-		stack_delete(q->m_context.m_scratch_stack);
-		stack_delete(q->m_context.m_exec_stack);
-		return PROLITE_NOMEM;
-	}
-	memset(q->m_context.m_module,0,sizeof(struct module_t));
-	q->m_context.m_module->m_flags.char_conversion = 1;
-	q->m_context.m_module->m_flags.back_quotes = 1;
-
-	ts.m_proto.m_fn_read = &text_stream_read;
-	ts.m_str = &query_text;
-	ts.m_end = *ts.m_str + (query_len == -1 ? strlen(*ts.m_str) : query_len);
-	if (tail)
-		*tail = query_text;
-
-	// Read a term and prepare it
-	result = read_term(&q->m_context,&ts.m_proto,&term,&varinfo);
-	if (result == SOLVE_TRUE)
-	{
-		// TODO: Do something with varinfo!
-
-		if (stack_push_ptr(&q->m_context.m_exec_stack,term) == -1 ||
-			(q->m_start = stack_push_ptr(&q->m_context.m_exec_stack,&solve_start)) == -1)
-		{
-			result = SOLVE_NOMEM;
-		}
-
-		stack_reset(&q->m_context.m_scratch_stack,0);
-	}
-
-	if (result == SOLVE_NOMEM)
-	{
-		stack_delete(q->m_context.m_scratch_stack);
-		stack_delete(q->m_context.m_exec_stack);
-		return PROLITE_NOMEM;
-	}
-
-	// We have just made heavy use of the scratch stack
-	stack_compact(q->m_context.m_scratch_stack);
-
-	*query = (prolite_query_t)q;
-	return result == SOLVE_THROW ? PROLITE_ERROR : PROLITE_TRUE;
-}
-
-enum eProliteResult prolite_solve(prolite_query_t query)
-{
-	struct query_t* q = (struct query_t*)query;
-	if (q)
-	{
-		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
-		{
-			redo_fn_t fn = stack_pop_ptr(&q->m_context.m_exec_stack);
-			switch ((*fn)(&q->m_context,0))
+			memset(q,0,sizeof(struct query_t));
+			q->m_context.m_exec_stack = s;
+			q->m_context.m_scratch_stack = stack_new(&malloc,&free);
+			if (q->m_context.m_scratch_stack)
 			{
-			case SOLVE_TRUE:
-				return PROLITE_TRUE;
+				q->m_context.m_module = module_new(&q->m_context,"user");
+				if (q->m_context.m_module)
+				{
+					retval = q;
+				}
 
-			case SOLVE_NOMEM:
-				return PROLITE_NOMEM;
-
-			case SOLVE_THROW:
-				return PROLITE_ERROR;
-
-			case SOLVE_HALT:
-				return PROLITE_HALT;
-
-			default:
-				break;
+				if (!retval)
+					stack_delete(q->m_context.m_scratch_stack);
 			}
 		}
+
+		if (!retval)
+			stack_delete(s);
 	}
-	return PROLITE_FALSE;
+
+	return retval;
 }
 
-enum eProliteResult prolite_reset(prolite_query_t query)
+static void query_delete(struct query_t* q)
 {
-	enum eProliteResult result = PROLITE_FALSE;
+	module_delete(q->m_context.m_module);
+	stack_delete(q->m_context.m_scratch_stack);
+	stack_delete(q->m_context.m_exec_stack);
+}
+
+prolite_query_t prolite_new_query(prolite_env_t env)
+{
+	enum eProliteResult result = PROLITE_NOMEM;
+	struct query_t* q = query_new(env);
+	if (q)
+	{
+		if (context_init(&q->m_context) != SOLVE_TRUE)
+		{
+			query_delete(q);
+			q = NULL;
+		}
+	}
+
+	return (prolite_query_t)q;
+}
+
+enum eProliteResult prolite_prepare(prolite_query_t query, const char* query_text, size_t query_len, const char** tail)
+{
+	enum eProliteResult result = PROLITE_FAIL;
 	struct query_t* q = (struct query_t*)query;
 	if (q)
 	{
-		result = PROLITE_TRUE;
-		if (stack_top(q->m_context.m_exec_stack) > q->m_start)
+		struct text_stream_t ts = {0};
+		ts.m_proto.m_fn_read = &text_stream_read;
+		ts.m_str = &query_text;
+		ts.m_end = *ts.m_str + (query_len == -1 ? strlen(*ts.m_str) : query_len);
+		if (tail)
+			*tail = query_text;
+
+		// Read a term and prepare it for execution
+		switch (context_prepare(&q->m_context,&ts.m_proto,&q->m_varinfo))
 		{
-			redo(&q->m_context,1);
+		case SOLVE_TRUE:
 
-			assert(stack_top(q->m_context.m_exec_stack) == q->m_start);
-		}
+			// TODO: Do something with varinfo!
 
-		stack_compact(q->m_context.m_exec_stack);
-		if (stack_push_ptr(&q->m_context.m_exec_stack,&solve_start) == -1)
+			result = PROLITE_TRUE;
+			break;
+
+		case SOLVE_THROW:
+			result = PROLITE_ERROR;
+			break;
+
+		case SOLVE_NOMEM:
 			result = PROLITE_NOMEM;
+			break;
 
-		stack_reset(&q->m_context.m_scratch_stack,0);
-		stack_compact(q->m_context.m_scratch_stack);
+		default:
+			// Few of these are actually reported
+			result = PROLITE_FAIL;
+			break;
+		}
 	}
 	return result;
 }
 
-void prolite_finalize(prolite_query_t query)
+enum eProliteResult prolite_solve(prolite_query_t query)
+{
+	enum eProliteResult result = PROLITE_FAIL;
+	struct query_t* q = (struct query_t*)query;
+	if (q)
+	{
+		switch (context_solve(&q->m_context))
+		{
+		case SOLVE_TRUE:
+			result = PROLITE_TRUE;
+			break;
+
+		case SOLVE_THROW:
+			result = PROLITE_ERROR;
+			break;
+
+		case SOLVE_NOMEM:
+			result = PROLITE_NOMEM;
+			break;
+
+		case SOLVE_HALT:
+			// TODO: Check halt handler
+			result = PROLITE_FAIL;
+			break;
+
+		default:
+			// Few of these are actually reported
+			result = PROLITE_FAIL;
+			break;
+		}
+	}
+	return result;
+}
+
+enum eProliteResult prolite_reset(prolite_query_t query)
+{
+	enum eProliteResult result = PROLITE_TRUE;
+	struct query_t* q = (struct query_t*)query;
+	if (q)
+		context_reset(&q->m_context);
+
+	return result;
+}
+
+void prolite_delete_query(prolite_query_t query)
 {
 	struct query_t* q = (struct query_t*)query;
 	if (q)
 	{
-		prolite_reset(query);
-		stack_delete(q->m_context.m_scratch_stack);
-		stack_delete(q->m_context.m_exec_stack);
+		context_reset(&q->m_context);
+		query_delete(q);
 	}
 }

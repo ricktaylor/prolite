@@ -2257,7 +2257,7 @@ static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t
 		status = emit_compound(&context->m_scratch_stack,error_functor,arity,&term,&term_size);
 	if (status == EMIT_OK)
 	{
-		term = stack_realloc(&context->m_exec_stack,term,term_size * sizeof(union box_t),(term_size + arity) * sizeof(union box_t));
+		term = stack_realloc(&context->m_scratch_stack,term,term_size * sizeof(union box_t),(term_size + arity) * sizeof(union box_t));
 		if (!term)
 			status = EMIT_NOMEM;
 		else
@@ -2366,7 +2366,6 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 {
 	enum eEmitStatus status = EMIT_OK;
 	enum eASTError ast_err = AST_ERR_NONE;
-	uint64_t stack_base = stack_top(context->m_exec_stack);
 
 	struct token_t next = {0};
 	enum eTokenType next_type = token_next(context,parser,&next);
@@ -2403,12 +2402,6 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 		}
 	}
 
-	if (status != EMIT_OK)
-	{
-		// TODO: Undo pointers...
-		stack_reset(&context->m_exec_stack,stack_base);
-	}
-
 	if (status != EMIT_THROW)
 		stack_reset(&context->m_scratch_stack,0);
 
@@ -2417,24 +2410,54 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 
 enum eSolveResult read_term(struct context_t* context, struct stream_t* s, union box_t** term, struct var_info_t** varinfo)
 {
+	enum eSolveResult result;
+	struct var_info_t* new_varinfo = NULL;
+	size_t stack_base = stack_top(context->m_exec_stack);
 	struct parser_t parser = {0};
 	parser.m_s = s;
 	parser.m_line_info.m_end_line = 1;
 
-	switch (parse_emit_term(context,&parser,term,varinfo))
+	switch (parse_emit_term(context,&parser,term,&new_varinfo))
 	{
 	case EMIT_EOF:
-		return (emit_error(context,&parser.m_line_info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(past_end_of_stream)) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
+		result = emit_error(context,&parser.m_line_info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(past_end_of_stream)) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM;
+		break;
 
 	case EMIT_NOMEM:
-		return SOLVE_NOMEM;
+		result = SOLVE_NOMEM;
+		break;
 
 	case EMIT_THROW:
-		return SOLVE_THROW;
+		result = SOLVE_THROW;
+		break;
 
 	default:
-		return SOLVE_TRUE;
+		result = SOLVE_TRUE;
+		break;
 	}
+
+	if (result == SOLVE_TRUE && varinfo && new_varinfo)
+	{
+		// Copy varinfo to exec_stack
+		*varinfo = stack_malloc(&context->m_exec_stack,sizeof(struct var_info_t) * context->m_substs->m_count);
+		if (!*varinfo)
+			result = SOLVE_NOMEM;
+		else
+			memcpy(*varinfo,new_varinfo,sizeof(struct var_info_t) * context->m_substs->m_count);
+	}
+
+	if (result == SOLVE_TRUE)
+		stack_reset(&context->m_scratch_stack,0);
+	else
+	{
+		// TODO: Undo pointers...
+		stack_reset(&context->m_exec_stack,stack_base);
+	}
+
+	// We have just made heavy use of the scratch stack
+	stack_compact(context->m_scratch_stack);
+
+	return result;
 }
 
 static enum eEmitStatus clause_directive(struct context_t* context, const union box_t* directive)
@@ -2452,12 +2475,13 @@ static enum eEmitStatus compile_initializer(struct context_t* context, const uni
 	assert(0);
 }
 
-enum eSolveResult solve(struct context_t* context, const union box_t* goal);
 enum eSolveResult assert_clause(struct context_t* context, const union box_t* clause, int z);
 
 static enum eEmitStatus directive_solve(struct context_t* context, const union box_t* directive)
 {
-	switch (solve(context,directive))
+	assert(0);
+
+	/*switch (solve(context,directive))
 	{
 	case SOLVE_TRUE:
 		return EMIT_OK;
@@ -2472,7 +2496,7 @@ static enum eEmitStatus directive_solve(struct context_t* context, const union b
 		// Should never happen
 		assert(0);
 		return (emit_error(context,get_debug_info(directive),BOX_ATOM_BUILTIN(system_error),0) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
-	}
+	}*/
 }
 
 static enum eEmitStatus include(struct context_t* context, const union box_t* directive);
@@ -2488,7 +2512,7 @@ static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 	do
 	{
 		union box_t* term = NULL;
-		uint64_t stack_base = stack_top(context->m_exec_stack);
+		size_t stack_base = stack_top(context->m_exec_stack);
 		struct var_info_t* varinfo = NULL;
 
 		status = parse_emit_term(context,&parser,&term,&varinfo);
@@ -2533,6 +2557,7 @@ static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 				stack_reset(&context->m_scratch_stack,0);
 		}
 
+		// TODO: Undo pointers...
 		stack_reset(&context->m_exec_stack,stack_base);
 	}
 	while (status == EMIT_OK);

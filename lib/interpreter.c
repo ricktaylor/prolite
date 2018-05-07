@@ -1,6 +1,7 @@
 
 
 #include "types.h"
+#include "stream.h"
 
 #include <assert.h>
 #include <string.h>
@@ -252,13 +253,6 @@ typedef enum eSolveResult (*redo_fn_t)(struct context_t*,int);
 #define INLINE_REDO(result,context,unwind) \
 	(result) = (*(redo_fn_t)stack_pop_ptr(&(context)->m_exec_stack))((context),(unwind));
 
-enum eSolveResult redo(struct context_t* context, int unwind)
-{
-	enum eSolveResult result;
-	INLINE_REDO(result,context,unwind);
-	return result;
-}
-
 enum eCompileResult
 {
 	COMPILE_OK = 0,
@@ -292,10 +286,13 @@ static enum eCompileResult compile_cut(struct context_t* context, const union bo
 
 static enum eSolveResult redo_repeat(struct context_t* context, int unwind)
 {
-	if (unwind)
-		return SOLVE_UNWIND;
+	enum eSolveResult result;
 
-	return stack_push_ptr(&context->m_exec_stack,&redo_repeat) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
+	INLINE_REDO(result,context,unwind);
+	if (result == SOLVE_TRUE || result == SOLVE_FAIL)
+		result = stack_push_ptr(&context->m_exec_stack,&redo_repeat) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
+
+	return result;
 }
 
 static enum eSolveResult solve_repeat(struct context_t* context, size_t frame)
@@ -867,10 +864,25 @@ static enum eCompileResult compile_call(struct context_t* context, const union b
 
 static enum eSolveResult redo_unify(struct context_t* context, int unwind)
 {
+	enum eSolveResult result;
+	size_t stack_base;
 	struct substs_t* prev_substs = stack_pop_ptr(&context->m_exec_stack);
 	if (prev_substs)
+		stack_base = stack_pop(&context->m_exec_stack);
+
+	INLINE_REDO(result,context,unwind);
+	if (result == SOLVE_TRUE)
 	{
-		uint64_t stack_base = stack_pop(&context->m_exec_stack);
+		if ((prev_substs && stack_push(&context->m_exec_stack,stack_base) == -1) ||
+			stack_push_ptr(&context->m_exec_stack,prev_substs) == -1 ||
+			stack_push_ptr(&context->m_exec_stack,&redo_unify) == -1)
+		{
+			result = SOLVE_NOMEM;
+		}
+	}
+
+	if (result != SOLVE_TRUE && prev_substs)
+	{
 		stack_reset(&context->m_exec_stack,stack_base);
 		context->m_substs = prev_substs;
 	}
@@ -882,7 +894,7 @@ static enum eSolveResult solve_unify(struct context_t* context, size_t frame)
 {
 	enum eSolveResult result;
 	struct substs_t* prev_substs = context->m_substs;
-	uint64_t stack_base = stack_top(context->m_exec_stack);
+	size_t stack_base = stack_top(context->m_exec_stack);
 	const union box_t *arg1,*arg2;
 
 	if (prev_substs)
@@ -942,7 +954,7 @@ static enum eSolveResult solve_not_unifiable(struct context_t* context, size_t f
 {
 	enum eSolveResult result;
 	struct substs_t* prev_substs = context->m_substs;
-	uint64_t stack_base = stack_top(context->m_exec_stack);
+	size_t stack_base = stack_top(context->m_exec_stack);
 	const union box_t *arg1,*arg2;
 
 	if (prev_substs)
@@ -1046,7 +1058,7 @@ static enum eSolveResult catch(struct context_t* context, enum eSolveResult resu
 	{
 		// Unify catcher and ball
 		struct substs_t* prev_substs = context->m_substs;
-		uint64_t stack_base = stack_top(context->m_exec_stack);
+		size_t stack_base = stack_top(context->m_exec_stack);
 
 		if (prev_substs)
 		{
@@ -1396,6 +1408,134 @@ static enum eCompileResult compile(struct context_t* context, const union box_t*
 	{
 		// TODO: Emit tracepoint
 	}
+
+	return result;
+}
+
+enum eSolveResult redo_read_term(struct context_t* context, int unwind)
+{
+	enum eSolveResult result;
+	size_t stack_base = stack_pop(&context->m_exec_stack);
+
+	INLINE_REDO(result,context,unwind);
+	if (result == SOLVE_TRUE)
+	{
+		if (stack_push(&context->m_exec_stack,stack_base) == -1 ||
+			stack_push_ptr(&context->m_exec_stack,&redo_read_term) == -1)
+		{
+			result = SOLVE_NOMEM;
+		}
+	}
+
+	if (result != SOLVE_TRUE)
+		stack_reset(&context->m_exec_stack,stack_base);
+
+	return result;
+}
+
+static enum eSolveResult redo_never(struct context_t* context, int unwind)
+{
+	return stack_push_ptr(&context->m_exec_stack,&redo_never) == -1 ? SOLVE_NOMEM : (unwind ? SOLVE_UNWIND : SOLVE_FAIL);
+}
+
+enum eSolveResult context_init(struct context_t* context)
+{
+	return stack_push_ptr(&context->m_exec_stack,&redo_never) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
+}
+
+enum eSolveResult context_reset(struct context_t* context)
+{
+	enum eSolveResult result;
+
+	INLINE_REDO(result,context,1);
+	if (result == SOLVE_UNWIND)
+		result = SOLVE_TRUE;
+
+	stack_reset(&context->m_scratch_stack,0);
+	stack_compact(context->m_scratch_stack);
+
+	stack_compact(context->m_exec_stack);
+
+	return result;
+}
+
+static enum eSolveResult redo_start(struct context_t* context, int unwind)
+{
+	enum eSolveResult result;
+	size_t frame = stack_pop(&context->m_exec_stack);
+
+	if (unwind)
+		return SOLVE_UNWIND;
+
+	INLINE_SOLVE(result,context,frame);
+
+	return result;
+}
+
+enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, struct var_info_t** varinfo)
+{
+	enum eSolveResult result = context_reset(context);
+	if (result == SOLVE_TRUE)
+	{
+		size_t frame;
+		size_t term_base = stack_top(context->m_exec_stack);
+		union box_t* goal = NULL;
+		result = read_term(context,s,&goal,varinfo);
+		if (result == SOLVE_TRUE)
+		{
+			frame = stack_top(context->m_exec_stack);
+
+			switch (compile(context,goal))
+			{
+			case COMPILE_OK:
+				if (stack_push(&context->m_exec_stack,frame) == -1 ||
+					stack_push_ptr(&context->m_exec_stack,&redo_start) == -1)
+				{
+					result = SOLVE_NOMEM;
+				}
+				else
+					result = SOLVE_TRUE;
+				break;
+
+			case COMPILE_NOT_CALLABLE:
+				result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
+				break;
+
+			case COMPILE_ALWAYS_TRUE:
+				result = stack_push_ptr(&context->m_exec_stack,&redo_true) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
+				break;
+
+			case COMPILE_ALWAYS_FAILS:
+				result = SOLVE_FAIL;
+				break;
+
+			case COMPILE_NOMEM:
+				result = SOLVE_NOMEM;
+				break;
+			}
+		}
+
+		if (result == SOLVE_TRUE)
+		{
+			if (stack_push(&context->m_exec_stack,term_base) == -1 ||
+				stack_push_ptr(&context->m_exec_stack,&redo_read_term) == -1)
+			{
+				result = SOLVE_NOMEM;
+			}
+		}
+
+		if (result != SOLVE_TRUE)
+			stack_reset(&context->m_exec_stack,term_base);
+	}
+
+	return result;
+}
+
+enum eSolveResult context_solve(struct context_t* context)
+{
+	enum eSolveResult result;
+
+	INLINE_REDO(result,context,0);
 
 	return result;
 }

@@ -18,10 +18,6 @@ static void dump(enum eProliteResult r)
 		printf("\r\n");
 		break;
 
-	case PROLITE_HALT:
-		printf("HALT\r\n");
-		break;
-
 	case PROLITE_NOMEM:
 		printf("resource_error(memory).\r\n");
 		break;
@@ -30,7 +26,7 @@ static void dump(enum eProliteResult r)
 		printf("ERROR!\r\n");
 		break;
 
-	case PROLITE_FALSE:
+	case PROLITE_FAIL:
 		printf("Fails.\r\n");
 		break;
 	}
@@ -39,22 +35,26 @@ static void dump(enum eProliteResult r)
 int main(int argc, char* argv[])
 {
 	prolite_env_t dummy;
-	prolite_query_t q;
-
-	enum eProliteResult r = prolite_prepare(dummy,"X = 1,X = 1.",-1,&q,NULL);
-	if (r == PROLITE_TRUE)
+	prolite_query_t q = prolite_new_query(dummy);
+	if (q)
 	{
-		do
+		enum eProliteResult r = prolite_prepare(q,"X = 1,X = 1.",-1,NULL);
+		if (r == PROLITE_TRUE)
 		{
-			r = prolite_solve(q);
-			dump(r);
-		}
-		while (r == PROLITE_TRUE);
+			do
+			{
+				r = prolite_solve(q);
+				dump(r);
+			}
+			while (r == PROLITE_TRUE);
 
-		prolite_finalize(q);
+			prolite_reset(q);
+		}
+		else
+			dump(r);
+
+		prolite_delete_query(q);
 	}
-	else
-		dump(r);
 
 	return 0;
 }

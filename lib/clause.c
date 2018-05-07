@@ -1,6 +1,8 @@
 
 #include "types.h"
 
+#include <assert.h>
+
 enum eSolveResult term_to_goal(struct context_t* context, const union box_t* src, union box_t** dest);
 
 /* Assert a clause */
@@ -33,6 +35,7 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* cl
 
 	/* TODO: Check for static procedure */
 
+	/*
 	if (body)
 	{
 		enum eSolveResult result = term_to_goal(context,body,&goal);
@@ -61,9 +64,10 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* cl
 			return SOLVE_NOMEM;
 
 		goal->m_u64val = BOX_ATOM_EMBED_4('t','r','u','e');
-	}
+	}*/
 
 	/* TODO Make a clause(head,goal)!! */
+	assert(0);
 
 	return SOLVE_TRUE;
 }
