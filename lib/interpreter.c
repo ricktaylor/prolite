@@ -1352,7 +1352,7 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 	//if (context->m_module->m_flags.unknown == 0)
 	//	return throw_existence_error(context,BOX_ATOM_BUILTIN(procedure),goal);
 
-	assert(0);
+	printf("existence_error(procedure(G)).\n");
 
 	return SOLVE_FAIL;
 }
