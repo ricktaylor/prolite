@@ -875,17 +875,13 @@ static enum eCompileResult compile_call(struct context_t* context, const union b
 		}
 		break;
 
-	case prolite_var:
+	default:
 		if (stack_push_ptr(&context->m_exec_stack,&solve_compile) == -1 ||
 			stack_push_ptr(&context->m_exec_stack,goal) == -1)
 		{
 			result = COMPILE_NOMEM;
 		}
 		result = COMPILE_OK;
-		break;
-
-	default:
-		result = COMPILE_NOT_CALLABLE;
 		break;
 	}
 
@@ -1354,6 +1350,8 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 
 	printf("existence_error(procedure(G)).\n");
 
+	// TODO
+
 	return SOLVE_FAIL;
 }
 
@@ -1375,7 +1373,7 @@ enum eCompileResult solve_##f(struct context_t* context, size_t frame);
 
 static enum eCompileResult compile(struct context_t* context, const union box_t* goal)
 {
-	enum eCompileResult result = COMPILE_NOT_CALLABLE;
+	enum eCompileResult result;
 	int debug = 0;
 
 	goal = deref_term(context,goal);
@@ -1429,6 +1427,7 @@ static enum eCompileResult compile(struct context_t* context, const union box_t*
 			break;
 
 		default:
+			result = COMPILE_NOT_CALLABLE;
 			break;
 		}
 		break;
