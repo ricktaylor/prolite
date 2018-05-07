@@ -15,21 +15,23 @@ static void dump(enum eProliteResult r)
 	{
 	case PROLITE_TRUE:
 		printf("Succeeds.");
-		printf("\r\n");
+		printf("\n");
 		break;
 
 	case PROLITE_NOMEM:
-		printf("resource_error(memory).\r\n");
+		printf("resource_error(memory).\n");
 		break;
 
 	case PROLITE_ERROR:
-		printf("ERROR!\r\n");
+		printf("ERROR!\n");
 		break;
 
 	case PROLITE_FAIL:
-		printf("Fails.\r\n");
+		printf("Fails.\n");
 		break;
 	}
+
+	fflush(stdout);
 }
 
 int main(int argc, char* argv[])
