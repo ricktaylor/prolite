@@ -400,6 +400,16 @@ static enum eCompileResult compile_and(struct context_t* context, const union bo
 		stack_reset(&context->m_exec_stack,frame);
 		result = compile(context,next_arg(goal));
 	}
+	else if (result == COMPILE_ALWAYS_FAILS)
+	{
+		// Check callable state of cont_goal
+		result = compile(context,next_arg(goal));
+		if (result != COMPILE_NOT_CALLABLE && result != COMPILE_NOMEM)
+		{
+			stack_reset(&context->m_exec_stack,frame);
+			result = COMPILE_ALWAYS_FAILS;
+		}
+	}
 	else if (result == COMPILE_OK)
 	{
 		size_t* cont_frame = stack_at(context->m_exec_stack,frame+1);
@@ -467,6 +477,16 @@ static enum eCompileResult compile_if_then(struct context_t* context, const unio
 	{
 		stack_reset(&context->m_exec_stack,frame);
 		result = compile(context,next_arg(goal));
+	}
+	else if (result == COMPILE_ALWAYS_FAILS)
+	{
+		// Check callable state of then_goal
+		result = compile(context,next_arg(goal));
+		if (result != COMPILE_NOT_CALLABLE && result != COMPILE_NOMEM)
+		{
+			stack_reset(&context->m_exec_stack,frame);
+			result = COMPILE_ALWAYS_FAILS;
+		}
 	}
 	else if (result == COMPILE_OK)
 	{
@@ -1327,12 +1347,23 @@ static enum eCompileResult compile_halt(struct context_t* context, const union b
 	return COMPILE_OK;
 }
 
-static enum eCompileResult compile_user_defined(struct context_t* context, const union box_t* goal)
+static enum eSolveResult solve_user_defined(struct context_t* context, size_t frame)
 {
 	//if (context->m_module->m_flags.unknown == 0)
 	//	return throw_existence_error(context,BOX_ATOM_BUILTIN(procedure),goal);
 
 	assert(0);
+
+	return SOLVE_FAIL;
+}
+
+static enum eCompileResult compile_user_defined(struct context_t* context, const union box_t* goal)
+{
+	if (stack_push_ptr(&context->m_exec_stack,&solve_user_defined) == -1 ||
+		stack_push_ptr(&context->m_exec_stack,goal) == -1)
+	{
+		return COMPILE_NOMEM;
+	}
 
 	return COMPILE_OK;
 }
@@ -1411,7 +1442,7 @@ static enum eCompileResult compile(struct context_t* context, const union box_t*
 	return result;
 }
 
-enum eSolveResult redo_read_term(struct context_t* context, int unwind)
+static enum eSolveResult redo_read_term(struct context_t* context, int unwind)
 {
 	enum eSolveResult result;
 	size_t stack_base = stack_pop(&context->m_exec_stack);
@@ -1516,6 +1547,8 @@ enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s,
 				break;
 
 			case COMPILE_NOT_CALLABLE:
+				printf("type_error(callable(G)).\n");
+
 				result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
 				break;
 
