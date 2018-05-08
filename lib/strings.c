@@ -33,7 +33,7 @@ static void box_pointer(union box_t* b, void* ptr)
 static void* unbox_pointer(const union box_t* b)
 {
 #if UINTPTR_MAX == UINT32_MAX
-	return (void*)(uintptr_t)UNOX_U32(b->m_u64val);
+	return (void*)(uintptr_t)UNBOX_LOW32(b->m_u64val);
 #elif defined (__x86_64__) || defined(_M_X64) || defined(__aarch64__)
 	/* Sign extend to make an x86_64 canonical address */
 	struct pun { uint64_t u45 : 45; } p;

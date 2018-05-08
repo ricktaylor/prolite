@@ -3,8 +3,6 @@
 
 #include <assert.h>
 
-enum eSolveResult term_to_goal(struct context_t* context, const union box_t* src, union box_t** dest);
-
 /* Assert a clause */
 enum eSolveResult assert_clause(struct context_t* context, const union box_t* clause, int z)
 {

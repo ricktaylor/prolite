@@ -37,7 +37,7 @@ static void dump(enum eProliteResult r)
 int main(int argc, char* argv[])
 {
 	const char* cmd = argc > 1 ? argv[1] : "true.";
-	prolite_env_t dummy;
+	prolite_env_t dummy = {0};
 	prolite_query_t q = prolite_new_query(dummy);
 	if (q)
 	{

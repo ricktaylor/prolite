@@ -27,9 +27,9 @@ static uint32_t atom_to_code(const union box_t* b)
 
 	c[0] = (hi16 & 0xFF);
 	c[1] = (lo32 >> 24);
-	c[2] = (lo32 >> 16);
-	c[3] = (lo32 >> 8);
-	c[4] = lo32;
+	c[2] = (lo32 >> 16) & 0xFF;
+	c[3] = (lo32 >> 8) & 0xFF;
+	c[4] = lo32 & 0xFF;
 
 	if (c[0] <= 0x7f)
 		return len == 1 ? c[0] : -1;
@@ -90,11 +90,13 @@ enum eSolveResult solve_char_conversion(struct context_t* context, const union b
 	uint32_t out_char = -1;
 
 	const union box_t* arg;
+	enum tag_type_t type;
+
 	goal = first_arg(goal);
 	arg = deref_term(context,next_arg(goal));
 	goal = deref_term(context,arg);
 
-	enum tag_type_t type = UNBOX_TYPE(goal->m_u64val);
+	type = UNBOX_TYPE(goal->m_u64val);
 	if (type == prolite_var)
 		return throw_instantiation_error(context,NULL);
 
@@ -401,4 +403,6 @@ enum eSolveResult solve_op(struct context_t* context, const union box_t* goal)
 enum eSolveResult solve_set_prolog_flag(struct context_t* context, const union box_t* goal)
 {
 	assert(0);
+
+	return SOLVE_FAIL;
 }

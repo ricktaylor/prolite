@@ -49,14 +49,34 @@ static inline void* stack_pop_ptr(struct stack_t** stack)
 	return (void*)(uintptr_t)stack_pop(stack);
 }
 
-void* stack_at(struct stack_t* stack, size_t pos);
+static inline void* stack_at(struct stack_t* stack, size_t pos)
+{
+	while (stack && stack->m_base + stack->m_top < pos)
+		stack = stack->m_next;
 
-void stack_reset_(struct stack_t** stack, size_t pos);
+	while (stack && stack->m_base > pos)
+		stack = stack->m_prev;
+
+	return &stack->m_data[pos - stack->m_base];
+}
 
 static inline void stack_reset(struct stack_t** stack, size_t pos)
 {
-	if (pos < stack_top(*stack))
-		stack_reset_(stack,pos);
+	if (pos >= stack_top(*stack))
+		return;
+
+	pos = ((*stack)->m_base + (*stack)->m_top) - pos;
+	while (pos)
+	{
+		if (pos <= (*stack)->m_top)
+		{
+			(*stack)->m_top -= pos;
+			break;
+		}
+
+		pos -= (*stack)->m_top;
+		*stack = (*stack)->m_prev;
+	}
 }
 
 void stack_compact(struct stack_t* stack);

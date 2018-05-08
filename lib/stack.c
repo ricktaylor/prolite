@@ -4,10 +4,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const uint64_t PAGE_SIZE = 4096 * sizeof(uint64_t);
+static const size_t PAGE_SIZE = 4096 * sizeof(uint64_t);
 
-#define ALIGN(x,y) (((x)+((y)-1)) & ~((y)-1))
-#define ALIGN_DIV(x,y) (((x)+((y)-1)) / (y))
+static inline size_t align(size_t x, size_t y)
+{
+	return (x + (y-1)) & ~(y-1);
+}
+
+static inline size_t align_div(size_t x, size_t y)
+{
+	return (x + (y-1)) / y;
+}
 
 struct stack_t* stack_new(void*(*fn_malloc)(size_t), void(*fn_free)(void*))
 {
@@ -30,7 +37,7 @@ struct stack_t* stack_new(void*(*fn_malloc)(size_t), void(*fn_free)(void*))
 
 static struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
 {
-	size_t align_size = ALIGN(size,PAGE_SIZE);
+	size_t align_size = align(size,PAGE_SIZE);
 	size_t count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
 
 	struct stack_t* stack = after->m_next;
@@ -72,17 +79,6 @@ void stack_delete(struct stack_t* s)
 	}
 }
 
-void* stack_at(struct stack_t* stack, size_t pos)
-{
-	while (stack && stack->m_base + stack->m_top < pos)
-		stack = stack->m_next;
-
-	while (stack && stack->m_base > pos)
-		stack = stack->m_prev;
-
-	return &stack->m_data[pos - stack->m_base];
-}
-
 size_t stack_push(struct stack_t** stack, uint64_t val)
 {
 	if ((*stack)->m_top == (*stack)->m_count)
@@ -99,28 +95,10 @@ size_t stack_push(struct stack_t** stack, uint64_t val)
 	return (*stack)->m_base + (*stack)->m_top++;
 }
 
-void stack_reset_(struct stack_t** stack, size_t pos)
-{
-	if (pos >= stack_top(*stack))
-		return;
-
-	pos = ((*stack)->m_base + (*stack)->m_top) - pos;
-	while (pos)
-	{
-		if (pos <= (*stack)->m_top)
-		{
-			(*stack)->m_top -= pos;
-			break;
-		}
-
-		pos -= (*stack)->m_top;
-		*stack = (*stack)->m_prev;
-	}
-}
-
 void stack_compact(struct stack_t* stack)
 {
-	for (struct stack_t* next = stack->m_next;next;)
+	struct stack_t* next = stack->m_next;
+	while (next)
 	{
 		struct stack_t* s = next->m_next;
 		(*next->m_fn_free)(next);
@@ -132,7 +110,7 @@ void stack_compact(struct stack_t* stack)
 void* stack_malloc(struct stack_t** stack, size_t len)
 {
 	void* ptr = NULL;
-	uint32_t align_len = ALIGN_DIV(len,sizeof(uint64_t));
+	uint32_t align_len = align_div(len,sizeof(uint64_t));
 
 	if ((*stack)->m_top + align_len > (*stack)->m_count)
 	{
@@ -156,7 +134,7 @@ void stack_free(struct stack_t* stack, void* ptr, size_t len)
 
 	if (stack)
 	{
-		uint32_t align_len = ALIGN_DIV(len,sizeof(uint64_t));
+		uint32_t align_len = align_div(len,sizeof(uint64_t));
 
 		if (stack->m_top >= align_len && ptr == &stack->m_data[stack->m_top - align_len])
 			stack->m_top -= align_len;
@@ -165,11 +143,11 @@ void stack_free(struct stack_t* stack, void* ptr, size_t len)
 
 void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t new_len)
 {
-	uint32_t align_old_len = ALIGN_DIV(old_len,sizeof(uint64_t));
+	uint32_t align_old_len = align_div(old_len,sizeof(uint64_t));
 
 	if ((*stack)->m_top >= align_old_len && ptr == &(*stack)->m_data[(*stack)->m_top - align_old_len])
 	{
-		uint32_t align_new_len = ALIGN_DIV(new_len,sizeof(uint64_t));
+		uint32_t align_new_len = align_div(new_len,sizeof(uint64_t));
 		if ((*stack)->m_top + (align_new_len - align_old_len) <= (*stack)->m_count)
 		{
 			(*stack)->m_top += (align_new_len - align_old_len);

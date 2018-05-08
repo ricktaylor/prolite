@@ -8,6 +8,11 @@
 #include <stdarg.h>
 #include <assert.h>
 
+#ifdef _MSC_VER
+#include <float.h>
+#define isnan _isnan
+#endif
+
 uint32_t convert_char(struct context_t* context, uint32_t in_char);
 
 /* Try to find a infix/suffix op, otherwise find prefix */
@@ -115,7 +120,7 @@ enum eCharMax
 	char_ilseq = char_max+3
 };
 
-static int token_append_char(struct context_t* context, struct token_t* token, unsigned char c)
+static inline int token_append_char(struct context_t* context, struct token_t* token, unsigned char c)
 {
 	if (token->m_alloc == token->m_len)
 	{
@@ -308,7 +313,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 	return val;
 }
 
-static uint32_t token_get_char_conv(struct context_t* context, const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
+static inline uint32_t token_get_char_conv(struct context_t* context, const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
 {
 	uint32_t c = token_get_char(p,pe,eof,line,col);
 	if (context->m_module->m_flags.char_conversion && c <= char_max)
@@ -1660,7 +1665,7 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 
 static struct ast_node_t* parse_compound_term(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
-	uint64_t alloc_arity = 1;
+	size_t alloc_arity = 1;
 	node = atom_to_compound(context,node,ast_err);
 	if (!node)
 		return NULL;
@@ -1671,7 +1676,7 @@ static struct ast_node_t* parse_compound_term(struct context_t* context, struct 
 
 		if (node->m_arity == alloc_arity)
 		{
-			uint32_t new_arity = alloc_arity * 2;
+			size_t new_arity = alloc_arity * 2;
 			struct ast_node_t* new_node = stack_realloc(&context->m_scratch_stack,node,sizeof(struct ast_node_t) + (alloc_arity * sizeof(struct ast_node_t*)),sizeof(struct ast_node_t) + (new_arity * sizeof(struct ast_node_t*)));
 			if (!new_node)
 				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
@@ -1840,7 +1845,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 		node->m_type = AST_TYPE_VAR;
-		node->m_arity = -1;
+		node->m_arity = UINT64_C(-1);
 
 		if (!box_string(prolite_atom,context,&node->m_boxed,next->m_str,next->m_len))
 			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
@@ -2123,21 +2128,21 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct substs_
 
 		if (i == var_count)
 		{
-			struct substs_t* new_substs = stack_realloc(&context->m_exec_stack,*substs,sizeof(struct substs_t) + (var_count * sizeof(union box_t)),sizeof(struct substs_t) + ((var_count+1) * sizeof(union box_t)));
-			if (!new_substs)
+			struct var_info_t* new_varinfo;
+			struct substs_t* new_substs;
+			
+			new_substs = stack_realloc(&context->m_exec_stack,*substs,sizeof(struct substs_t) + (var_count * sizeof(union box_t)),sizeof(struct substs_t) + ((var_count+1) * sizeof(union box_t)));
+			new_varinfo = stack_realloc(&context->m_scratch_stack,*varinfo,sizeof(struct var_info_t) * var_count,sizeof(struct var_info_t) * (var_count+1));
+			if (!new_substs || !new_varinfo)
 				return EMIT_NOMEM;
-
-			struct var_info_t* new_varinfo = stack_realloc(&context->m_scratch_stack,*varinfo,sizeof(struct var_info_t) * var_count,sizeof(struct var_info_t) * (var_count+1));
-			if (!new_varinfo)
-				return EMIT_NOMEM;
-
-			*varinfo = new_varinfo;
-			(*varinfo)[var_count].m_name = node->m_boxed;
-			(*varinfo)[var_count].m_use_count = 1;
 
 			*substs = new_substs;
 			(*substs)->m_values[var_count] = NULL;
 			(*substs)->m_count = var_count+1;
+
+			*varinfo = new_varinfo;
+			(*varinfo)[var_count].m_name = node->m_boxed;
+			(*varinfo)[var_count].m_use_count = 1;
 		}
 
 		node->m_arity = i;

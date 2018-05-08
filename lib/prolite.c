@@ -23,7 +23,7 @@ enum eSolveResult context_reset(struct context_t* context);
 static int64_t text_stream_read(struct stream_t* s, void* dest, size_t len)
 {
 	struct text_stream_t* ts = (struct text_stream_t*)s;
-	int64_t r = (ts->m_end - *ts->m_str);
+	size_t r = (ts->m_end - *ts->m_str);
 	if (r > len)
 		r = len;
 
@@ -100,7 +100,6 @@ static void query_delete(struct query_t* q)
 
 prolite_query_t prolite_new_query(prolite_env_t env)
 {
-	enum eProliteResult result = PROLITE_NOMEM;
 	struct query_t* q = query_new(env);
 	if (q)
 	{

@@ -54,24 +54,24 @@
 
 #if defined(__aarch64__) || defined(__arm__)
 #define BOX_EXP_16(v)    ((UINT64_C(0xFFFF) & (v)) << 24)
-#define UNBOX_EXP_16(v)  ((v) & (UINT64_C(0xFFFF) << 24) >> 24)
+#define UNBOX_EXP_16(v)  ((uint16_t)((v) & (UINT64_C(0xFFFF) << 24) >> 24))
 #define BOX_MANT_48(v)   (((v) & (UINT64_C(0xFFFF) << 32) >> 32) | (((v) & UINT64_C(0xFFFFFFFF)) << 32))
 #define UNBOX_MANT_48(v) (((v) & (UINT64_C(0xFFFF) << 32) | (((v) & (UINT64_C(0xFFFFFFFF) << 32)) >> 32))
 #else
 #define BOX_EXP_16(v)    ((UINT64_C(0xFFFF) & (v)) << 48)
-#define UNBOX_EXP_16(v)  ((uint64_t)(v) >> 48)
+#define UNBOX_EXP_16(v)  ((uint16_t)((uint64_t)(v) >> 48))
 #define BOX_MANT_48(v)   ((v) & ~(UINT64_C(0xFFFF) << 48))
 #define UNBOX_MANT_48(v) BOX_MANT_48(v)
 #endif
 
-#define BOX_TYPE(type)       BOX_EXP_16(0x7FF0 | ((type) & 0x8007))
-#define UNBOX_TYPE(v)        (UNBOX_EXP_16(v) & 0x8007)
+#define BOX_TYPE(type)   BOX_EXP_16(0x7FF0 | ((type) & 0x8007))
+#define UNBOX_TYPE(v)    (UNBOX_EXP_16(v) & 0x8007)
 
 #define BOX_HI16(u16)    BOX_MANT_48((UINT64_C(0xFFFF) & (u16)) << 32)
-#define UNBOX_HI16(v)    (UNBOX_MANT_48(v) >> 32)
+#define UNBOX_HI16(v)    ((uint16_t)(UNBOX_MANT_48(v) >> 32))
 
 #define BOX_LOW32(u32)   BOX_MANT_48(UINT64_C(0xFFFFFFFF) & (u32))
-#define UNBOX_LOW32(v)   (UNBOX_MANT_48(v) & UINT64_C(0xFFFFFFFF))
+#define UNBOX_LOW32(v)   ((uint32_t)(UNBOX_MANT_48(v) & UINT64_C(0xFFFFFFFF)))
 
 #define BOX_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (BOX_TYPE(type) | BOX_HI16(0x8000 | (((flags) & 0xF) << 11) | (((count) & 7) << 8) | (a)) | BOX_LOW32(((b) << 24) | ((c) << 16) | ((d) << 8) | (e)))
 #define UNBOX_IS_TYPE_EMBED(v,type)                 (UNBOX_TYPE(v) == (type) && (UNBOX_HI16(v) & 0x8000))
