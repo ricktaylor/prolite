@@ -877,12 +877,10 @@ static enum eCompileResult compile_call(struct context_t* context, const union b
 
 static enum eSolveResult redo_unify(struct context_t* context, int unwind)
 {
-	enum eSolveResult result;
-	size_t stack_base;
 	struct substs_t* prev_substs = stack_pop_ptr(&context->m_exec_stack);
 	if (prev_substs)
 	{
-		stack_base = stack_pop(&context->m_exec_stack);
+		size_t stack_base = stack_pop(&context->m_exec_stack);
 		stack_reset(&context->m_exec_stack,stack_base);
 		context->m_substs = prev_substs;
 	}
