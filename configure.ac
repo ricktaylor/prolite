@@ -19,7 +19,7 @@ AC_CANONICAL_HOST
 
 AC_PROG_CC
 
-CFLAGS="-ggdb -O0"
+CFLAGS="-ggdb -O0 -Wall"
 
 m4_ifdef([LT_PREREQ],,[AC_MSG_ERROR([Need libtool version 2.2.6 or later])])
 LT_PREREQ([2.2.6])
