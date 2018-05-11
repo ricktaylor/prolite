@@ -2404,6 +2404,15 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 		{
 			size_t term_len = 0;
 			status = emit_node_value(context,node,term,&term_len);
+			if (status == EMIT_OK)
+			{
+				/* Emit one more box_t as it can be read while looking for debug info */
+				*term = stack_realloc(&context->m_exec_stack,*term,term_len * sizeof(union box_t),(term_len + 1) * sizeof(union box_t));
+				if (!*term)
+					status = EMIT_NOMEM;
+				else
+					(*term)[term_len++].m_u64val = 0;
+			}
 		}
 	}
 
