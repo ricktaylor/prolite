@@ -62,7 +62,7 @@ static struct query_t* query_new(prolite_env_t env)
 {
 	// Create a new context
 	struct query_t* retval = NULL;
-	struct stack_t* s = stack_new(&malloc,&free);
+	struct stack_t* s = stack_new(8000,&malloc,&free);
 	if (s)
 	{
 		struct query_t* q = stack_malloc(&s,sizeof(struct query_t));
@@ -70,7 +70,7 @@ static struct query_t* query_new(prolite_env_t env)
 		{
 			memset(q,0,sizeof(struct query_t));
 			q->m_context.m_exec_stack = s;
-			q->m_context.m_scratch_stack = stack_new(&malloc,&free);
+			q->m_context.m_scratch_stack = stack_new(900,&malloc,&free);
 			if (q->m_context.m_scratch_stack)
 			{
 				q->m_context.m_module = module_new(&q->m_context,"user");

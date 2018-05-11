@@ -4,28 +4,32 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const size_t PAGE_SIZE = 4096 * sizeof(uint64_t);
-
-static inline size_t align(size_t x, size_t y)
-{
-	return (x + (y-1)) & ~(y-1);
-}
-
 static inline size_t align_div(size_t x, size_t y)
 {
 	return (x + (y-1)) / y;
 }
 
-struct stack_t* stack_new(void*(*fn_malloc)(size_t), void(*fn_free)(void*))
+static inline uint32_t next_pot(size_t s)
 {
-	size_t align_size = PAGE_SIZE;
-	size_t count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
+	--s;
+	s |= s >> 1;
+	s |= s >> 2;
+	s |= s >> 4;
+	s |= s >> 8;
+	s |= s >> 16;
+	++s;
+	return s;
+}
+
+struct stack_t* stack_new(size_t size, void*(*fn_malloc)(size_t), void(*fn_free)(void*))
+{
+	size_t align_size = next_pot(size + sizeof(struct stack_t));
 
 	struct stack_t* stack = (*fn_malloc)(align_size);
 	if (stack)
 	{
 		stack->m_top = 0;
-		stack->m_count = count;
+		stack->m_count = (align_size / sizeof(uint64_t)) - align_div(sizeof(struct stack_t),sizeof(uint64_t));
 		stack->m_prev = NULL;
 		stack->m_next = NULL;
 		stack->m_fn_malloc = fn_malloc;
@@ -35,24 +39,26 @@ struct stack_t* stack_new(void*(*fn_malloc)(size_t), void(*fn_free)(void*))
 	return stack;
 }
 
-static struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
+struct stack_t* stack_insert_page(size_t size, struct stack_t* after)
 {
-	size_t align_size = align(size,PAGE_SIZE);
-	size_t count = (align_size - sizeof(struct stack_t)) / sizeof(uint64_t);
+	size_t align_size = next_pot(size + sizeof(struct stack_t));
 
 	struct stack_t* stack = after->m_next;
-	if (stack && stack->m_count >= count)
+	if (stack && stack->m_count >= align_size / sizeof(uint64_t))
 	{
 		stack->m_top = 0;
 		stack->m_base = after->m_base + after->m_top;
 	}
 	else
 	{
+		while (align_size <= after->m_count * sizeof(uint64_t))
+			align_size *= 2;
+
 		stack = (*after->m_fn_malloc)(align_size);
 		if (stack)
 		{
 			stack->m_top = 0;
-			stack->m_count = count;
+			stack->m_count = (align_size / sizeof(uint64_t)) - align_div(sizeof(struct stack_t),sizeof(uint64_t));
 			stack->m_fn_malloc = after->m_fn_malloc;
 			stack->m_fn_free = after->m_fn_free;
 			stack->m_prev = after;
@@ -79,22 +85,6 @@ void stack_delete(struct stack_t* s)
 	}
 }
 
-size_t stack_push(struct stack_t** stack, uint64_t val)
-{
-	if ((*stack)->m_top == (*stack)->m_count)
-	{
-		struct stack_t* s = stack_insert_page(sizeof(val),*stack);
-		if (!s)
-			return (uint64_t)-1;
-
-		*stack = s;
-	}
-
-	/* No rounding, just pointer bump */
-	(*stack)->m_data[(*stack)->m_top] = val;
-	return (*stack)->m_base + (*stack)->m_top++;
-}
-
 void stack_compact(struct stack_t* stack)
 {
 	struct stack_t* next = stack->m_next;
@@ -112,7 +102,7 @@ void* stack_malloc(struct stack_t** stack, size_t len)
 	void* ptr = NULL;
 	uint32_t align_len = align_div(len,sizeof(uint64_t));
 
-	if ((*stack)->m_top + align_len > (*stack)->m_count)
+	if ((*stack)->m_top + align_len >= (*stack)->m_count)
 	{
 		struct stack_t* s = stack_insert_page(len,*stack);
 		if (!s)
@@ -129,15 +119,18 @@ void* stack_malloc(struct stack_t** stack, size_t len)
 
 void stack_free(struct stack_t* stack, void* ptr, size_t len)
 {
-	while (stack && (ptr < (void*)&stack->m_data[0] || ptr >= (void*)&stack->m_data[stack->m_top]))
-		stack = stack->m_prev;
-
-	if (stack)
+	uint32_t align_len = align_div(len,sizeof(uint64_t));
+	while (stack)
 	{
-		uint32_t align_len = align_div(len,sizeof(uint64_t));
+		if (ptr >= (void*)&stack->m_data[0] && ptr < (void*)&stack->m_data[stack->m_top])
+		{
+			if (stack->m_top >= align_len && ptr == &stack->m_data[stack->m_top - align_len])
+				stack->m_top -= align_len;
 
-		if (stack->m_top >= align_len && ptr == &stack->m_data[stack->m_top - align_len])
-			stack->m_top -= align_len;
+			break;
+		}
+
+		stack = stack->m_prev;
 	}
 }
 
@@ -157,8 +150,7 @@ void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t ne
 
 	if (old_len < new_len)
 	{
-		struct stack_t* s = *stack;
-		void* new_ptr = stack_malloc(&s,new_len);
+		void* new_ptr = stack_malloc(stack,new_len);
 		if (!new_ptr)
 			return NULL;
 
@@ -167,7 +159,6 @@ void* stack_realloc(struct stack_t** stack, void* ptr, size_t old_len, size_t ne
 			memcpy(new_ptr,ptr,old_len);
 			stack_free(*stack,ptr,old_len);
 		}
-		*stack = s;
 		ptr = new_ptr;
 	}
 

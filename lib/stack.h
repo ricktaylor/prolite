@@ -21,7 +21,7 @@ struct stack_t
 	uint64_t        m_data[];
 };
 
-struct stack_t* stack_new(void*(*fn_malloc)(size_t), void(*fn_free)(void*));
+struct stack_t* stack_new(size_t size, void*(*fn_malloc)(size_t), void(*fn_free)(void*));
 void stack_delete(struct stack_t* s);
 
 static inline size_t stack_top(const struct stack_t* stack)
@@ -29,7 +29,23 @@ static inline size_t stack_top(const struct stack_t* stack)
 	return (!stack ? 0 : (stack->m_base + stack->m_top));
 }
 
-size_t stack_push(struct stack_t** stack, uint64_t val);
+struct stack_t* stack_insert_page(size_t size, struct stack_t* after);
+
+static inline size_t stack_push(struct stack_t** stack, uint64_t val)
+{
+	if ((*stack)->m_top == (*stack)->m_count)
+	{
+		struct stack_t* s = stack_insert_page(sizeof(val),*stack);
+		if (!s)
+			return (uint64_t)-1;
+
+		*stack = s;
+	}
+
+	/* No rounding, just pointer bump */
+	(*stack)->m_data[(*stack)->m_top] = val;
+	return (*stack)->m_base + (*stack)->m_top++;
+}
 
 static inline size_t stack_push_ptr(struct stack_t** stack, const void* ptr)
 {
