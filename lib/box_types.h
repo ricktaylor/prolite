@@ -10,13 +10,6 @@
 
 // Explanation lifted straight out of duktape/duk_dblunion.h
 /*
- *  Union to access IEEE double memory representation, indexes for double
- *  memory representation, and some macros for double manipulation.
- *
- *  Use a union for bit manipulation to
- *  minimize aliasing issues in practice.  The C99 standard does not
- *  guarantee that this should work, but it's a very widely supported
- *  practice for low level manipulation.
  *
  *  IEEE double format summary:
  *
@@ -44,12 +37,11 @@
  *  format (H G F E D C B A).  When a double is read as a uint64_t
  *  from memory, the register will contain the (logical) value
  *  E F G H A B C D.  This requires some special handling below.
- *
- *
+ * *
  *  Some processors may alter NaN values in a floating point load+store.
  *  For instance, on X86 a FLD + FSTP may convert a signaling NaN to a
  *  quiet one.  This is catastrophic when NaN space is used in packed
- *  duk_tval values.  See: misc/clang_aliasing.c.
+ *  values.  See: misc/clang_aliasing.c.
  */
 
 #if defined(__aarch64__) || defined(__arm__)
@@ -91,13 +83,6 @@
 #define MAX_ARITY_EMBED   0xF
 #define MAX_ARITY_BUILTIN 0x3FFF
 #define MAX_ARITY         ((UINT64_C(1) << 47) - 1)
-
-/* Macro magic to declare the builtin string constants */
-#define DECLARE_BUILTIN_STRING(name) BUILTIN_ATOM_##name,
-enum builtin_atoms_t
-{
-#include "builtin_strings.h"
-};
 
 #define BOX_ATOM_BUILTIN(name)        (BOX_TYPE(prolite_atom) | BOX_HI16(0x4000) | BOX_LOW32(BUILTIN_ATOM_##name))
 #define BOX_COMPOUND_BUILTIN(f,a)     (BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | (a)) | BOX_LOW32(BUILTIN_ATOM_##f))

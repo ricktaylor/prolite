@@ -11,22 +11,10 @@
 #include "stack.h"
 #include "box_types.h"
 
-#if defined(_MSC_VER)
-#define inline __inline
-#endif
-
 union box_t
 {
 	double   m_dval;
 	uint64_t m_u64val;
-};
-
-struct line_info_t
-{
-	size_t         m_start_line;
-	size_t         m_start_col;
-	size_t         m_end_line;
-	size_t         m_end_col;
 };
 
 enum tag_type_t
@@ -49,16 +37,53 @@ enum tag_type_t
 	PROLITE_DEBUG_INFO = 0x8007
 };
 
+/* Macro magic to declare the builtin string constants */
+#define DECLARE_BUILTIN_STRING(name) BUILTIN_ATOM_##name,
+enum builtin_atoms_t
+{
+#include "builtin_strings.h"
+};
+
 struct substs_t
 {
 	size_t             m_count;
 	const union box_t* m_values[];
 };
 
-struct var_info_t
+struct clause_t
 {
-	uint64_t    m_use_count;
-	union box_t m_name;
+	struct stack_t*  m_stack;
+
+	struct substs_t* m_substs;
+	union box_t*     m_head;
+	union box_t*     m_body;
+
+	size_t           m_start; //< Hmmm...
+};
+
+struct predicate_t
+{
+	struct stack_t*  m_stack;
+
+	struct predicate_flags_t
+	{
+		unsigned dynamic : 1;
+		unsigned multifile : 1;
+		unsigned discontiguous : 1;
+		unsigned public : 1;
+	} m_flags;
+
+	size_t           m_clause_count;
+	struct clause_t* m_clauses[];
+};
+
+struct predicate_table_t
+{
+	// TODO; This can be a much faster data structure
+	struct stack_t*     m_stack;
+
+	size_t              m_count;
+	struct predicate_t* m_predicates[];
 };
 
 enum eOpSpec
@@ -79,8 +104,17 @@ struct operator_t
 	unsigned int       m_precedence;
 };
 
+struct string_ptr_t
+{
+	struct string_ptr_t* m_prev;
+	size_t        m_len;
+	unsigned char m_str[];
+};
+
 struct module_t
 {
+	struct stack_t*    m_stack;
+
 	struct module_flags_t
 	{
 		unsigned char_conversion : 1;
@@ -92,14 +126,7 @@ struct module_t
 	} m_flags;
 
 	struct operator_t*        m_operators;
-	struct procedure_table_t* m_procedures;
-};
-
-struct string_ptr_t
-{
-	struct string_ptr_t* m_prev;
-	size_t               m_len;
-	unsigned char        m_str[];
+	struct predicate_table_t* m_predicates;
 };
 
 struct context_t
@@ -112,36 +139,10 @@ struct context_t
 	struct module_t*       m_module;
 };
 
-struct clause_t
+struct var_info_t
 {
-	//struct term_t m_term;
-
-	uint64_t* m_opcodes;
-};
-
-struct procedure_t
-{
-	struct procedure_flags_t
-	{
-		unsigned dynamic : 1;
-		unsigned multifile : 1;
-		unsigned discontiguous : 1;
-		unsigned public : 1;
-	} m_flags;
-
-	uint64_t* m_opcodes;
-
-	size_t m_clause_count;
-	struct clause_t m_clauses[];
-};
-
-struct procedure_table_t
-{
-	// TODO!
-	int fast_hash_table;
-
-	size_t m_procedure_count;
-	struct procedure_t* m_procedures[];
+	uint64_t    m_use_count;
+	union box_t m_name;
 };
 
 enum eSolveResult
@@ -166,5 +167,15 @@ enum eSolveResult throw_existence_error(struct context_t* context, uint64_t obje
 enum eSolveResult throw_domain_error(struct context_t* context, uint64_t valid_domain, const union box_t* culprit);
 enum eSolveResult throw_permission_error(struct context_t* context, uint64_t operation, uint64_t permission, const union box_t* culprit);
 enum eSolveResult throw_evaluation_error(struct context_t* context, uint64_t error, const union box_t* culprit);
+
+
+struct line_info_t
+{
+	size_t         m_start_line;
+	size_t         m_start_col;
+	size_t         m_end_line;
+	size_t         m_end_col;
+};
+
 
 #endif /* TYPES_H_ */
