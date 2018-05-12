@@ -50,6 +50,13 @@ struct substs_t
 	const union box_t* m_values[];
 };
 
+struct string_ptr_t
+{
+	struct string_ptr_t* m_prev;
+	size_t               m_len;
+	unsigned char        m_str[];
+};
+
 struct clause_t
 {
 	struct stack_t*  m_stack;
@@ -58,7 +65,9 @@ struct clause_t
 	union box_t*     m_head;
 	union box_t*     m_body;
 
-	size_t           m_start; //< Hmmm...
+	struct string_ptr_t* m_strings;
+
+	size_t           m_entry_point;
 };
 
 struct predicate_t
@@ -104,13 +113,6 @@ struct operator_t
 	unsigned int       m_precedence;
 };
 
-struct string_ptr_t
-{
-	struct string_ptr_t* m_prev;
-	size_t        m_len;
-	unsigned char m_str[];
-};
-
 struct module_t
 {
 	struct stack_t*    m_stack;
@@ -132,7 +134,8 @@ struct module_t
 struct context_t
 {
 	struct stack_t*        m_scratch_stack;
-	struct stack_t*        m_exec_stack;
+	struct stack_t*        m_call_stack;
+	const struct stack_t*  m_instr_stack;
 	struct substs_t*       m_substs;
 
 	struct string_ptr_t*   m_strings;

@@ -65,7 +65,7 @@ static int box_stack_string(enum tag_type_t type, struct context_t* context, uni
 
 	if (!s)
 	{
-		s = stack_malloc(&context->m_exec_stack,sizeof(struct string_ptr_t) + len);
+		s = stack_malloc(&context->m_call_stack,sizeof(struct string_ptr_t) + len);
 		if (!s)
 			return 0;
 

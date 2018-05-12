@@ -36,12 +36,21 @@ static struct module_t* module_new(struct context_t* context, const char* name)
 {
 	// TODO: Much more here!!
 
-	struct module_t* module = stack_malloc(&context->m_exec_stack,sizeof(struct module_t));
-	if (module)
+	struct module_t* module = NULL;
+	struct stack_t* s = stack_new(8000,&malloc,&free);
+	if (s)
 	{
-		memset(module,0,sizeof(struct module_t));
-		module->m_flags.char_conversion = 1;
-		module->m_flags.back_quotes = 1;
+		module = stack_malloc(&s,sizeof(struct module_t));
+		if (module)
+		{
+			memset(module,0,sizeof(struct module_t));
+			module->m_flags.char_conversion = 1;
+			module->m_flags.back_quotes = 1;
+			module->m_stack = s;
+		}
+
+		if (!module)
+			stack_delete(s);
 	}
 
 	return module;
@@ -69,7 +78,7 @@ static struct query_t* query_new(prolite_env_t env)
 		if (q)
 		{
 			memset(q,0,sizeof(struct query_t));
-			q->m_context.m_exec_stack = s;
+			q->m_context.m_call_stack = s;
 			q->m_context.m_scratch_stack = stack_new(900,&malloc,&free);
 			if (q->m_context.m_scratch_stack)
 			{
@@ -95,7 +104,7 @@ static void query_delete(struct query_t* q)
 {
 	module_delete(q->m_context.m_module);
 	stack_delete(q->m_context.m_scratch_stack);
-	stack_delete(q->m_context.m_exec_stack);
+	stack_delete(q->m_context.m_call_stack);
 }
 
 prolite_query_t prolite_new_query(prolite_env_t env)

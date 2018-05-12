@@ -10,7 +10,7 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* cl
 	const union box_t* body = NULL;
 	union box_t* goal = NULL;
 
-	uint64_t stack_base = stack_top(context->m_exec_stack);
+	uint64_t stack_base = stack_top(context->m_call_stack);
 
 	if (clause->m_u64val == BOX_COMPOUND_EMBED_2(2,':','-'))
 	{
