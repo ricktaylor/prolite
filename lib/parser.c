@@ -2489,7 +2489,7 @@ static enum eEmitStatus compile_initializer(struct context_t* context, const uni
 	assert(0);
 }
 
-enum eSolveResult assert_clause(struct context_t* context, const union box_t* clause, int z);
+enum eSolveResult assert_clause(struct context_t* context, const union box_t* clause, int z, int dynamic);
 
 static enum eEmitStatus directive_solve(struct context_t* context, const union box_t* directive)
 {
@@ -2563,7 +2563,9 @@ static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 			else
 			{
 				/* Assert the term */
-				status = assert_clause(context,term,1);
+				assert(0);
+
+				assert_clause(context,term,1,0);
 			}
 
 			/* Free varinfo */

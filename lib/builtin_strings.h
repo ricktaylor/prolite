@@ -4,9 +4,12 @@
 #endif
 
 /* These MUST be sorted by length then text */
-DECLARE_BUILTIN_STRING(call)  // <- For support for call/128
+DECLARE_BUILTIN_STRING(call)  // <- For support for call/N
 DECLARE_BUILTIN_STRING(memory)
+DECLARE_BUILTIN_STRING(modify)
 DECLARE_BUILTIN_STRING(repeat)
+DECLARE_BUILTIN_STRING(asserta)
+DECLARE_BUILTIN_STRING(assertz)
 DECLARE_BUILTIN_STRING(dynamic)
 DECLARE_BUILTIN_STRING(include)
 DECLARE_BUILTIN_STRING(integer)
@@ -37,6 +40,7 @@ DECLARE_BUILTIN_STRING(set_prolog_flag)
 DECLARE_BUILTIN_STRING(evaluation_error)
 DECLARE_BUILTIN_STRING(invalid_argument)
 DECLARE_BUILTIN_STRING(permission_error)
+DECLARE_BUILTIN_STRING(static_procedure)
 DECLARE_BUILTIN_STRING(unexpected_token)
 DECLARE_BUILTIN_STRING(invalid_character)
 DECLARE_BUILTIN_STRING(operator_priority)
@@ -44,3 +48,4 @@ DECLARE_BUILTIN_STRING(operator_specifier)
 DECLARE_BUILTIN_STRING(past_end_of_stream)
 DECLARE_BUILTIN_STRING(instantiation_error)
 DECLARE_BUILTIN_STRING(representation_error)
+

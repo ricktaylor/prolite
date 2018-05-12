@@ -177,7 +177,7 @@ static int copy_term_i(struct context_t* context, struct stack_t** stack, union 
 	return 0;
 }
 
-static union box_t* copy_term(struct context_t* context, struct stack_t** stack, const union box_t* v)
+union box_t* copy_term(struct context_t* context, struct stack_t** stack, const union box_t* v)
 {
 	union box_t* ret = NULL;
 	size_t term_size = 0;
@@ -254,30 +254,7 @@ static enum eSolveResult unify(struct context_t* context, const union box_t* a, 
 	return SOLVE_TRUE;
 }
 
-static inline enum eSolveResult solve(struct context_t* context, size_t frame)
-{
-	typedef enum eSolveResult (*solve_fn_t)(struct context_t*,size_t);
-	return (**(const solve_fn_t*)stack_at(context->m_instr_stack,frame))(context,frame+1);
-}
-
-static inline enum eSolveResult redo(struct context_t* context, int unwind)
-{
-	typedef enum eSolveResult (*redo_fn_t)(struct context_t*,int);
-	return (*(redo_fn_t)stack_pop_ptr(&context->m_call_stack))(context,unwind);
-}
-
-enum eCompileResult
-{
-	COMPILE_OK = 0,
-	COMPILE_NOT_CALLABLE,
-	COMPILE_ALWAYS_TRUE,
-	COMPILE_ALWAYS_FAILS,
-	COMPILE_NOMEM,
-};
-
-static enum eCompileResult compile(struct context_t* context, struct clause_t* clause, const union box_t* goal);
-
-static enum eSolveResult redo_true(struct context_t* context, int unwind)
+enum eSolveResult redo_true(struct context_t* context, int unwind)
 {
 	return unwind ? SOLVE_UNWIND : SOLVE_FAIL;
 }
@@ -1266,39 +1243,6 @@ static enum eSolveResult solve_halt(struct context_t* context, size_t frame)
 	return result;
 }
 
-static enum eSolveResult solve_user_defined(struct context_t* context, size_t frame)
-{
-	//enum eSolveResult result;
-	//const union box_t* goal = deref_term(context,*(const union box_t**)stack_at(context->m_instr_stack,frame));
-
-	//if (context->m_module->m_flags.unknown == 0)
-	//	return throw_existence_error(context,BOX_ATOM_BUILTIN(procedure),goal);
-
-	printf("existence_error(procedure(G)).\n");
-
-	// TODO
-
-	return SOLVE_FAIL;
-}
-
-static inline enum eCompileResult compile_user_defined(struct context_t* context, struct clause_t* clause, const union box_t* goal)
-{
-	struct stack_t** emit_stack = (clause ? &clause->m_stack : &context->m_call_stack);
-
-	// TODO: Check to see if the user-defined goal is static and emit the relevant jumps
-
-	if (clause && !(goal = copy_term(context,emit_stack,goal)))
-		return COMPILE_NOMEM;
-
-	if (stack_push_ptr(emit_stack,&solve_user_defined) == -1 ||
-		stack_push_ptr(emit_stack,goal) == -1)
-	{
-		return COMPILE_NOMEM;
-	}
-
-	return COMPILE_OK;
-}
-
 static inline enum eCompileResult compile_builtin(struct context_t* context, struct clause_t* clause, enum eSolveResult (*solve_fn)(struct context_t*,size_t), const union box_t* goal)
 {
 	struct stack_t** emit_stack = (clause ? &clause->m_stack : &context->m_call_stack);
@@ -1320,7 +1264,9 @@ enum eSolveResult solve_##f(struct context_t* context, size_t frame);
 
 #include "builtin_functions.h"
 
-static enum eCompileResult compile(struct context_t* context, struct clause_t* clause, const union box_t* goal)
+enum eCompileResult compile_user_defined(struct context_t* context, struct clause_t* clause, const union box_t* goal);
+
+enum eCompileResult compile(struct context_t* context, struct clause_t* clause, const union box_t* goal)
 {
 	enum eCompileResult result;
 	struct stack_t** emit_stack = (clause ? &clause->m_stack : &context->m_call_stack);
@@ -1482,14 +1428,12 @@ enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s,
 	enum eSolveResult result = context_reset(context);
 	if (result == SOLVE_TRUE)
 	{
-		size_t frame;
 		size_t term_base = stack_top(context->m_call_stack);
 		union box_t* goal = NULL;
 		result = read_term(context,s,&goal,varinfo);
 		if (result == SOLVE_TRUE)
 		{
-			frame = stack_top(context->m_call_stack);
-
+			size_t frame = stack_top(context->m_call_stack);
 			switch (compile(context,NULL,goal))
 			{
 			case COMPILE_OK:

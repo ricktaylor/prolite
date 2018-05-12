@@ -74,6 +74,10 @@ struct predicate_t
 {
 	struct stack_t*  m_stack;
 
+	size_t           m_name_len;
+	const char*      m_name;
+	uint64_t         m_arity;
+
 	struct predicate_flags_t
 	{
 		unsigned dynamic : 1;
@@ -148,6 +152,11 @@ struct var_info_t
 	union box_t m_name;
 };
 
+const union box_t* first_arg(const union box_t* v);
+const union box_t* next_arg(const union box_t* v);
+const union box_t* deref_term(struct context_t* context, const union box_t* v);
+union box_t* copy_term(struct context_t* context, struct stack_t** stack, const union box_t* v);
+
 enum eSolveResult
 {
 	SOLVE_TRUE = 1,
@@ -159,9 +168,19 @@ enum eSolveResult
 	SOLVE_UNWIND = -5
 };
 
-const union box_t* first_arg(const union box_t* v);
-const union box_t* next_arg(const union box_t* v);
-const union box_t* deref_term(struct context_t* context, const union box_t* v);
+static inline enum eSolveResult solve(struct context_t* context, size_t frame)
+{
+	typedef enum eSolveResult (*solve_fn_t)(struct context_t*,size_t);
+	return (**(const solve_fn_t*)stack_at(context->m_instr_stack,frame))(context,frame+1);
+}
+
+static inline enum eSolveResult redo(struct context_t* context, int unwind)
+{
+	typedef enum eSolveResult (*redo_fn_t)(struct context_t*,int);
+	return (*(redo_fn_t)stack_pop_ptr(&context->m_call_stack))(context,unwind);
+}
+
+enum eSolveResult redo_true(struct context_t* context, int unwind);
 
 enum eSolveResult throw_instantiation_error(struct context_t* context, const union box_t* culprit);
 enum eSolveResult throw_type_error(struct context_t* context, uint64_t valid_type, const union box_t* culprit);
@@ -171,6 +190,16 @@ enum eSolveResult throw_domain_error(struct context_t* context, uint64_t valid_d
 enum eSolveResult throw_permission_error(struct context_t* context, uint64_t operation, uint64_t permission, const union box_t* culprit);
 enum eSolveResult throw_evaluation_error(struct context_t* context, uint64_t error, const union box_t* culprit);
 
+enum eCompileResult
+{
+	COMPILE_OK = 0,
+	COMPILE_NOT_CALLABLE,
+	COMPILE_ALWAYS_TRUE,
+	COMPILE_ALWAYS_FAILS,
+	COMPILE_NOMEM,
+};
+
+enum eCompileResult compile(struct context_t* context, struct clause_t* clause, const union box_t* goal);
 
 struct line_info_t
 {
