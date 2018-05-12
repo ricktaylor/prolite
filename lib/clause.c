@@ -29,69 +29,27 @@ static void delete_clause(struct clause_t* clause)
 		stack_delete(clause->m_stack);
 }
 
-static enum eSolveResult redo_compiled_clause(struct context_t* context, int unwind)
-{
-	size_t body_frame = stack_pop(&context->m_call_stack);
-
-	enum eSolveResult result = redo(context,unwind);
-	if (result == SOLVE_TRUE)
-	{
-		if (stack_push(&context->m_call_stack,body_frame) == -1 ||
-			stack_push_ptr(&context->m_call_stack,&redo_compiled_clause) == -1)
-		{
-			result = SOLVE_NOMEM;
-		}
-	}
-
-	return result;
-}
-
-static enum eSolveResult solve_compiled_clause(struct context_t* context, size_t frame)
+static enum eSolveResult compile_clause(struct clause_t* clause, struct context_t* context, const union box_t* goal)
 {
 	enum eSolveResult result;
-	size_t body_frame = *(const size_t*)stack_at(context->m_instr_stack,frame);
-	if (body_frame && body_frame != -1)
-		body_frame += (frame-1);
 
-	if (body_frame == -1)
-		result = SOLVE_FAIL;
-	else if (!body_frame)
-		result = stack_push_ptr(&context->m_call_stack,&redo_true) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
-	else
-		result = solve(context,body_frame);
+	goal = copy_term(context,&clause->m_stack,goal);
+	if (!goal)
+		return SOLVE_NOMEM;
 
-	if (result == SOLVE_TRUE)
+	if (goal->m_u64val != BOX_COMPOUND_EMBED_2(2,':','-'))
 	{
-		if (stack_push(&context->m_call_stack,body_frame) == -1 ||
-			stack_push_ptr(&context->m_call_stack,&redo_compiled_clause) == -1)
-		{
-			result = SOLVE_NOMEM;
-		}
+		clause->m_head = goal;
+		return SOLVE_TRUE;
 	}
 
-	return result;
-}
+	clause->m_head = first_arg(goal);
+	clause->m_body = next_arg(clause->m_head);
 
-static enum eSolveResult compile_clause(struct clause_t* clause, struct context_t* context, const union box_t* head, const union box_t* body)
-{
-	enum eSolveResult result;
-	size_t* body_frame;
-
-	clause->m_head = copy_term(context,&clause->m_stack,head);
-	clause->m_body = copy_term(context,&clause->m_stack,body);
 	if (!clause->m_head || !clause->m_body)
 		return SOLVE_NOMEM;
 
 	clause->m_entry_point = stack_top(clause->m_stack);
-
-	if (stack_push_ptr(&clause->m_stack,&solve_compiled_clause) == -1 ||
-		stack_push(&clause->m_stack,0) == -1)
-	{
-		return SOLVE_NOMEM;
-	}
-
-	body_frame = (size_t*)stack_at(clause->m_stack,clause->m_entry_point+1);
-	*body_frame = stack_top(clause->m_stack) - clause->m_entry_point;
 
 	switch (compile(context,clause,clause->m_body))
 	{
@@ -100,12 +58,12 @@ static enum eSolveResult compile_clause(struct clause_t* clause, struct context_
 		break;
 
 	case COMPILE_ALWAYS_TRUE:
-		*body_frame = 0;
+		clause->m_entry_point = 0;
 		result = SOLVE_TRUE;
 		break;
 
 	case COMPILE_ALWAYS_FAILS:
-		*body_frame = -1;
+		clause->m_entry_point = -1;
 		result = SOLVE_TRUE;
 		break;
 
@@ -160,19 +118,11 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 {
 	enum eSolveResult result;
 	const union box_t* head = goal;
-	union box_t b_true;
-	const union box_t* body = &b_true;
 	struct predicate_t* pred;
 	struct clause_t* clause;
 
 	if (goal->m_u64val == BOX_COMPOUND_EMBED_2(2,':','-'))
-	{
-		head = first_arg(goal);
-		body = deref_term(context,next_arg(head));
-		head = deref_term(context,head);
-	}
-	else
-		b_true.m_u64val = BOX_ATOM_EMBED_4('t','r','u','e');
+		head = deref_term(context,first_arg(goal));
 
 	switch (UNBOX_TYPE(head->m_u64val))
 	{
@@ -200,7 +150,7 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 	if (!clause)
 		return SOLVE_NOMEM;
 
-	result = compile_clause(clause,context,head,body);
+	result = compile_clause(clause,context,goal);
 	if (result == SOLVE_TRUE)
 	{
 		int new_pred = 0;
@@ -249,6 +199,49 @@ enum eSolveResult solve_assertz(struct context_t* context, size_t frame)
 {
 	const union box_t* goal = *(const union box_t**)stack_at(context->m_instr_stack,frame);
 	return assert_clause(context,deref_term(context,first_arg(goal)),1,1);
+}
+
+static enum eSolveResult redo_compiled_clause(struct context_t* context, int unwind)
+{
+	size_t body_frame = stack_pop(&context->m_call_stack);
+
+	enum eSolveResult result = redo(context,unwind);
+	if (result == SOLVE_TRUE)
+	{
+		if (stack_push(&context->m_call_stack,body_frame) == -1 ||
+			stack_push_ptr(&context->m_call_stack,&redo_compiled_clause) == -1)
+		{
+			result = SOLVE_NOMEM;
+		}
+	}
+
+	return result;
+}
+
+static enum eSolveResult solve_compiled_clause(struct context_t* context, size_t frame)
+{
+	enum eSolveResult result;
+	size_t body_frame = *(const size_t*)stack_at(context->m_instr_stack,frame);
+	if (body_frame && body_frame != -1)
+		body_frame += (frame-1);
+
+	if (body_frame == -1)
+		result = SOLVE_FAIL;
+	else if (!body_frame)
+		result = stack_push_ptr(&context->m_call_stack,&redo_true) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
+	else
+		result = solve(context,body_frame);
+
+	if (result == SOLVE_TRUE)
+	{
+		if (stack_push(&context->m_call_stack,body_frame) == -1 ||
+			stack_push_ptr(&context->m_call_stack,&redo_compiled_clause) == -1)
+		{
+			result = SOLVE_NOMEM;
+		}
+	}
+
+	return result;
 }
 
 static enum eSolveResult solve_user_defined(struct context_t* context, size_t frame)

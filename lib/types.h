@@ -59,11 +59,11 @@ struct string_ptr_t
 
 struct clause_t
 {
-	struct stack_t*  m_stack;
+	struct stack_t*    m_stack;
 
-	struct substs_t* m_substs;
-	union box_t*     m_head;
-	union box_t*     m_body;
+	struct substs_t*   m_substs;
+	const union box_t* m_head;
+	const union box_t* m_body;
 
 	struct string_ptr_t* m_strings;
 
