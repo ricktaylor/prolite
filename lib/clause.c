@@ -246,8 +246,12 @@ static enum eSolveResult solve_compiled_clause(struct context_t* context, size_t
 
 static enum eSolveResult solve_user_defined(struct context_t* context, size_t frame)
 {
-	const union box_t* goal = deref_term(context,*(const union box_t**)stack_at(context->m_instr_stack,frame));
-	const struct predicate_t* pred = find_predicate(context,goal);
+	const struct predicate_t* pred = *(const struct predicate_t**)stack_at(context->m_instr_stack,frame);
+	const union box_t* goal = deref_term(context,*(const union box_t**)stack_at(context->m_instr_stack,frame+1));
+
+	if (!pred)
+		pred = find_predicate(context,goal);
+
 	if (pred)
 	{
 		/* Emit all the current clauses now, to give us a 'logical database' */
@@ -287,6 +291,7 @@ enum eCompileResult compile_user_defined(struct context_t* context, struct claus
 		return COMPILE_NOMEM;
 
 	if (stack_push_ptr(emit_stack,&solve_user_defined) == -1 ||
+		stack_push_ptr(emit_stack,pred) == -1 ||
 		stack_push_ptr(emit_stack,goal) == -1)
 	{
 		return COMPILE_NOMEM;
