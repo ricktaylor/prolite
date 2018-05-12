@@ -65,7 +65,7 @@ static inline void* stack_pop_ptr(struct stack_t** stack)
 	return (void*)(uintptr_t)stack_pop(stack);
 }
 
-static inline void* stack_at(struct stack_t* stack, size_t pos)
+static inline const void* stack_at(const struct stack_t* stack, size_t pos)
 {
 	while (stack && stack->m_base + stack->m_top < pos)
 		stack = stack->m_next;
