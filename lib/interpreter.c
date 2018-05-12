@@ -864,7 +864,7 @@ static enum eCompileResult compile_call(struct context_t* context, const union b
 
 	default:
 		if (stack_push_ptr(&context->m_exec_stack,&solve_compile) == -1 ||
-			stack_push_ptr(&context->m_exec_stack,goal) == -1)
+			stack_push_ptr(&context->m_exec_stack,goal) == -1) // TODO: copy_term!
 		{
 			result = COMPILE_NOMEM;
 		}
@@ -1111,7 +1111,7 @@ static enum eCompileResult compile_catch(struct context_t* context, const union 
 	recovery = deref_term(context,recovery);
 
 	if (stack_push_ptr(&context->m_exec_stack,&solve_catch) == -1 ||
-		stack_push_ptr(&context->m_exec_stack,catcher) == -1 ||
+		stack_push_ptr(&context->m_exec_stack,catcher) == -1 ||   // TODO: copy_term!
 		stack_push(&context->m_exec_stack,0) == -1)
 	{
 		result = COMPILE_NOMEM;
@@ -1259,7 +1259,18 @@ static inline enum eCompileResult compile_user_defined(struct context_t* context
 	// TODO: Check to see if the user-defined goal is static and emit the relevant jumps
 
 	if (stack_push_ptr(&context->m_exec_stack,&solve_user_defined) == -1 ||
-		stack_push_ptr(&context->m_exec_stack,goal) == -1)
+		stack_push_ptr(&context->m_exec_stack,goal) == -1)  // TODO: copy_term!
+	{
+		return COMPILE_NOMEM;
+	}
+
+	return COMPILE_OK;
+}
+
+static inline enum eCompileResult compile_builtin(struct context_t* context, enum eSolveResult (*solve_fn)(struct context_t*,size_t), const union box_t* goal)
+{
+	if (stack_push_ptr(&context->m_exec_stack,solve_fn) == -1 ||
+		stack_push_ptr(&context->m_exec_stack,goal) == -1)  // TODO: copy_term!
 	{
 		return COMPILE_NOMEM;
 	}
@@ -1302,7 +1313,7 @@ static enum eCompileResult compile(struct context_t* context, const union box_t*
 
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
-	case (n): result = (stack_push_ptr(&context->m_exec_stack,&solve_##f) == -1 || stack_push_ptr(&context->m_exec_stack,goal) == -1) ? COMPILE_NOMEM : COMPILE_OK; break; \
+	case (n): result = compile_builtin(context,&solve_##f,goal); break; \
 		break;
 
 #include "builtin_functions.h"
