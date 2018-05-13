@@ -113,10 +113,10 @@ enum eASTError
 
 enum eCharMax
 {
-	char_max = 0x1FFFF, /* Greatest valid unicode char */
-	char_more = char_max+1,
-	char_eof = char_max+2,
-	char_ilseq = char_max+3
+	CHAR_MAX_VALID = 0x1FFFF, /* Greatest valid unicode char */
+	CHAR_MORE,
+	CHAR_EOF,
+	CHAR_ILLEGAL_SEQ
 };
 
 static inline int token_append_char(struct context_t* context, struct token_t* token, unsigned char c)
@@ -192,7 +192,7 @@ static uint32_t token_skip_ilseq(const unsigned char** p, const unsigned char* p
 				break;
 			}
 
-			return char_more;
+			return CHAR_MORE;
 		}
 
 		if ((*p)[i] <= 0x7f)
@@ -204,7 +204,7 @@ static uint32_t token_skip_ilseq(const unsigned char** p, const unsigned char* p
 
 		++i;
 	}
-	return char_ilseq;
+	return CHAR_ILLEGAL_SEQ;
 }
 
 static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
@@ -216,9 +216,9 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 	if (c == pe)
 	{
 		if (eof)
-			return char_eof;
+			return CHAR_EOF;
 
-		return char_more;
+		return CHAR_MORE;
 	}
 
 	if (c[0] <= 0x7f)
@@ -240,7 +240,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 				if (eof)
 					return token_skip_ilseq(p,pe,eof,col,1);
 
-				return char_more;
+				return CHAR_MORE;
 			}
 
 			if ((c[0] == 0xE0 && c[1] >= 0x80 && c[1] <= 0x9F) ||
@@ -259,7 +259,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 				if (eof)
 					return token_skip_ilseq(p,pe,eof,col,1);
 
-				return char_more;
+				return CHAR_MORE;
 			}
 
 			if ((c[0] == 0xF0 && c[1] >= 0x80 && c[1] <= 0x8F) ||
@@ -279,7 +279,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 			if (eof)
 				return token_skip_ilseq(p,pe,eof,col,1);
 
-			return char_more;
+			return CHAR_MORE;
 		}
 		else
 		{
@@ -290,7 +290,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 				{
 					*p += i;
 					*col += i;
-					return char_ilseq;
+					return CHAR_ILLEGAL_SEQ;
 				}
 
 				val = (val << 6) | (c[i] & 0x3F);
@@ -315,7 +315,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 static inline uint32_t token_get_char_conv(struct context_t* context, const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
 {
 	uint32_t c = token_get_char(p,pe,eof,line,col);
-	if (context->m_module->m_flags.char_conversion && c <= char_max)
+	if (context->m_module->m_flags.char_conversion && c <= CHAR_MAX_VALID)
 		c = convert_char(context,c);
 	return c;
 }
@@ -481,7 +481,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		token->m_len = 0;
 
 		c = token_get_char_conv(context,p,pe,eof,&info->m_end_line,&info->m_end_col);
-		if (c == char_more)
+		if (c == CHAR_MORE)
 			return tokMore;
 
 		/* Check for ( first*/
@@ -496,18 +496,18 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 	case eMultiComment2:
 	case eMultiComment3:
 		c = token_get_char_conv(context,p,pe,eof,&info->m_end_line,&info->m_end_col);
-		if (c == char_more)
+		if (c == CHAR_MORE)
 			return tokMore;
 
 	layout:
 		for (;;)
 		{
-			if (c == char_eof)
+			if (c == CHAR_EOF)
 				return tokEOF;
 
 			if (*state == eLayout)
 			{
-				if (c == char_ilseq)
+				if (c == CHAR_ILLEGAL_SEQ)
 				{
 					*state = eStart;
 					return tokInvalidSeq;
@@ -642,7 +642,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 			/* Get the next character */
 			c = token_get_char_conv(context,p,pe,eof,&info->m_end_line,&info->m_end_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 		}
 
@@ -653,7 +653,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	case eMultiComment1:
 		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-		if (c == char_more)
+		if (c == CHAR_MORE)
 			return tokMore;
 
 		if (c != '*')
@@ -679,10 +679,10 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	case eDot:
 		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-		if (c == char_more)
+		if (c == CHAR_MORE)
 			return tokMore;
 
-		if (c == char_eof)
+		if (c == CHAR_EOF)
 			return tokEnd;
 
 		if (c == ' ' || c == '\n' || c == '\t')
@@ -717,10 +717,10 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
 			switch (c)
 			{
-			case char_more:
+			case CHAR_MORE:
 				return tokMore;
 
-			case char_eof:
+			case CHAR_EOF:
 				*state = eStart;
 				if (*state == eSingleQuote)
 					return tokMissingSQ;
@@ -728,7 +728,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					return tokMissingDQ;
 				return tokMissingBQ;
 
-			case char_ilseq:
+			case CHAR_ILLEGAL_SEQ:
 				info->m_end_line = peek_line;
 				info->m_end_col = peek_col;
 				*p = peek;
@@ -737,7 +737,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 			case '\\':
 				c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-				if (c == char_more)
+				if (c == CHAR_MORE)
 					return tokMore;
 
 				if (!token_meta_char(context,c,token))
@@ -745,7 +745,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					if (c == 'o')
 					{
 						c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-						if (c == char_more)
+						if (c == CHAR_MORE)
 							return tokMore;
 
 						if (c >= '0' && c <= '7')
@@ -764,7 +764,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					else if (c == 'x')
 					{
 						c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-						if (c == char_more)
+						if (c == CHAR_MORE)
 							return tokMore;
 
 						if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
@@ -787,7 +787,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 						info->m_end_col = peek_col;
 						*p = peek;
 						*state = eStart;
-						if (c == char_ilseq)
+						if (c == CHAR_ILLEGAL_SEQ)
 							return tokInvalidSeq;
 
 						return tokInvalidEscape;
@@ -802,7 +802,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					size_t peek_col2 = peek_col;
 					const unsigned char* peek2 = peek;
 					c = token_get_char(&peek2,pe,eof,&peek_line2,&peek_col2);
-					if (c == char_more)
+					if (c == CHAR_MORE)
 						return tokMore;
 
 					if (c != '\'')
@@ -831,7 +831,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					size_t peek_col2 = peek_col;
 					const unsigned char* peek2 = peek;
 					c = token_get_char(&peek2,pe,eof,&peek_line2,&peek_col2);
-					if (c == char_more)
+					if (c == CHAR_MORE)
 						return tokMore;
 
 					if (c != '"')
@@ -860,7 +860,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					size_t peek_col2 = peek_col;
 					const unsigned char* peek2 = peek;
 					c = token_get_char(&peek2,pe,eof,&peek_line2,&peek_col2);
-					if (c == char_more)
+					if (c == CHAR_MORE)
 						return tokMore;
 
 					if (c != '`')
@@ -914,7 +914,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		for (;;)
 		{
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 
 			if (c < '0' || c > '7')
@@ -940,7 +940,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				}
 
 				*state = eStart;
-				if (c == char_ilseq)
+				if (c == CHAR_ILLEGAL_SEQ)
 					return tokInvalidSeq;
 
 				return tokInvalidEscape;
@@ -948,7 +948,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 		octal_char:
 			meta = (meta << 3) | (c - '0');
-			if (meta > char_max)
+			if (meta > CHAR_MAX_VALID)
 			{
 				info->m_end_line = peek_line;
 				info->m_end_col = peek_col;
@@ -968,7 +968,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		for (;;)
 		{
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 
 			if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')))
@@ -994,7 +994,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				}
 
 				*state = eStart;
-				if (c == char_ilseq)
+				if (c == CHAR_ILLEGAL_SEQ)
 					return tokInvalidSeq;
 
 				return tokInvalidEscape;
@@ -1009,7 +1009,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			else
 				meta |= (c - 'a') + 10;
 
-			if (meta > char_max)
+			if (meta > CHAR_MAX_VALID)
 			{
 				info->m_end_line = peek_line;
 				info->m_end_col = peek_col;
@@ -1022,20 +1022,20 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 	case eZero:
 	zero:
 		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-		if (c == char_more)
+		if (c == CHAR_MORE)
 			return tokMore;
 
 		if (c == '\'')
 		{
 			/* No char_conversion for single_quoted_character */
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 
 			if (c == '\'')
 			{
 				c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-				if (c == char_more)
+				if (c == CHAR_MORE)
 					return tokMore;
 
 				if (c == '\'')
@@ -1055,7 +1055,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			else if (c == '\\')
 			{
 				c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-				if (c == char_more)
+				if (c == CHAR_MORE)
 					return tokMore;
 
 				if (token_meta_char(context,c,token))
@@ -1068,7 +1068,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				else if (c == 'o')
 				{
 					c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-					if (c == char_more)
+					if (c == CHAR_MORE)
 						return tokMore;
 
 					if (c >= '0' && c <= '7')
@@ -1081,7 +1081,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				else if (c == 'x')
 				{
 					c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-					if (c == char_more)
+					if (c == CHAR_MORE)
 						return tokMore;
 
 					if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
@@ -1092,7 +1092,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					}
 				}
 			}
-			else if (c >= 32 && c <= char_max)
+			else if (c >= 32 && c <= CHAR_MAX_VALID)
 			{
 				if (token_append_unicode_char(context,token,c) != 0)
 				{
@@ -1109,7 +1109,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		else if (c == 'b')
 		{
 			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 
 			if (c == '0' || c == '1')
@@ -1121,7 +1121,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		else if (c == 'o')
 		{
 			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 
 			if (c >= '0' && c <= '7')
@@ -1133,7 +1133,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		else if (c == 'x')
 		{
 			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 
 			if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
@@ -1157,7 +1157,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		for (;;)
 		{
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 
 			if (c == '\\')
@@ -1188,7 +1188,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 		octal_char_code:
 			meta = (meta << 3) | (c - '0');
-			if (meta > char_max)
+			if (meta > CHAR_MAX_VALID)
 			{
 				info->m_end_line = peek_line;
 				info->m_end_col = peek_col;
@@ -1206,7 +1206,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		for (;;)
 		{
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 
 			if (c == '\\')
@@ -1244,7 +1244,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			else
 				meta |= (c - 'a') + 10;
 
-			if (meta > char_max)
+			if (meta > CHAR_MAX_VALID)
 			{
 				info->m_end_line = peek_line;
 				info->m_end_col = peek_col;
@@ -1261,7 +1261,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	decimal:
 		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-		if (c == char_more)
+		if (c == CHAR_MORE)
 			return tokMore;
 
 		if (c < '0' || c > '9')
@@ -1286,7 +1286,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	exponent:
 		c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-		if (c == char_more)
+		if (c == CHAR_MORE)
 			return tokMore;
 
 		if (c >= '0' && c <= '9')
@@ -1305,7 +1305,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		{
 			/* Check the next char */
 			uint32_t c2 = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c2 == char_more)
+			if (c2 == CHAR_MORE)
 				return tokMore;
 
 			if (c2 >= '0' && c2 <= '9')
@@ -1340,7 +1340,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		for (;;)
 		{
 			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c == char_more)
+			if (c == CHAR_MORE)
 				return tokMore;
 
 			switch (*state)
