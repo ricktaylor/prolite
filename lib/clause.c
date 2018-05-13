@@ -51,7 +51,7 @@ static enum eSolveResult compile_clause(struct clause_t* clause, struct context_
 
 	clause->m_entry_point = stack_top(clause->m_stack);
 
-	switch (compile(context,clause,clause->m_body))
+	switch (compile(context,&clause->m_stack,clause->m_body))
 	{
 	case COMPILE_OK:
 		result = SOLVE_TRUE;
@@ -268,9 +268,8 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 	return SOLVE_FAIL;
 }
 
-enum eCompileResult compile_user_defined(struct context_t* context, struct clause_t* clause, const union box_t* goal)
+enum eCompileResult compile_user_defined(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal)
 {
-	struct stack_t** emit_stack = (clause ? &clause->m_stack : &context->m_call_stack);
 	const struct predicate_t* pred = find_predicate(context,goal);
 	if (pred && !pred->m_flags.dynamic)
 	{
@@ -286,9 +285,6 @@ enum eCompileResult compile_user_defined(struct context_t* context, struct claus
 			// Undo unify on fail
 		}
 	}
-
-	if (clause && !(goal = copy_term(context,emit_stack,goal)))
-		return COMPILE_NOMEM;
 
 	if (stack_push_ptr(emit_stack,&solve_user_defined) == -1 ||
 		stack_push_ptr(emit_stack,pred) == -1 ||

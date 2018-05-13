@@ -201,8 +201,8 @@ enum eCompileResult
 	COMPILE_NOMEM,
 };
 
-enum eCompileResult compile(struct context_t* context, struct clause_t* clause, const union box_t* goal);
-enum eCompileResult compile_call(struct context_t* context, struct clause_t* clause, const union box_t* goal, int debug);
+enum eCompileResult compile(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal);
+enum eCompileResult compile_call(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug);
 
 struct line_info_t
 {

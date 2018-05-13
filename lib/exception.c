@@ -308,10 +308,9 @@ static enum eSolveResult solve_catch(struct context_t* context, size_t frame)
 	return result;
 }
 
-enum eCompileResult compile_catch(struct context_t* context, struct clause_t* clause, const union box_t* goal, int debug)
+enum eCompileResult compile_catch(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
 {
 	enum eCompileResult result;
-	struct stack_t** emit_stack = (clause ? &clause->m_stack : &context->m_call_stack);
 	const union box_t *catcher, *recovery;
 	size_t frame = stack_top(*emit_stack);
 
@@ -322,16 +321,14 @@ enum eCompileResult compile_catch(struct context_t* context, struct clause_t* cl
 	catcher = deref_term(context,catcher);
 	recovery = deref_term(context,recovery);
 
-	if (clause && !(catcher = copy_term(context,emit_stack,catcher)))
-		result = COMPILE_NOMEM;
-	else if (stack_push_ptr(emit_stack,&solve_catch) == -1 ||
+	if (stack_push_ptr(emit_stack,&solve_catch) == -1 ||
 		stack_push_ptr(emit_stack,catcher) == -1 ||
 		stack_push(emit_stack,0) == -1)
 	{
 		result = COMPILE_NOMEM;
 	}
 
-	result = compile_call(context,clause,goal,debug);
+	result = compile_call(context,emit_stack,goal,debug);
 	if (result == COMPILE_ALWAYS_TRUE || result == COMPILE_ALWAYS_FAILS)
 		stack_reset(emit_stack,frame);
 	else if (result == COMPILE_OK)
@@ -339,7 +336,7 @@ enum eCompileResult compile_catch(struct context_t* context, struct clause_t* cl
 		size_t* recovery_frame = (size_t*)stack_at(*emit_stack,frame+2);
 		*recovery_frame = stack_top(*emit_stack) - frame;
 
-		result = compile_call(context,clause,recovery,debug);
+		result = compile_call(context,emit_stack,recovery,debug);
 		if (result == COMPILE_ALWAYS_TRUE)
 		{
 			*recovery_frame = 0;
