@@ -10,6 +10,7 @@ libprolite_la_SOURCES = \
 	lib/strings.c \
 	lib/context.c \
 	lib/parser.c \
+	lib/exception.c \
 	lib/stack.c
 				
 libprolite_la_LDFLAGS = -pthread

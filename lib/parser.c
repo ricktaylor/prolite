@@ -5,7 +5,6 @@
 #include <string.h>
 #include <errno.h>
 #include <math.h>
-#include <stdarg.h>
 #include <assert.h>
 
 #ifdef _MSC_VER
@@ -2101,10 +2100,10 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 
 enum eEmitStatus
 {
+	EMIT_NOMEM = -1,
 	EMIT_OK = 0,
 	EMIT_EOF,
-	EMIT_THROW,
-	EMIT_NOMEM
+	EMIT_THROW
 };
 
 static enum eEmitStatus emit_node_vars(struct context_t* context, struct substs_t** substs, struct var_info_t** varinfo, struct ast_node_t* node)
@@ -2157,7 +2156,7 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct substs_
 	return status;
 }
 
-static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, uint64_t arity, union box_t** term, size_t* term_size)
+static enum eEmitStatus emit_compound(struct context_t* context, uint64_t functor, uint64_t arity, union box_t** term, size_t* term_size)
 {
 	if (arity <= MAX_ARITY_EMBED && UNBOX_IS_TYPE_EMBED(functor,prolite_atom))
 	{
@@ -2165,7 +2164,7 @@ static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, 
 		uint16_t hi16 = UNBOX_HI16(functor);
 		hi16 |= (arity << 11);
 
-		*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 		if (!*term)
 			return EMIT_NOMEM;
 
@@ -2175,7 +2174,7 @@ static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, 
 	{
 		// Convert builtin atom to builtin compound
 
-		*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 		if (!*term)
 			return EMIT_NOMEM;
 
@@ -2183,7 +2182,7 @@ static enum eEmitStatus emit_compound(struct stack_t** stack, uint64_t functor, 
 	}
 	else
 	{
-		*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+2) * sizeof(union box_t));
+		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union box_t),((*term_size)+2) * sizeof(union box_t));
 		if (!*term)
 			return EMIT_NOMEM;
 
@@ -2198,7 +2197,7 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 	enum eEmitStatus status = EMIT_OK;
 	if (node->m_type == AST_TYPE_COMPOUND)
 	{
-		enum eEmitStatus status = emit_compound(&context->m_call_stack,node->m_boxed.m_u64val,node->m_arity,term,term_size);
+		enum eEmitStatus status = emit_compound(context,node->m_boxed.m_u64val,node->m_arity,term,term_size);
 		if (status == EMIT_OK)
 		{
 			uint64_t i;
@@ -2223,111 +2222,40 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 	return status;
 }
 
-static struct line_info_t* get_debug_info(const union box_t* v)
-{
-	// TODO:
-	return NULL;
-}
-
-static enum eEmitStatus emit_error_line_info(struct context_t* context, struct line_info_t* info, union box_t** term, size_t* term_size)
-{
-	*term = stack_realloc(&context->m_scratch_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
-	if (!*term)
-		return EMIT_NOMEM;
-
-	if (!info)
-		(*term)[(*term_size)++].m_u64val = BOX_ATOM_EMBED_5('f','a','l','s','e');
-	else
-	{
-		// TODO: !!
-		(*term)[(*term_size)++].m_u64val = BOX_ATOM_EMBED_4('T','o','d','o');
-	}
-
-	return EMIT_OK;
-}
-
-static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t* info, uint64_t error_functor, unsigned int arity, ...)
-{
-	enum eEmitStatus status;
-	union box_t* term = NULL;
-	size_t term_size = 0;
-
-	va_list args;
-	va_start(args,arity);
-
-	stack_reset(&context->m_scratch_stack,0);
-
-	status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2,&term,&term_size);
-	if (status == EMIT_OK)
-		status = emit_compound(&context->m_scratch_stack,error_functor,arity,&term,&term_size);
-	if (status == EMIT_OK)
-	{
-		term = stack_realloc(&context->m_scratch_stack,term,term_size * sizeof(union box_t),(term_size + arity) * sizeof(union box_t));
-		if (!term)
-			status = EMIT_NOMEM;
-		else
-		{
-			unsigned int a;
-			for (a = 0; a < arity; ++a)
-				term[term_size + a].m_u64val = va_arg(args,uint64_t);
-
-			term_size += arity;
-		}
-	}
-
-	if (status == EMIT_OK)
-		status = emit_error_line_info(context,info,&term,&term_size);
-
-	va_end(args);
-
-	return status;
-}
-
 static enum eEmitStatus emit_syntax_error_missing(struct context_t* context, uint64_t missing_atom, struct line_info_t* info)
 {
-	enum eEmitStatus status;
-	union box_t* term = NULL;
-	size_t term_size = 0;
+	union box_t args[5];
+	args[0].m_u64val = BOX_COMPOUND_BUILTIN(missing,1);
+	args[1].m_u64val = missing_atom;
 
-	stack_reset(&context->m_scratch_stack,0);
-
-	status = emit_compound(&context->m_scratch_stack,BOX_ATOM_EMBED_5('e','r','r','o','r'),2,&term,&term_size);
-	if (status == EMIT_OK)
-		status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(syntax_error),1,&term,&term_size);
-	if (status == EMIT_OK)
-		status = emit_compound(&context->m_scratch_stack,BOX_ATOM_BUILTIN(missing),1,&term,&term_size);
-	if (status == EMIT_OK)
-	{
-		term = stack_realloc(&context->m_call_stack,term,term_size * sizeof(union box_t),(term_size + 1) * sizeof(union box_t));
-		if (!term)
-			status = EMIT_NOMEM;
-		else
-			term[term_size++].m_u64val = missing_atom;
-	}
-	if (status == EMIT_OK)
-		status = emit_error_line_info(context,info,&term,&term_size);
-
-	return status;
+	return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&args[0]) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 }
 
 static enum eEmitStatus emit_ast_error(struct context_t* context, enum eASTError ast_err, struct line_info_t* info)
 {
+	union box_t arg;
+
 	switch (ast_err)
 	{
 	case AST_ERR_FLOAT_OVERFLOW:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(evaluation_error),1,BOX_ATOM_BUILTIN(float_overflow));
+		arg.m_u64val = BOX_ATOM_BUILTIN(float_overflow);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(evaluation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	case AST_ERR_FLOAT_UNDERFLOW:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(evaluation_error),1,BOX_ATOM_BUILTIN(underflow));
+		arg.m_u64val = BOX_ATOM_BUILTIN(underflow);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(evaluation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	case AST_ERR_MAX_INTEGER:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(representation_error),1,BOX_ATOM_BUILTIN(max_integer));
+		arg.m_u64val = BOX_ATOM_BUILTIN(max_integer);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(representation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	case AST_ERR_MIN_INTEGER:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(representation_error),1,BOX_ATOM_BUILTIN(min_integer));
+		arg.m_u64val = BOX_ATOM_BUILTIN(min_integer);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(representation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	case AST_ERR_MAX_ARITY:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(representation_error),1,BOX_ATOM_BUILTIN(max_arity));
+		arg.m_u64val = BOX_ATOM_BUILTIN(max_arity);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(representation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE:
 		return emit_syntax_error_missing(context,BOX_ATOM_EMBED_1(')'),info);
@@ -2348,19 +2276,24 @@ static enum eEmitStatus emit_ast_error(struct context_t* context, enum eASTError
 		return emit_syntax_error_missing(context,BOX_ATOM_EMBED_1('`'),info);
 
 	case AST_SYNTAX_ERR_INVALID_ARG:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(invalid_argument));
+		arg.m_u64val = BOX_ATOM_BUILTIN(invalid_argument);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(unexpected_token));
+		arg.m_u64val = BOX_ATOM_BUILTIN(unexpected_token);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_CHAR:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(invalid_character));
+		arg.m_u64val = BOX_ATOM_BUILTIN(invalid_character);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_ESCAPE:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(invalid_escape));
+		arg.m_u64val = BOX_ATOM_BUILTIN(invalid_escape);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	case AST_SYNTAX_ERR_INVALID_UTF8:
-		return emit_error(context,info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(invalid_utf8));
+		arg.m_u64val = BOX_ATOM_BUILTIN(invalid_utf8);
+		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
 
 	default:
 		return EMIT_NOMEM;
@@ -2386,9 +2319,9 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 		next.m_str = NULL;
 
 		if (node)
-			status = (emit_syntax_error_missing(context,BOX_ATOM_EMBED_1('.'),&parser->m_line_info) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
+			status = emit_syntax_error_missing(context,BOX_ATOM_EMBED_1('.'),&parser->m_line_info);
 		else if (next_type != tokEOF)
-			status = (emit_ast_error(context,ast_err,&parser->m_line_info) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
+			status = emit_ast_error(context,ast_err,&parser->m_line_info);
 		else
 			status = EMIT_EOF;
 
@@ -2430,11 +2363,13 @@ enum eSolveResult read_term(struct context_t* context, struct stream_t* s, union
 	struct parser_t parser = {0};
 	parser.m_s = s;
 	parser.m_line_info.m_end_line = 1;
+	union box_t arg;
 
 	switch (parse_emit_term(context,&parser,term,&new_varinfo))
 	{
 	case EMIT_EOF:
-		result = emit_error(context,&parser.m_line_info,BOX_ATOM_BUILTIN(syntax_error),1,BOX_ATOM_BUILTIN(past_end_of_stream)) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM;
+		arg.m_u64val = BOX_ATOM_BUILTIN(past_end_of_stream);
+		result = emit_error(context,&parser.m_line_info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
 		break;
 
 	case EMIT_NOMEM:
@@ -2603,39 +2538,4 @@ static enum eEmitStatus include(struct context_t* context, const union box_t* di
 	}
 
 	return status;
-}
-
-enum eSolveResult throw_instantiation_error(struct context_t* context, const union box_t* culprit)
-{
-	return (emit_error(context,get_debug_info(culprit),BOX_ATOM_BUILTIN(instantiation_error),0) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
-}
-
-enum eSolveResult throw_type_error(struct context_t* context, uint64_t valid_type, const union box_t* culprit)
-{
-	return (emit_error(context,get_debug_info(culprit),BOX_ATOM_BUILTIN(type_error),2,valid_type,culprit->m_u64val) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
-}
-
-enum eSolveResult throw_representation_error(struct context_t* context, uint64_t flag, const union box_t* culprit)
-{
-	return (emit_error(context,get_debug_info(culprit),BOX_ATOM_BUILTIN(representation_error),1,flag) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
-}
-
-enum eSolveResult throw_existence_error(struct context_t* context, uint64_t object_type, const union box_t* culprit)
-{
-	return (emit_error(context,get_debug_info(culprit),BOX_ATOM_BUILTIN(existence_error),2,object_type,culprit->m_u64val) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
-}
-
-enum eSolveResult throw_domain_error(struct context_t* context, uint64_t valid_domain, const union box_t* culprit)
-{
-	return (emit_error(context,get_debug_info(culprit),BOX_ATOM_BUILTIN(domain_error),2,valid_domain,culprit->m_u64val) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
-}
-
-enum eSolveResult throw_permission_error(struct context_t* context, uint64_t operation, uint64_t permission, const union box_t* culprit)
-{
-	return (emit_error(context,get_debug_info(culprit),BOX_ATOM_BUILTIN(permission_error),3,operation,permission,culprit->m_u64val) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
-}
-
-enum eSolveResult throw_evaluation_error(struct context_t* context, uint64_t error, const union box_t* culprit)
-{
-	return (emit_error(context,get_debug_info(culprit),BOX_ATOM_BUILTIN(evaluation_error),1,error) == EMIT_OK ? SOLVE_THROW : SOLVE_NOMEM);
 }

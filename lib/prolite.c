@@ -19,6 +19,7 @@ enum eSolveResult context_init(struct context_t* context);
 enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, struct var_info_t** varinfo);
 enum eSolveResult context_solve(struct context_t* context);
 enum eSolveResult context_reset(struct context_t* context);
+const char* unpack_exception(struct context_t* context);
 
 static int64_t text_stream_read(struct stream_t* s, void* dest, size_t len)
 {
@@ -65,6 +66,7 @@ struct query_t
 {
 	struct context_t   m_context;
 	struct var_info_t* m_varinfo;
+	const char*        m_error_text;
 };
 
 static struct query_t* query_new(prolite_env_t env)
@@ -147,6 +149,9 @@ enum eProliteResult prolite_prepare(prolite_query_t query, const char* query_tex
 
 		case SOLVE_THROW:
 			result = PROLITE_ERROR;
+			q->m_error_text = unpack_exception(&q->m_context);
+			if (!q->m_error_text)
+				result = PROLITE_NOMEM;
 			break;
 
 		case SOLVE_NOMEM:
@@ -168,6 +173,8 @@ enum eProliteResult prolite_solve(prolite_query_t query)
 	struct query_t* q = (struct query_t*)query;
 	if (q)
 	{
+		q->m_error_text = NULL;
+
 		switch (context_solve(&q->m_context))
 		{
 		case SOLVE_TRUE:
@@ -176,6 +183,9 @@ enum eProliteResult prolite_solve(prolite_query_t query)
 
 		case SOLVE_THROW:
 			result = PROLITE_ERROR;
+			q->m_error_text = unpack_exception(&q->m_context);
+			if (!q->m_error_text)
+				result = PROLITE_NOMEM;
 			break;
 
 		case SOLVE_NOMEM:
@@ -201,7 +211,10 @@ enum eProliteResult prolite_reset(prolite_query_t query)
 	enum eProliteResult result = PROLITE_TRUE;
 	struct query_t* q = (struct query_t*)query;
 	if (q)
+	{
 		context_reset(&q->m_context);
+		q->m_error_text = NULL;
+	}
 
 	return result;
 }

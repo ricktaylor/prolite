@@ -180,6 +180,8 @@ static inline enum eSolveResult redo(struct context_t* context, int unwind)
 	return (*(redo_fn_t)stack_pop_ptr(&context->m_call_stack))(context,unwind);
 }
 
+enum eSolveResult unify(struct context_t* context, const union box_t* a, const union box_t* b, int sto);
+
 enum eSolveResult redo_true(struct context_t* context, int unwind);
 
 enum eSolveResult throw_instantiation_error(struct context_t* context, const union box_t* culprit);
@@ -200,6 +202,7 @@ enum eCompileResult
 };
 
 enum eCompileResult compile(struct context_t* context, struct clause_t* clause, const union box_t* goal);
+enum eCompileResult compile_call(struct context_t* context, struct clause_t* clause, const union box_t* goal, int debug);
 
 struct line_info_t
 {
@@ -209,5 +212,6 @@ struct line_info_t
 	size_t         m_end_col;
 };
 
+enum eSolveResult emit_error(struct context_t* context, struct line_info_t* info, uint64_t error_functor, unsigned int arity, ...);
 
 #endif /* TYPES_H_ */
