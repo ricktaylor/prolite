@@ -31,7 +31,7 @@ static enum eSolveResult copy_strings_to_scratch(struct context_t* context, stru
 	assert(0);
 }
 
-static enum eSolveResult copy_term_to_scratch(struct context_t* context, union box_t** dst, size_t* term_size, const union box_t* src)
+static enum eSolveResult copy_term_to_scratch(struct context_t* context, const struct string_ptr_t* strings, union box_t** dst, size_t* term_size, const union box_t* src)
 {
 	assert(0);
 }
@@ -88,7 +88,7 @@ enum eSolveResult emit_error(struct context_t* context, struct line_info_t* info
 		}
 
 		for (a = 0; result == SOLVE_TRUE && a < arity; ++a)
-			result = copy_term_to_scratch(context,ball,&term_size,va_arg(args2,union box_t*));
+			result = copy_term_to_scratch(context,strings,ball,&term_size,va_arg(args2,union box_t*));
 
 		if (result == SOLVE_TRUE)
 			result = emit_error_line_info(context,info,ball,&term_size);
@@ -172,7 +172,7 @@ enum eSolveResult solve_throw(struct context_t* context, size_t frame)
 		union box_t** scratch_ball = (union box_t**)stack_at(context->m_call_stack,0);
 		size_t term_size = 0;
 
-		result = copy_term_to_scratch(context,scratch_ball,&term_size,ball);
+		result = copy_term_to_scratch(context,strings,scratch_ball,&term_size,ball);
 		if (result == SOLVE_TRUE)
 			result = SOLVE_THROW;
 	}
