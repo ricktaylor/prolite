@@ -93,8 +93,8 @@ enum eSolveResult solve_char_conversion(struct context_t* context, const union b
 	enum tag_type_t type;
 
 	goal = first_arg(goal);
-	arg = deref_term(context,next_arg(goal));
-	goal = deref_term(context,arg);
+	arg = deref_term(context->m_substs,next_arg(goal));
+	goal = deref_term(context->m_substs,arg);
 
 	type = UNBOX_TYPE(goal->m_u64val);
 	if (type == prolite_var)

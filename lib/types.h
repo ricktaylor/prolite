@@ -154,7 +154,7 @@ struct var_info_t
 
 const union box_t* first_arg(const union box_t* v);
 const union box_t* next_arg(const union box_t* v);
-const union box_t* deref_term(struct context_t* context, const union box_t* v);
+const union box_t* deref_term(struct substs_t* substs, const union box_t* v);
 union box_t* copy_term(struct context_t* context, struct stack_t** stack, const union box_t* v);
 
 enum eSolveResult
@@ -201,8 +201,19 @@ enum eCompileResult
 	COMPILE_NOMEM,
 };
 
-enum eCompileResult compile(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal);
-enum eCompileResult compile_call(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug);
+struct compile_context_t
+{
+	struct compile_flags_t
+	{
+		unsigned debug : 1;
+	} m_flags;
+
+	struct stack_t*  m_emit_stack;
+	struct substs_t* m_substs;
+};
+
+enum eCompileResult compile(struct compile_context_t* context, const union box_t* goal);
+enum eCompileResult compile_call(struct compile_context_t* context, const union box_t* goal);
 
 struct line_info_t
 {

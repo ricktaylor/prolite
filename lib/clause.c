@@ -32,6 +32,7 @@ static void delete_clause(struct clause_t* clause)
 static enum eSolveResult compile_clause(struct clause_t* clause, struct context_t* context, const union box_t* goal)
 {
 	enum eSolveResult result;
+	struct compile_context_t compile_context;
 
 	goal = copy_term(context,&clause->m_stack,goal);
 	if (!goal)
@@ -51,7 +52,13 @@ static enum eSolveResult compile_clause(struct clause_t* clause, struct context_
 
 	clause->m_entry_point = stack_top(clause->m_stack);
 
-	switch (compile(context,&clause->m_stack,clause->m_body))
+	compile_context.m_flags.debug = 0;
+	compile_context.m_emit_stack = clause->m_stack;
+
+	// TODO: FIX ME!!
+	compile_context.m_substs = context->m_substs;
+
+	switch (compile(&compile_context,clause->m_body))
 	{
 	case COMPILE_OK:
 		result = SOLVE_TRUE;
@@ -122,7 +129,7 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 	struct clause_t* clause;
 
 	if (goal->m_u64val == BOX_COMPOUND_EMBED_2(2,':','-'))
-		head = deref_term(context,first_arg(goal));
+		head = deref_term(context->m_substs,first_arg(goal));
 
 	switch (UNBOX_TYPE(head->m_u64val))
 	{
@@ -192,13 +199,13 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 enum eSolveResult solve_asserta(struct context_t* context, size_t frame)
 {
 	const union box_t* goal = *(const union box_t**)stack_at(context->m_instr_stack,frame);
-	return assert_clause(context,deref_term(context,first_arg(goal)),0,1);
+	return assert_clause(context,deref_term(context->m_substs,first_arg(goal)),0,1);
 }
 
 enum eSolveResult solve_assertz(struct context_t* context, size_t frame)
 {
 	const union box_t* goal = *(const union box_t**)stack_at(context->m_instr_stack,frame);
-	return assert_clause(context,deref_term(context,first_arg(goal)),1,1);
+	return assert_clause(context,deref_term(context->m_substs,first_arg(goal)),1,1);
 }
 
 static enum eSolveResult redo_compiled_clause(struct context_t* context, int unwind)
@@ -247,7 +254,7 @@ static enum eSolveResult solve_compiled_clause(struct context_t* context, size_t
 static enum eSolveResult solve_user_defined(struct context_t* context, size_t frame)
 {
 	const struct predicate_t* pred = *(const struct predicate_t**)stack_at(context->m_instr_stack,frame);
-	const union box_t* goal = deref_term(context,*(const union box_t**)stack_at(context->m_instr_stack,frame+1));
+	const union box_t* goal = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame+1));
 
 	if (!pred)
 		pred = find_predicate(context,goal);

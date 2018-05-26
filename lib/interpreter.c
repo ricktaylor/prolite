@@ -88,7 +88,7 @@ static const union box_t* get_debug_info(const union box_t* v)
 	return d;
 }
 
-inline const union box_t* deref_term(struct context_t* context, const union box_t* v)
+inline const union box_t* deref_term(struct substs_t* substs, const union box_t* v)
 {
 	uint64_t var_idx;
 	const union box_t* t = v;
@@ -98,12 +98,12 @@ inline const union box_t* deref_term(struct context_t* context, const union box_
 			return t;
 
 		var_idx = UNBOX_MANT_48(t->m_u64val);
-		assert(context->m_substs && var_idx < context->m_substs->m_count);
+		assert(substs && var_idx < substs->m_count);
 
-		if (!context->m_substs->m_values[var_idx])
+		if (!substs->m_values[var_idx])
 			return t;
 
-		t = context->m_substs->m_values[var_idx];
+		t = substs->m_values[var_idx];
 	}
 	while (t != v);
 	return t;
@@ -161,7 +161,7 @@ static int copy_term_i(struct context_t* context, struct stack_t** stack, union 
 
 	case prolite_var:
 		{
-			const union box_t* r = deref_term(context,*v);
+			const union box_t* r = deref_term(context->m_substs,*v);
 			if (r == *v)
 				return copy_term_part(stack,v,new_term,term_size);
 
@@ -189,8 +189,8 @@ union box_t* copy_term(struct context_t* context, struct stack_t** stack, const 
 
 enum eSolveResult unify(struct context_t* context, const union box_t* a, const union box_t* b, int sto)
 {
-	a = deref_term(context,a);
-	b = deref_term(context,b);
+	a = deref_term(context->m_substs,a);
+	b = deref_term(context->m_substs,b);
 	if (a != b)
 	{
 		enum tag_type_t t_a = UNBOX_TYPE(a->m_u64val);
@@ -269,9 +269,9 @@ static enum eSolveResult solve_cut(struct context_t* context, size_t frame)
 	return stack_push_ptr(&context->m_call_stack,&redo_cut) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
 }
 
-static inline enum eCompileResult compile_cut(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
+static inline enum eCompileResult compile_cut(struct compile_context_t* context, const union box_t* goal)
 {
-	return stack_push_ptr(emit_stack,&solve_cut) == -1 ? COMPILE_NOMEM : COMPILE_OK;
+	return stack_push_ptr(&context->m_emit_stack,&solve_cut) == -1 ? COMPILE_NOMEM : COMPILE_OK;
 }
 
 static enum eSolveResult redo_repeat(struct context_t* context, int unwind)
@@ -288,9 +288,9 @@ static enum eSolveResult solve_repeat(struct context_t* context, size_t frame)
 	return stack_push_ptr(&context->m_call_stack,&redo_repeat) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
 }
 
-static inline enum eCompileResult compile_repeat(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
+static inline enum eCompileResult compile_repeat(struct compile_context_t* context, const union box_t* goal)
 {
-	return stack_push_ptr(emit_stack,&solve_repeat) == -1 ? COMPILE_NOMEM : COMPILE_OK;
+	return stack_push_ptr(&context->m_emit_stack,&solve_repeat) == -1 ? COMPILE_NOMEM : COMPILE_OK;
 }
 
 static enum eSolveResult redo_and(struct context_t* context, int unwind)
@@ -360,13 +360,13 @@ again:
 	return result;
 }
 
-static enum eCompileResult compile_and(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
+static enum eCompileResult compile_and(struct compile_context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result;
-	size_t frame = stack_top(*emit_stack);
+	size_t frame = stack_top(context->m_emit_stack);
 
-	if (stack_push_ptr(emit_stack,&solve_and) == -1 ||
-		stack_push(emit_stack,0) == -1)
+	if (stack_push_ptr(&context->m_emit_stack,&solve_and) == -1 ||
+		stack_push(&context->m_emit_stack,0) == -1)
 	{
 		return COMPILE_NOMEM;
 	}
@@ -375,32 +375,32 @@ static enum eCompileResult compile_and(struct context_t* context, struct stack_t
 	//printf("%u: cont_frame = 0\n",frame+1);
 
 	goal = first_arg(goal);
-	result = compile(context,emit_stack,goal);
+	result = compile(context,goal);
 	if (result == COMPILE_ALWAYS_TRUE)
 	{
 		//printf("%u: RESET\n",frame);
 
-		stack_reset(emit_stack,frame);
-		result = compile(context,emit_stack,next_arg(goal));
+		stack_reset(&context->m_emit_stack,frame);
+		result = compile(context,next_arg(goal));
 	}
 	else if (result == COMPILE_ALWAYS_FAILS)
 	{
 		// Check callable state of cont_goal
-		result = compile(context,emit_stack,next_arg(goal));
+		result = compile(context,next_arg(goal));
 		if (result != COMPILE_NOT_CALLABLE && result != COMPILE_NOMEM)
 		{
-			stack_reset(emit_stack,frame);
+			stack_reset(&context->m_emit_stack,frame);
 			result = COMPILE_ALWAYS_FAILS;
 		}
 	}
 	else if (result == COMPILE_OK)
 	{
-		size_t* cont_frame = (size_t*)stack_at(*emit_stack,frame+1);
-		*cont_frame = stack_top(*emit_stack) - frame;
+		size_t* cont_frame = (size_t*)stack_at(context->m_emit_stack,frame+1);
+		*cont_frame = stack_top(context->m_emit_stack) - frame;
 
 		//printf("cont_frame (@%u) = %d\n",frame+1,(int)*cont_frame);
 
-		result = compile(context,emit_stack,next_arg(goal));
+		result = compile(context,next_arg(goal));
 		if (result == COMPILE_ALWAYS_TRUE)
 		{
 			*cont_frame = 0;
@@ -441,40 +441,40 @@ static enum eSolveResult solve_if_then(struct context_t* context, size_t frame)
 	return result;
 }
 
-static enum eCompileResult compile_if_then(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
+static enum eCompileResult compile_if_then(struct compile_context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result;
-	size_t frame = stack_top(*emit_stack);
+	size_t frame = stack_top(context->m_emit_stack);
 
-	if (stack_push_ptr(emit_stack,&solve_if_then) == -1 ||
-		stack_push(emit_stack,0) == -1)
+	if (stack_push_ptr(&context->m_emit_stack,&solve_if_then) == -1 ||
+		stack_push(&context->m_emit_stack,0) == -1)
 	{
 		return COMPILE_NOMEM;
 	}
 
 	goal = first_arg(goal);
-	result = compile(context,emit_stack,goal);
+	result = compile(context,goal);
 	if (result == COMPILE_ALWAYS_TRUE)
 	{
-		stack_reset(emit_stack,frame);
-		result = compile(context,emit_stack,next_arg(goal));
+		stack_reset(&context->m_emit_stack,frame);
+		result = compile(context,next_arg(goal));
 	}
 	else if (result == COMPILE_ALWAYS_FAILS)
 	{
 		// Check callable state of then_goal
-		result = compile(context,emit_stack,next_arg(goal));
+		result = compile(context,next_arg(goal));
 		if (result != COMPILE_NOT_CALLABLE && result != COMPILE_NOMEM)
 		{
-			stack_reset(emit_stack,frame);
+			stack_reset(&context->m_emit_stack,frame);
 			result = COMPILE_ALWAYS_FAILS;
 		}
 	}
 	else if (result == COMPILE_OK)
 	{
-		size_t* then_frame = (size_t*)stack_at(*emit_stack,frame+1);
-		*then_frame = stack_top(*emit_stack) - frame;
+		size_t* then_frame = (size_t*)stack_at(context->m_emit_stack,frame+1);
+		*then_frame = stack_top(context->m_emit_stack) - frame;
 
-		result = compile(context,emit_stack,next_arg(goal));
+		result = compile(context,next_arg(goal));
 		if (result == COMPILE_ALWAYS_TRUE)
 		{
 			*then_frame = 0;
@@ -525,46 +525,46 @@ static enum eSolveResult solve_if_then_else(struct context_t* context, size_t fr
 	return result;
 }
 
-static enum eCompileResult compile_if_then_else(struct context_t* context, struct stack_t** emit_stack, const union box_t* if_then_goal, const union box_t* else_goal, int debug)
+static enum eCompileResult compile_if_then_else(struct compile_context_t* context, const union box_t* if_then_goal, const union box_t* else_goal)
 {
 	enum eCompileResult result;
-	size_t frame = stack_top(*emit_stack);
+	size_t frame = stack_top(context->m_emit_stack);
 
-	if (stack_push_ptr(emit_stack,&solve_if_then_else) == -1 ||
-		stack_push(emit_stack,0) == -1 ||
-		stack_push(emit_stack,0) == -1)
+	if (stack_push_ptr(&context->m_emit_stack,&solve_if_then_else) == -1 ||
+		stack_push(&context->m_emit_stack,0) == -1 ||
+		stack_push(&context->m_emit_stack,0) == -1)
 	{
 		return COMPILE_NOMEM;
 	}
 
 	if_then_goal = first_arg(if_then_goal);
-	result = compile(context,emit_stack,if_then_goal);
+	result = compile(context,if_then_goal);
 	if (result == COMPILE_ALWAYS_TRUE)
 	{
 		// Check callable state of else
-		result = compile(context,emit_stack,else_goal);
+		result = compile(context,else_goal);
 		if (result != COMPILE_NOT_CALLABLE && result != COMPILE_NOMEM)
 		{
-			stack_reset(emit_stack,frame);
-			result = compile(context,emit_stack,next_arg(if_then_goal));
+			stack_reset(&context->m_emit_stack,frame);
+			result = compile(context,next_arg(if_then_goal));
 		}
 	}
 	else if (result == COMPILE_ALWAYS_FAILS)
 	{
 		// Check callable state of if_then
-		result = compile(context,emit_stack,next_arg(if_then_goal));
+		result = compile(context,next_arg(if_then_goal));
 		if (result != COMPILE_NOT_CALLABLE && result != COMPILE_NOMEM)
 		{
-			stack_reset(emit_stack,frame);
-			result = compile(context,emit_stack,else_goal);
+			stack_reset(&context->m_emit_stack,frame);
+			result = compile(context,else_goal);
 		}
 	}
 	else if (result == COMPILE_OK)
 	{
-		size_t* then_cont = (size_t*)stack_at(*emit_stack,frame+1);
-		*then_cont = stack_top(*emit_stack) - frame;
+		size_t* then_cont = (size_t*)stack_at(context->m_emit_stack,frame+1);
+		*then_cont = stack_top(context->m_emit_stack) - frame;
 
-		result = compile(context,emit_stack,next_arg(if_then_goal));
+		result = compile(context,next_arg(if_then_goal));
 		if (result == COMPILE_ALWAYS_TRUE)
 		{
 			*then_cont = 0;
@@ -578,10 +578,10 @@ static enum eCompileResult compile_if_then_else(struct context_t* context, struc
 
 		if (result == COMPILE_OK)
 		{
-			size_t* else_cont = (size_t*)stack_at(*emit_stack,frame+2);
-			*else_cont = stack_top(*emit_stack) - frame;
+			size_t* else_cont = (size_t*)stack_at(context->m_emit_stack,frame+2);
+			*else_cont = stack_top(context->m_emit_stack) - frame;
 
-			result = compile(context,emit_stack,else_goal);
+			result = compile(context,else_goal);
 			if (result == COMPILE_ALWAYS_TRUE)
 			{
 				*else_cont = 0;
@@ -653,48 +653,48 @@ static enum eSolveResult solve_or(struct context_t* context, size_t frame)
 	return result;
 }
 
-static enum eCompileResult compile_or(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
+static enum eCompileResult compile_or(struct compile_context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result;
 	const union box_t* else_goal;
 	size_t frame;
 
 	goal = first_arg(goal);
-	else_goal = deref_term(context,next_arg(goal));
-	goal = deref_term(context,goal);
+	else_goal = deref_term(context->m_substs,next_arg(goal));
+	goal = deref_term(context->m_substs,goal);
 
 	if (goal->m_u64val == BOX_COMPOUND_EMBED_2(2,'-','>'))
-		return compile_if_then_else(context,emit_stack,goal,else_goal,debug);
+		return compile_if_then_else(context,goal,else_goal);
 
-	frame = stack_top(*emit_stack);
-	if (stack_push_ptr(emit_stack,&solve_or) == -1 ||
-		stack_push(emit_stack,0) == -1)
+	frame = stack_top(context->m_emit_stack);
+	if (stack_push_ptr(&context->m_emit_stack,&solve_or) == -1 ||
+		stack_push(&context->m_emit_stack,0) == -1)
 	{
 		return COMPILE_NOMEM;
 	}
 
-	result = compile(context,emit_stack,goal);
+	result = compile(context,goal);
 	if (result == COMPILE_ALWAYS_FAILS)
 	{
-		stack_reset(emit_stack,frame);
-		result = compile(context,emit_stack,else_goal);
+		stack_reset(&context->m_emit_stack,frame);
+		result = compile(context,else_goal);
 	}
 	else if (result == COMPILE_ALWAYS_TRUE)
 	{
 		// Check callable state of else_goal
-		result = compile(context,emit_stack,else_goal);
+		result = compile(context,else_goal);
 		if (result != COMPILE_NOT_CALLABLE && result != COMPILE_NOMEM)
 		{
-			stack_reset(emit_stack,frame);
+			stack_reset(&context->m_emit_stack,frame);
 			result = COMPILE_ALWAYS_TRUE;
 		}
 	}
 	else if (result == COMPILE_OK)
 	{
-		size_t* else_frame = (size_t*)stack_at(*emit_stack,frame+1);
-		*else_frame = stack_top(*emit_stack) - frame;
+		size_t* else_frame = (size_t*)stack_at(context->m_emit_stack,frame+1);
+		*else_frame = stack_top(context->m_emit_stack) - frame;
 
-		result = compile(context,emit_stack,else_goal);
+		result = compile(context,else_goal);
 		if (result == COMPILE_ALWAYS_TRUE)
 		{
 			*else_frame = 0;
@@ -767,7 +767,8 @@ static enum eSolveResult solve_compile(struct context_t* context, size_t frame)
 {
 	enum eSolveResult result;
 	size_t stack_base;
-	const union box_t* goal = deref_term(context,*(const union box_t**)stack_at(context->m_instr_stack,frame));
+	const union box_t* goal = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame));
+	struct compile_context_t compile_context;
 
 	switch (UNBOX_TYPE(goal->m_u64val))
 	{
@@ -779,8 +780,12 @@ static enum eSolveResult solve_compile(struct context_t* context, size_t frame)
 		return throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
 	}
 
+	compile_context.m_flags.debug = 0;
+	compile_context.m_emit_stack = context->m_call_stack;
+	compile_context.m_substs = context->m_substs;
+
 	stack_base = stack_top(context->m_call_stack);
-	switch (compile(context,&context->m_call_stack,goal))
+	switch (compile(&compile_context,goal))
 	{
 	case COMPILE_OK:
 		result = solve(context,stack_base);
@@ -820,7 +825,7 @@ static enum eSolveResult solve_compile(struct context_t* context, size_t frame)
 	return result;
 }
 
-enum eCompileResult compile_call(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
+enum eCompileResult compile_call(struct compile_context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result;
 	size_t frame;
@@ -828,8 +833,8 @@ enum eCompileResult compile_call(struct context_t* context, struct stack_t** emi
 	while (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'c','a','l','l'))
 	{
 		// Optimize call(call(_)) -> call(_)
-		goal = deref_term(context,first_arg(goal));
-		if (debug)
+		goal = deref_term(context->m_substs,first_arg(goal));
+		if (context->m_flags.debug)
 			break;
 	}
 
@@ -837,20 +842,20 @@ enum eCompileResult compile_call(struct context_t* context, struct stack_t** emi
 	{
 	case prolite_compound:
 	case prolite_atom:
-		frame = stack_top(*emit_stack);
-		if (stack_push_ptr(emit_stack,&solve_call) == -1)
+		frame = stack_top(context->m_emit_stack);
+		if (stack_push_ptr(&context->m_emit_stack,&solve_call) == -1)
 			result = COMPILE_NOMEM;
 		else
 		{
-			result = compile(context,emit_stack,goal);
+			result = compile(context,goal);
 			if (result == COMPILE_ALWAYS_TRUE || result == COMPILE_ALWAYS_FAILS)
-				stack_reset(emit_stack,frame);
+				stack_reset(&context->m_emit_stack,frame);
 		}
 		break;
 
 	default:
-		if (stack_push_ptr(emit_stack,&solve_compile) == -1 ||
-			stack_push_ptr(emit_stack,goal) == -1)
+		if (stack_push_ptr(&context->m_emit_stack,&solve_compile) == -1 ||
+			stack_push_ptr(&context->m_emit_stack,goal) == -1)
 		{
 			result = COMPILE_NOMEM;
 		}
@@ -957,25 +962,25 @@ static enum eSolveResult solve_not_proveable(struct context_t* context, size_t f
 	return result;
 }
 
-static enum eCompileResult compile_not_proveable(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
+static enum eCompileResult compile_not_proveable(struct compile_context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result;
-	size_t frame = stack_top(*emit_stack);
+	size_t frame = stack_top(context->m_emit_stack);
 
-	if (stack_push_ptr(emit_stack,&solve_not_proveable) == -1)
+	if (stack_push_ptr(&context->m_emit_stack,&solve_not_proveable) == -1)
 		return COMPILE_NOMEM;
 
-	goal = deref_term(context,first_arg(goal));
+	goal = deref_term(context->m_substs,first_arg(goal));
 
-	result = compile_call(context,emit_stack,goal,debug);
+	result = compile_call(context,goal);
 	if (result == COMPILE_ALWAYS_TRUE)
 	{
-		stack_reset(emit_stack,frame);
+		stack_reset(&context->m_emit_stack,frame);
 		result = COMPILE_ALWAYS_FAILS;
 	}
 	else if (result == COMPILE_ALWAYS_FAILS)
 	{
-		stack_reset(emit_stack,frame);
+		stack_reset(&context->m_emit_stack,frame);
 		result = COMPILE_ALWAYS_TRUE;
 	}
 
@@ -995,25 +1000,25 @@ static enum eSolveResult solve_once(struct context_t* context, size_t frame)
 	return result;
 }
 
-static enum eCompileResult compile_once(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
+static enum eCompileResult compile_once(struct compile_context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result;
-	size_t frame = stack_top(*emit_stack);
+	size_t frame = stack_top(context->m_emit_stack);
 
-	if (stack_push_ptr(emit_stack,&solve_once) == -1)
+	if (stack_push_ptr(&context->m_emit_stack,&solve_once) == -1)
 		return COMPILE_NOMEM;
 
 	while (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'o','n','c','e'))
 	{
 		// Optimize once(once(_)) -> once(_)
-		goal = deref_term(context,first_arg(goal));
-		if (debug)
+		goal = deref_term(context->m_substs,first_arg(goal));
+		if (context->m_flags.debug)
 			break;
 	}
 
-	result = compile_call(context,emit_stack,goal,debug);
+	result = compile_call(context,goal);
 	if (result == COMPILE_ALWAYS_TRUE || result == COMPILE_ALWAYS_FAILS)
-		stack_reset(emit_stack,frame);
+		stack_reset(&context->m_emit_stack,frame);
 
 	return result;
 }
@@ -1025,7 +1030,7 @@ static enum eSolveResult solve_halt(struct context_t* context, size_t frame)
 	const union box_t* goal = *(const union box_t**)stack_at(context->m_instr_stack,frame);
 	if (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'h','a','l','t'))
 	{
-		goal = deref_term(context,first_arg(goal));
+		goal = deref_term(context->m_substs,first_arg(goal));
 
 		// halt/1
 		if (UNBOX_TYPE(goal->m_u64val) == prolite_var)
@@ -1043,10 +1048,10 @@ static enum eSolveResult solve_halt(struct context_t* context, size_t frame)
 	return result;
 }
 
-static inline enum eCompileResult compile_builtin(struct context_t* context, struct stack_t** emit_stack, enum eSolveResult (*solve_fn)(struct context_t*,size_t), const union box_t* goal)
+static inline enum eCompileResult compile_builtin(struct compile_context_t* context, enum eSolveResult (*solve_fn)(struct context_t*,size_t), const union box_t* goal)
 {
-	if (stack_push_ptr(emit_stack,solve_fn) == -1 ||
-		stack_push_ptr(emit_stack,goal) == -1)
+	if (stack_push_ptr(&context->m_emit_stack,solve_fn) == -1 ||
+		stack_push_ptr(&context->m_emit_stack,goal) == -1)
 	{
 		return COMPILE_NOMEM;
 	}
@@ -1059,19 +1064,19 @@ enum eSolveResult solve_##f(struct context_t* context, size_t frame);
 
 #include "builtin_functions.h"
 
-enum eCompileResult compile_catch(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug);
-enum eCompileResult compile_user_defined(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal);
+enum eCompileResult compile_catch(struct compile_context_t* context, const union box_t* goal);
+enum eCompileResult compile_user_defined(struct compile_context_t* context, const union box_t* goal);
 
-enum eCompileResult compile(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal)
+enum eCompileResult compile(struct compile_context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result;
-	size_t frame = stack_top(*emit_stack);
-	int debug = 0;
+	size_t frame = stack_top(context->m_emit_stack);
+	struct compile_flags_t old_flags = context->m_flags;
 
-	goal = deref_term(context,goal);
+	goal = deref_term(context->m_substs,goal);
 	if (get_debug_info(goal))
 	{
-		debug = 1;
+		context->m_flags.debug = 1;
 
 		// TODO: Emit tracepoint
 	}
@@ -1088,11 +1093,11 @@ enum eCompileResult compile(struct context_t* context, struct stack_t** emit_sta
 		break;
 
 #define DECLARE_BUILTIN_STATIC(f,n) \
-	case (n): result = compile_##f(context,emit_stack,goal,debug); break;
+	case (n): result = compile_##f(context,goal); break;
 
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
-	case (n): result = compile_builtin(context,emit_stack,&solve_##f,goal); break; \
+	case (n): result = compile_builtin(context,&solve_##f,goal); break; \
 		break;
 
 #include "builtin_functions.h"
@@ -1101,7 +1106,7 @@ enum eCompileResult compile(struct context_t* context, struct stack_t** emit_sta
 		switch (UNBOX_TYPE(goal->m_u64val))
 		{
 		case prolite_var:
-			result = compile_call(context,emit_stack,goal,debug);
+			result = compile_call(context,goal);
 			break;
 
 		case prolite_compound:
@@ -1112,11 +1117,11 @@ enum eCompileResult compile(struct context_t* context, struct stack_t** emit_sta
 				assert(0);
 			}
 			else
-				result = compile_user_defined(context,emit_stack,goal);
+				result = compile_user_defined(context,goal);
 			break;
 
 		case prolite_atom:
-			result = compile_user_defined(context,emit_stack,goal);
+			result = compile_user_defined(context,goal);
 			break;
 
 		default:
@@ -1126,11 +1131,11 @@ enum eCompileResult compile(struct context_t* context, struct stack_t** emit_sta
 		break;
 	}
 
-	if (debug)
+	if (context->m_flags.debug)
 	{
 		if (result != COMPILE_OK)
 		{
-			stack_reset(emit_stack,frame);
+			stack_reset(&context->m_emit_stack,frame);
 
 			if (result == COMPILE_ALWAYS_FAILS)
 			{
@@ -1143,6 +1148,7 @@ enum eCompileResult compile(struct context_t* context, struct stack_t** emit_sta
 		}
 	}
 
+	context->m_flags = old_flags;
 	return result;
 }
 
@@ -1229,7 +1235,13 @@ enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s,
 		if (result == SOLVE_TRUE)
 		{
 			size_t frame = stack_top(context->m_call_stack);
-			switch (compile(context,&context->m_call_stack,goal))
+			struct compile_context_t compile_context;
+
+			compile_context.m_flags.debug = 0;
+			compile_context.m_emit_stack = context->m_call_stack;
+			compile_context.m_substs = context->m_substs;
+
+			switch (compile(&compile_context,goal))
 			{
 			case COMPILE_OK:
 				if (stack_push(&context->m_call_stack,frame) == -1 ||

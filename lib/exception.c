@@ -157,7 +157,7 @@ enum eSolveResult solve_throw(struct context_t* context, size_t frame)
 	const union box_t* ball = *(const union box_t**)stack_at(context->m_instr_stack,frame);
 	struct string_ptr_t* strings = NULL;
 
-	ball = deref_term(context,first_arg(ball));
+	ball = deref_term(context->m_substs,first_arg(ball));
 
 	stack_reset(&context->m_scratch_stack,0);
 	if (stack_push_ptr(&context->m_scratch_stack,NULL) == -1)
@@ -286,7 +286,7 @@ static enum eSolveResult solve_catch(struct context_t* context, size_t frame)
 {
 	enum eSolveResult result;
 
-	const union box_t* catcher = deref_term(context,*(const union box_t**)stack_at(context->m_instr_stack,frame));
+	const union box_t* catcher = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame));
 	size_t recovery_frame = *(const size_t*)stack_at(context->m_instr_stack,frame+1);
 	if (recovery_frame && recovery_frame != -1)
 		recovery_frame += (frame-1);
@@ -308,35 +308,35 @@ static enum eSolveResult solve_catch(struct context_t* context, size_t frame)
 	return result;
 }
 
-enum eCompileResult compile_catch(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal, int debug)
+enum eCompileResult compile_catch(struct compile_context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result;
 	const union box_t *catcher, *recovery;
-	size_t frame = stack_top(*emit_stack);
+	size_t frame = stack_top(context->m_emit_stack);
 
 	goal = first_arg(goal);
 	catcher = next_arg(goal);
 	recovery = next_arg(catcher);
 
-	catcher = deref_term(context,catcher);
-	recovery = deref_term(context,recovery);
+	catcher = deref_term(context->m_substs,catcher);
+	recovery = deref_term(context->m_substs,recovery);
 
-	if (stack_push_ptr(emit_stack,&solve_catch) == -1 ||
-		stack_push_ptr(emit_stack,catcher) == -1 ||
-		stack_push(emit_stack,0) == -1)
+	if (stack_push_ptr(&context->m_emit_stack,&solve_catch) == -1 ||
+		stack_push_ptr(&context->m_emit_stack,catcher) == -1 ||
+		stack_push(&context->m_emit_stack,0) == -1)
 	{
 		result = COMPILE_NOMEM;
 	}
 
-	result = compile_call(context,emit_stack,goal,debug);
+	result = compile_call(context,goal);
 	if (result == COMPILE_ALWAYS_TRUE || result == COMPILE_ALWAYS_FAILS)
-		stack_reset(emit_stack,frame);
+		stack_reset(&context->m_emit_stack,frame);
 	else if (result == COMPILE_OK)
 	{
-		size_t* recovery_frame = (size_t*)stack_at(*emit_stack,frame+2);
-		*recovery_frame = stack_top(*emit_stack) - frame;
+		size_t* recovery_frame = (size_t*)stack_at(context->m_emit_stack,frame+2);
+		*recovery_frame = stack_top(context->m_emit_stack) - frame;
 
-		result = compile_call(context,emit_stack,recovery,debug);
+		result = compile_call(context,recovery);
 		if (result == COMPILE_ALWAYS_TRUE)
 		{
 			*recovery_frame = 0;
