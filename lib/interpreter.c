@@ -11,19 +11,6 @@
 
 const union box_t* next_arg(const union box_t* v);
 
-static inline uint64_t get_arity(uint64_t c)
-{
-	uint64_t all48 = UNBOX_MANT_48(c);
-	unsigned int hi16 = (all48 >> 32);
-	if (hi16 & 0x8000)
-		return (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
-
-	if ((hi16 & 0xC000) == 0x4000)
-		return (hi16 & MAX_ARITY_BUILTIN);
-
-	return all48 & MAX_ARITY;
-}
-
 inline const union box_t* first_arg(const union box_t* v)
 {
 	assert(UNBOX_TYPE(v->m_u64val) == prolite_compound);
@@ -47,7 +34,12 @@ inline const union box_t* next_arg(const union box_t* v)
 {
 	if (UNBOX_TYPE(v->m_u64val) == prolite_compound)
 	{
-		uint64_t arity = get_arity(v->m_u64val);
+		uint64_t arity = UNBOX_MANT_48(v->m_u64val);
+		unsigned int hi16 = (arity >> 32);
+		if (hi16 & 0x8000)
+			arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
+		else if ((hi16 & 0xC000) == 0x4000)
+			arity = (hi16 & MAX_ARITY_BUILTIN);
 
 		v = first_arg(v);
 		while (arity--)
@@ -107,84 +99,6 @@ inline const union box_t* deref_term(struct substs_t* substs, const union box_t*
 	}
 	while (t != v);
 	return t;
-}
-
-static int copy_term_part(struct stack_t** stack, union box_t const** v, union box_t** term, size_t* term_size)
-{
-	// TODO: Moving atoms between stacks?
-
-	*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
-	if (!*term)
-		return -1;
-
-	(*term)[(*term_size)++] = *((*v)++);
-
-	if (UNBOX_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
-	{
-		// TODO: Debug info
-
-		*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
-		if (!*term)
-			return -1;
-
-		(*term)[(*term_size)++] = *((*v)++);
-	}
-
-	return 0;
-}
-
-static int copy_term_i(struct context_t* context, struct stack_t** stack, union box_t const** v, union box_t** new_term, size_t* term_size)
-{
-	switch (UNBOX_TYPE((*v)->m_u64val))
-	{
-	case prolite_compound:
-		{
-			uint64_t arity = get_arity((*v)->m_u64val);
-
-			if ((UNBOX_HI16((*v)->m_u64val) & 0xC000) == 0)
-			{
-				// Copy functor atom
-				if (copy_term_part(stack,v,new_term,term_size))
-					return -1;
-			}
-
-			if (copy_term_part(stack,v,new_term,term_size))
-				return -1;
-
-			while (arity--)
-			{
-				if (copy_term_i(context,stack,v,new_term,term_size) != 0)
-					return -1;
-			}
-		}
-		break;
-
-	case prolite_var:
-		{
-			const union box_t* r = deref_term(context->m_substs,*v);
-			if (r == *v)
-				return copy_term_part(stack,v,new_term,term_size);
-
-			++(*v);
-			return copy_term_i(context,stack,&r,new_term,term_size);
-		}
-		break;
-
-	default:
-		return copy_term_part(stack,v,new_term,term_size);
-	}
-
-	return 0;
-}
-
-union box_t* copy_term(struct context_t* context, struct stack_t** stack, const union box_t* v)
-{
-	union box_t* ret = NULL;
-	size_t term_size = 0;
-	if (copy_term_i(context,stack,&v,&ret,&term_size) != 0)
-		ret = NULL;
-
-	return ret;
 }
 
 enum eSolveResult unify(struct context_t* context, const union box_t* a, const union box_t* b, int sto)

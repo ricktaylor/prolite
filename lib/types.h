@@ -155,7 +155,6 @@ struct var_info_t
 const union box_t* first_arg(const union box_t* v);
 const union box_t* next_arg(const union box_t* v);
 const union box_t* deref_term(struct substs_t* substs, const union box_t* v);
-union box_t* copy_term(struct context_t* context, struct stack_t** stack, const union box_t* v);
 
 enum eSolveResult
 {
