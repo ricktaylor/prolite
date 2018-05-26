@@ -168,14 +168,14 @@ static enum eSolveResult compile_clause(struct clause_t* clause, struct context_
 	return result;
 }
 
-static struct predicate_t* find_predicate(struct context_t* context, const union box_t* head)
+static struct predicate_t* find_predicate(const union box_t* head)
 {
 	struct predicate_t* pred = NULL;
 
 	return pred;
 }
 
-static struct predicate_t* new_predicate(struct context_t* context, const union box_t* head, int dynamic)
+static struct predicate_t* new_predicate(const union box_t* head, int dynamic)
 {
 	struct predicate_t* pred = NULL;
 
@@ -226,7 +226,7 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 		return throw_type_error(context,BOX_ATOM_BUILTIN(callable),head);
 	}
 
-	pred = find_predicate(context,head);
+	pred = find_predicate(head);
 	if (pred && dynamic && !pred->m_flags.dynamic)
 	{
 		union box_t* indicator = predicate_indicator(context,pred);
@@ -245,7 +245,7 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 		int new_pred = 0;
 		if (!pred)
 		{
-			pred = new_predicate(context,head,dynamic);
+			pred = new_predicate(head,dynamic);
 			if (!pred)
 				result = SOLVE_NOMEM;
 			else
@@ -339,7 +339,7 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 	const union box_t* goal = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame+1));
 
 	if (!pred)
-		pred = find_predicate(context,goal);
+		pred = find_predicate(goal);
 
 	if (pred)
 	{
@@ -357,9 +357,9 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 	return SOLVE_FAIL;
 }
 
-enum eCompileResult compile_user_defined(struct context_t* context, struct stack_t** emit_stack, const union box_t* goal)
+enum eCompileResult compile_user_defined(struct compile_context_t* context, const union box_t* goal)
 {
-	const struct predicate_t* pred = find_predicate(context,goal);
+	const struct predicate_t* pred = find_predicate(goal);
 	if (pred && !pred->m_flags.dynamic)
 	{
 		size_t i;
@@ -375,9 +375,9 @@ enum eCompileResult compile_user_defined(struct context_t* context, struct stack
 		}
 	}
 
-	if (stack_push_ptr(emit_stack,&solve_user_defined) == -1 ||
-		stack_push_ptr(emit_stack,pred) == -1 ||
-		stack_push_ptr(emit_stack,goal) == -1)
+	if (stack_push_ptr(&context->m_emit_stack,&solve_user_defined) == -1 ||
+		stack_push_ptr(&context->m_emit_stack,pred) == -1 ||
+		stack_push_ptr(&context->m_emit_stack,goal) == -1)
 	{
 		return COMPILE_NOMEM;
 	}
