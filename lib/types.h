@@ -202,11 +202,6 @@ enum eCompileResult
 
 struct compile_context_t
 {
-	struct compile_flags_t
-	{
-		unsigned debug : 1;
-	} m_flags;
-
 	struct stack_t*  m_emit_stack;
 	struct substs_t* m_substs;
 };

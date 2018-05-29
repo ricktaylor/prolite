@@ -134,7 +134,6 @@ static enum eSolveResult compile_clause(struct clause_t* clause, struct context_
 
 	clause->m_entry_point = stack_top(clause->m_stack);
 
-	compile_context.m_flags.debug = 0;
 	compile_context.m_emit_stack = clause->m_stack;
 	compile_context.m_substs = clause->m_substs;
 

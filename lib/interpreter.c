@@ -694,7 +694,6 @@ static enum eSolveResult solve_compile(struct context_t* context, size_t frame)
 		return throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
 	}
 
-	compile_context.m_flags.debug = 0;
 	compile_context.m_emit_stack = context->m_call_stack;
 	compile_context.m_substs = context->m_substs;
 
@@ -744,12 +743,10 @@ enum eCompileResult compile_call(struct compile_context_t* context, const union 
 	enum eCompileResult result;
 	size_t frame;
 
-	while (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'c','a','l','l'))
+	while (get_debug_info(goal) && goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'c','a','l','l'))
 	{
 		// Optimize call(call(_)) -> call(_)
 		goal = deref_term(context->m_substs,first_arg(goal));
-		if (context->m_flags.debug)
-			break;
 	}
 
 	switch (UNBOX_TYPE(goal->m_u64val))
@@ -922,12 +919,10 @@ static enum eCompileResult compile_once(struct compile_context_t* context, const
 	if (stack_push_ptr(&context->m_emit_stack,&solve_once) == -1)
 		return COMPILE_NOMEM;
 
-	while (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'o','n','c','e'))
+	while (get_debug_info(goal) && goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'o','n','c','e'))
 	{
 		// Optimize once(once(_)) -> once(_)
 		goal = deref_term(context->m_substs,first_arg(goal));
-		if (context->m_flags.debug)
-			break;
 	}
 
 	result = compile_call(context,goal);
@@ -985,12 +980,12 @@ enum eCompileResult compile(struct compile_context_t* context, const union box_t
 {
 	enum eCompileResult result;
 	size_t frame = stack_top(context->m_emit_stack);
-	struct compile_flags_t old_flags = context->m_flags;
+	int debug = 0;
 
 	goal = deref_term(context->m_substs,goal);
 	if (get_debug_info(goal))
 	{
-		context->m_flags.debug = 1;
+		debug = 1;
 
 		// TODO: Emit tracepoint
 	}
@@ -1045,7 +1040,7 @@ enum eCompileResult compile(struct compile_context_t* context, const union box_t
 		break;
 	}
 
-	if (context->m_flags.debug)
+	if (debug)
 	{
 		if (result != COMPILE_OK)
 		{
@@ -1062,7 +1057,6 @@ enum eCompileResult compile(struct compile_context_t* context, const union box_t
 		}
 	}
 
-	context->m_flags = old_flags;
 	return result;
 }
 
@@ -1151,7 +1145,6 @@ enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s,
 			size_t frame = stack_top(context->m_call_stack);
 			struct compile_context_t compile_context;
 
-			compile_context.m_flags.debug = 0;
 			compile_context.m_emit_stack = context->m_call_stack;
 			compile_context.m_substs = context->m_substs;
 
