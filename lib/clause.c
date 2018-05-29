@@ -29,11 +29,11 @@ static void delete_clause(struct clause_t* clause)
 		stack_delete(clause->m_stack);
 }
 
-static int copy_term_part(struct stack_t** stack, union box_t const** v, union box_t** term, size_t* term_size)
+static int term_to_clause_part(struct clause_t* clause, struct context_t* context, union box_t const** v, union box_t** term, size_t* term_size)
 {
 	// TODO: Moving atoms between stacks?
 
-	*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+	*term = stack_realloc(&clause->m_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 	if (!*term)
 		return -1;
 
@@ -43,7 +43,7 @@ static int copy_term_part(struct stack_t** stack, union box_t const** v, union b
 	{
 		// TODO: Debug info
 
-		*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+		*term = stack_realloc(&clause->m_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 		if (!*term)
 			return -1;
 
@@ -53,7 +53,7 @@ static int copy_term_part(struct stack_t** stack, union box_t const** v, union b
 	return 0;
 }
 
-static int copy_term_i(struct context_t* context, struct stack_t** stack, union box_t const** v, union box_t** new_term, size_t* term_size)
+static int term_to_clause(struct clause_t* clause, struct context_t* context, union box_t const** v, union box_t** new_term, size_t* term_size)
 {
 	switch (UNBOX_TYPE((*v)->m_u64val))
 	{
@@ -68,16 +68,16 @@ static int copy_term_i(struct context_t* context, struct stack_t** stack, union 
 			else
 			{
 				// Copy functor atom
-				if (copy_term_part(stack,v,new_term,term_size))
+				if (term_to_clause_part(clause,context,v,new_term,term_size))
 					return -1;
 			}
 
-			if (copy_term_part(stack,v,new_term,term_size))
+			if (term_to_clause_part(clause,context,v,new_term,term_size))
 				return -1;
 
 			while (arity--)
 			{
-				if (copy_term_i(context,stack,v,new_term,term_size) != 0)
+				if (term_to_clause(clause,context,v,new_term,term_size) != 0)
 					return -1;
 			}
 		}
@@ -87,28 +87,18 @@ static int copy_term_i(struct context_t* context, struct stack_t** stack, union 
 		{
 			const union box_t* r = deref_term(context->m_substs,*v);
 			if (r == *v)
-				return copy_term_part(stack,v,new_term,term_size);
+				return term_to_clause_part(clause,context,v,new_term,term_size);
 
 			++(*v);
-			return copy_term_i(context,stack,&r,new_term,term_size);
+			return term_to_clause(clause,context,&r,new_term,term_size);
 		}
 		break;
 
 	default:
-		return copy_term_part(stack,v,new_term,term_size);
+		return term_to_clause_part(clause,context,v,new_term,term_size);
 	}
 
 	return 0;
-}
-
-static union box_t* copy_term(struct context_t* context, struct stack_t** stack, const union box_t* v)
-{
-	union box_t* ret = NULL;
-	size_t term_size = 0;
-	if (copy_term_i(context,stack,&v,&ret,&term_size) != 0)
-		ret = NULL;
-
-	return ret;
 }
 
 static enum eSolveResult compile_clause(struct clause_t* clause, struct context_t* context, const union box_t* goal)
@@ -116,27 +106,19 @@ static enum eSolveResult compile_clause(struct clause_t* clause, struct context_
 	enum eSolveResult result;
 	struct compile_context_t compile_context;
 
-	goal = copy_term(context,&clause->m_stack,goal);
-	if (!goal)
+	size_t term_size = 0;
+	if (term_to_clause(clause,context,&goal,(union box_t**)&clause->m_head,&term_size) != 0)
 		return SOLVE_NOMEM;
 
-	if (goal->m_u64val != BOX_COMPOUND_EMBED_2(2,':','-'))
-	{
-		clause->m_head = goal;
+	if (clause->m_head->m_u64val != BOX_COMPOUND_EMBED_2(2,':','-'))
 		return SOLVE_TRUE;
-	}
 
-	clause->m_head = first_arg(goal);
+	clause->m_head = first_arg(clause->m_head);
 	clause->m_body = next_arg(clause->m_head);
-
-	if (!clause->m_head || !clause->m_body)
-		return SOLVE_NOMEM;
-
 	clause->m_entry_point = stack_top(clause->m_stack);
 
 	compile_context.m_emit_stack = clause->m_stack;
 	compile_context.m_substs = clause->m_substs;
-
 	switch (compile(&compile_context,clause->m_body))
 	{
 	case COMPILE_OK:
