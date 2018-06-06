@@ -57,27 +57,24 @@ struct string_ptr_t
 	unsigned char        m_str[];
 };
 
+struct predicate_t;
+
 struct clause_t
 {
-	struct stack_t*    m_stack;
-
-	struct substs_t*   m_substs;
-	const union box_t* m_head;
-	const union box_t* m_body;
-
-	struct string_ptr_t* m_strings;
-
-	size_t           m_entry_point;
+	struct predicate_t*  m_pred;
+	struct clause_t*     m_next;
+	struct clause_t*     m_prev;
+	struct stack_t*      m_stack;
+	struct substs_t*     m_substs;
+	const union box_t*   m_head;
+	const union box_t*   m_body;
+	size_t               m_entry_point;
 };
+
+struct module_t;
 
 struct predicate_t
 {
-	struct stack_t*  m_stack;
-
-	size_t           m_name_len;
-	const char*      m_name;
-	uint64_t         m_arity;
-
 	struct predicate_flags_t
 	{
 		unsigned dynamic : 1;
@@ -86,8 +83,13 @@ struct predicate_t
 		unsigned public : 1;
 	} m_flags;
 
-	size_t           m_clause_count;
-	struct clause_t* m_clauses[];
+	struct module_t*     m_module;
+	struct stack_t*      m_stack;
+	const union box_t*   m_indicator;
+	struct string_ptr_t* m_strings;
+	struct clause_t*     m_first_clause;
+	struct clause_t*     m_last_clause;
+	struct clause_t*     m_free_clause;
 };
 
 struct predicate_table_t
@@ -119,8 +121,6 @@ struct operator_t
 
 struct module_t
 {
-	struct stack_t*    m_stack;
-
 	struct module_flags_t
 	{
 		unsigned char_conversion : 1;
@@ -131,6 +131,7 @@ struct module_t
 		unsigned colon_sets_calling_context : 1;
 	} m_flags;
 
+	struct stack_t*           m_stack;
 	struct operator_t*        m_operators;
 	struct predicate_table_t* m_predicates;
 };
@@ -141,7 +142,6 @@ struct context_t
 	struct stack_t*        m_call_stack;
 	const struct stack_t*  m_instr_stack;
 	struct substs_t*       m_substs;
-
 	struct string_ptr_t*   m_strings;
 	struct module_t*       m_module;
 };
@@ -149,6 +149,8 @@ struct context_t
 const union box_t* first_arg(const union box_t* v);
 const union box_t* next_arg(const union box_t* v);
 const union box_t* deref_term(struct substs_t* substs, const union box_t* v);
+union box_t* copy_term(struct substs_t* substs, struct stack_t** stack, struct string_ptr_t** strings, const union box_t* v);
+int copy_term_append(struct substs_t* substs, struct stack_t** stack, struct string_ptr_t** strings, union box_t const** v, union box_t** new_term, size_t* term_size);
 
 enum eSolveResult
 {
@@ -197,6 +199,7 @@ enum eCompileResult
 struct compile_context_t
 {
 	struct stack_t*  m_emit_stack;
+	struct module_t* m_module;
 	struct substs_t* m_substs;
 };
 

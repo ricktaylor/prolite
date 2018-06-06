@@ -2348,7 +2348,7 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 
 	if (status == EMIT_OK)
 	{
-		// TODO: Debug Info!!
+		// TODO: Debug info
 	}
 
 	return status;

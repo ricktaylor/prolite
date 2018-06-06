@@ -26,16 +26,6 @@ static struct line_info_t* get_debug_info(const union box_t* v)
 	return info;
 }
 
-static enum eSolveResult copy_strings_to_scratch(struct context_t* context, struct string_ptr_t** strings, const union box_t* src)
-{
-	assert(0);
-}
-
-static enum eSolveResult copy_term_to_scratch(struct context_t* context, const struct string_ptr_t* strings, union box_t** dst, size_t* term_size, const union box_t* src)
-{
-	assert(0);
-}
-
 static enum eSolveResult emit_error_line_info(struct context_t* context, struct line_info_t* info, union box_t** term, size_t* term_size)
 {
 	*term = stack_realloc(&context->m_scratch_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
@@ -56,49 +46,42 @@ static enum eSolveResult emit_error_line_info(struct context_t* context, struct 
 enum eSolveResult emit_error(struct context_t* context, struct line_info_t* info, uint64_t error_functor, unsigned int arity, ...)
 {
 	enum eSolveResult result = SOLVE_TRUE;
-	va_list args,args2;
+	va_list args;
 	unsigned int a;
+	union box_t** pball;
+	size_t term_size = 2;
 	struct string_ptr_t* strings = NULL;
 
 	stack_reset(&context->m_scratch_stack,0);
 	if (stack_push_ptr(&context->m_scratch_stack,NULL) == -1)
 		return SOLVE_NOMEM;
 
+	pball = (union box_t**)stack_at(context->m_scratch_stack,0);
+	*pball = stack_malloc(&context->m_scratch_stack,term_size * sizeof(union box_t));
+	if (!*pball)
+		result = SOLVE_NOMEM;
+	else
+	{
+		(*pball)[0].m_u64val = BOX_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+		(*pball)[1].m_u64val = error_functor;
+	}
+
 	va_start(args,arity);
-	va_copy(args2,args);
 
 	for (a = 0; result == SOLVE_TRUE && a < arity; ++a)
-		result = copy_strings_to_scratch(context,&strings,va_arg(args,union box_t*));
+	{
+		const union box_t* v = va_arg(args,union box_t*);
+		if (copy_term_append(context->m_substs,&context->m_scratch_stack,&strings,&v,pball,&term_size) != 0)
+			result = SOLVE_NOMEM;
+	}
 
-	// Do not directly emit variables!
-	assert(result != SOLVE_FAIL);
+	va_end(args);
 
 	if (result == SOLVE_TRUE)
-	{
-		union box_t** ball = (union box_t**)stack_at(context->m_call_stack,0);
-		size_t term_size = 0;
-
-		*ball = stack_realloc(&context->m_scratch_stack,NULL,0,2 * sizeof(union box_t));
-		if (!*ball)
-			result = SOLVE_NOMEM;
-		else
-		{
-			(*ball)[term_size++].m_u64val = BOX_COMPOUND_EMBED_5(2,'e','r','r','o','r');
-			(*ball)[term_size++].m_u64val = error_functor;
-		}
-
-		for (a = 0; result == SOLVE_TRUE && a < arity; ++a)
-			result = copy_term_to_scratch(context,strings,ball,&term_size,va_arg(args2,union box_t*));
-
-		if (result == SOLVE_TRUE)
-			result = emit_error_line_info(context,info,ball,&term_size);
-	}
+		result = emit_error_line_info(context,info,pball,&term_size);
 
 	if (result == SOLVE_TRUE)
 		result = SOLVE_THROW;
-
-	va_end(args);
-	va_end(args2);
 
 	return result;
 }
@@ -153,9 +136,10 @@ enum eSolveResult throw_evaluation_error(struct context_t* context, uint64_t err
 
 enum eSolveResult solve_throw(struct context_t* context, size_t frame)
 {
-	enum eSolveResult result;
+	enum eSolveResult result = SOLVE_THROW;
 	const union box_t* ball = *(const union box_t**)stack_at(context->m_instr_stack,frame);
 	struct string_ptr_t* strings = NULL;
+	union box_t** scratch_ball;
 
 	ball = deref_term(context->m_substs,first_arg(ball));
 
@@ -163,19 +147,10 @@ enum eSolveResult solve_throw(struct context_t* context, size_t frame)
 	if (stack_push_ptr(&context->m_scratch_stack,NULL) == -1)
 		return SOLVE_NOMEM;
 
-	result = copy_strings_to_scratch(context,&strings,ball);
-	if (result == SOLVE_FAIL)
-		return throw_instantiation_error(context,ball);
-
-	if (result == SOLVE_TRUE)
-	{
-		union box_t** scratch_ball = (union box_t**)stack_at(context->m_call_stack,0);
-		size_t term_size = 0;
-
-		result = copy_term_to_scratch(context,strings,scratch_ball,&term_size,ball);
-		if (result == SOLVE_TRUE)
-			result = SOLVE_THROW;
-	}
+	scratch_ball = (union box_t**)stack_at(context->m_scratch_stack,0);
+	*scratch_ball = copy_term(context->m_substs,&context->m_scratch_stack,&strings,ball);
+	if (!*scratch_ball)
+		result = SOLVE_NOMEM;
 
 	return result;
 }

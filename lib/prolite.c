@@ -15,6 +15,9 @@ struct text_stream_t
 	const char*  m_end;
 };
 
+struct module_t* module_new(struct context_t* context, const char* name);
+void module_delete(struct module_t* module);
+
 enum eSolveResult context_init(struct context_t* context);
 enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, const char*** varnames);
 enum eSolveResult context_solve(struct context_t* context);
@@ -31,35 +34,6 @@ static int64_t text_stream_read(struct stream_t* s, void* dest, size_t len)
 	memcpy(dest,*ts->m_str,r);
 	*ts->m_str += r;
 	return r;
-}
-
-static struct module_t* module_new(struct context_t* context, const char* name)
-{
-	// TODO: Much more here!!
-
-	struct module_t* module = NULL;
-	struct stack_t* s = stack_new(8000,&malloc,&free);
-	if (s)
-	{
-		module = stack_malloc(&s,sizeof(struct module_t));
-		if (module)
-		{
-			memset(module,0,sizeof(struct module_t));
-			module->m_flags.char_conversion = 1;
-			module->m_flags.back_quotes = 1;
-			module->m_stack = s;
-		}
-
-		if (!module)
-			stack_delete(s);
-	}
-
-	return module;
-}
-
-static void module_delete(struct module_t* module)
-{
-	// TODO
 }
 
 struct query_t

@@ -92,5 +92,6 @@
 uint32_t is_builtin_string(const unsigned char* str, size_t len);
 struct string_ptr_t* box_stack_string(struct stack_t** stack, struct string_ptr_t** strings, const unsigned char* str, size_t len);
 uint64_t box_pointer(void* ptr);
+void* unbox_pointer(uint64_t v);
 
 #endif /* BOX_TYPES_H_ */

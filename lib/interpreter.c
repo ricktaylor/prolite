@@ -696,6 +696,7 @@ static enum eSolveResult solve_compile(struct context_t* context, size_t frame)
 
 	compile_context.m_emit_stack = context->m_call_stack;
 	compile_context.m_substs = context->m_substs;
+	compile_context.m_module = context->m_module;
 
 	stack_base = stack_top(context->m_call_stack);
 	switch (compile(&compile_context,goal))
@@ -1148,6 +1149,7 @@ enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s,
 
 		compile_context.m_emit_stack = context->m_call_stack;
 		compile_context.m_substs = context->m_substs;
+		compile_context.m_module = context->m_module;
 
 		switch (compile(&compile_context,goal))
 		{
