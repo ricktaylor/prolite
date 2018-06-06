@@ -2276,13 +2276,11 @@ static enum eEmitStatus emit_compound(struct context_t* context, struct ast_node
 	}
 	else if (node->m_arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(node->m_str,node->m_str_len)) != -1)
 	{
-		// Convert builtin atom to builtin compound
-
 		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 		if (!*term)
 			status = EMIT_NOMEM;
 		else
-			(*term)[(*term_size)++].m_u64val = BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | node->m_arity) | UNBOX_LOW32(builtin);
+			(*term)[(*term_size)++].m_u64val = BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | node->m_arity) | BOX_LOW32(builtin);
 	}
 	else
 	{
