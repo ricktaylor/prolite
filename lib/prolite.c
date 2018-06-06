@@ -16,7 +16,7 @@ struct text_stream_t
 };
 
 enum eSolveResult context_init(struct context_t* context);
-enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, union box_t*** varnames);
+enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, const char*** varnames);
 enum eSolveResult context_solve(struct context_t* context);
 enum eSolveResult context_reset(struct context_t* context);
 const char* unpack_exception(struct context_t* context);
