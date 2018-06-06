@@ -201,7 +201,7 @@ static enum eSolveResult catch(struct context_t* context, enum eSolveResult resu
 		{
 			const union box_t* ball = *(const union box_t**)stack_at(context->m_scratch_stack,0);
 
-			result = unify(context,catcher,ball,0);
+			result = unify(context->m_substs,catcher,ball);
 			if (result == SOLVE_FAIL)
 				result = SOLVE_THROW;
 			else if (result == SOLVE_TRUE)

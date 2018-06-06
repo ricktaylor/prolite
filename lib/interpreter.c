@@ -101,38 +101,16 @@ inline const union box_t* deref_term(struct substs_t* substs, const union box_t*
 	return t;
 }
 
-enum eSolveResult unify(struct context_t* context, const union box_t* a, const union box_t* b, int sto)
+enum eSolveResult unify(struct substs_t* substs, const union box_t* a, const union box_t* b)
 {
-	a = deref_term(context->m_substs,a);
-	b = deref_term(context->m_substs,b);
-	if (a != b)
+	enum eSolveResult result = SOLVE_FAIL;
+
+	a = deref_term(substs,a);
+	b = deref_term(substs,b);
+
+	if (a == b)
 	{
-		enum tag_type_t t_a = UNBOX_TYPE(a->m_u64val);
-		enum tag_type_t t_b = UNBOX_TYPE(b->m_u64val);
-		if (t_a == prolite_var)
-		{
-			uint64_t var_idx = UNBOX_MANT_48(a->m_u64val);
-			assert(context->m_substs && var_idx < context->m_substs->m_count);
-
-			assert(!sto);
-
-			context->m_substs->m_values[var_idx] = b;
-		}
-		else if (t_b == prolite_var)
-		{
-			uint64_t var_idx = UNBOX_MANT_48(b->m_u64val);
-			assert(context->m_substs && var_idx < context->m_substs->m_count);
-
-			assert(!sto);
-
-			context->m_substs->m_values[var_idx] = a;
-		}
-		else if (a->m_u64val != b->m_u64val)
-		{
-			// TODO: char_codes and compounds?
-			return SOLVE_FAIL;
-		}
-		else if (t_a == prolite_compound)
+		if (UNBOX_TYPE(a->m_u64val) == prolite_compound)
 		{
 			uint64_t arity;
 			uint64_t all48 = UNBOX_MANT_48(a->m_u64val);
@@ -155,7 +133,7 @@ enum eSolveResult unify(struct context_t* context, const union box_t* a, const u
 			b = first_arg(b);
 			while (arity--)
 			{
-				enum eSolveResult result = unify(context,a,b,sto);
+				result = unify(substs,a,b);
 				if (result != SOLVE_TRUE)
 					return result;
 
@@ -163,9 +141,27 @@ enum eSolveResult unify(struct context_t* context, const union box_t* a, const u
 				b = next_arg(b);
 			}
 		}
+
+		result = SOLVE_TRUE;
+	}
+	else if (UNBOX_TYPE(a->m_u64val) == prolite_var)
+	{
+		uint64_t var_idx = UNBOX_MANT_48(a->m_u64val);
+		assert(substs && var_idx < substs->m_count);
+
+		substs->m_values[var_idx] = b;
+		result = SOLVE_TRUE;
+	}
+	else if (UNBOX_TYPE(b->m_u64val) == prolite_var)
+	{
+		uint64_t var_idx = UNBOX_MANT_48(b->m_u64val);
+		assert(substs && var_idx < substs->m_count);
+
+		substs->m_values[var_idx] = a;
+		result = SOLVE_TRUE;
 	}
 
-	return SOLVE_TRUE;
+	return result;
 }
 
 enum eSolveResult redo_true(struct context_t* context, int unwind)
@@ -810,7 +806,7 @@ static enum eSolveResult solve_unify(struct context_t* context, size_t frame)
 		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
 	}
 
-	result = unify(context,goal,next_arg(goal),0);
+	result = unify(context->m_substs,goal,next_arg(goal));
 	if (result == SOLVE_TRUE)
 	{
 		if ((prev_substs && stack_push(&context->m_call_stack,stack_base) == -1) ||
@@ -848,7 +844,7 @@ static enum eSolveResult solve_not_unifiable(struct context_t* context, size_t f
 		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
 	}
 
-	result = unify(context,goal,next_arg(goal),0);
+	result = unify(context->m_substs,goal,next_arg(goal));
 	if (result == SOLVE_TRUE)
 		result = SOLVE_FAIL;
 	else if (result == SOLVE_FAIL)

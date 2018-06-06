@@ -175,7 +175,7 @@ static inline enum eSolveResult redo(struct context_t* context, int unwind)
 	return (*(redo_fn_t)stack_pop_ptr(&context->m_call_stack))(context,unwind);
 }
 
-enum eSolveResult unify(struct context_t* context, const union box_t* a, const union box_t* b, int sto);
+enum eSolveResult unify(struct substs_t* substs, const union box_t* a, const union box_t* b);
 
 enum eSolveResult redo_true(struct context_t* context, int unwind);
 
