@@ -16,7 +16,7 @@ struct text_stream_t
 };
 
 enum eSolveResult context_init(struct context_t* context);
-enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, struct var_info_t** varinfo);
+enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, union box_t*** varnames);
 enum eSolveResult context_solve(struct context_t* context);
 enum eSolveResult context_reset(struct context_t* context);
 const char* unpack_exception(struct context_t* context);
@@ -65,7 +65,8 @@ static void module_delete(struct module_t* module)
 struct query_t
 {
 	struct context_t   m_context;
-	struct var_info_t* m_varinfo;
+	const char**       m_varnames;
+	size_t             m_varcount;
 	const char*        m_error_text;
 };
 
@@ -126,10 +127,11 @@ prolite_query_t prolite_new_query(prolite_env_t env)
 
 enum eProliteResult prolite_prepare(prolite_query_t query, const char* query_text, size_t query_len, const char** tail)
 {
-	enum eProliteResult result = PROLITE_FAIL;
-	struct query_t* q = (struct query_t*)query;
-	if (q)
+	enum eProliteResult result = prolite_reset(query);
+	if (result == PROLITE_TRUE)
 	{
+		struct query_t* q = (struct query_t*)query;
+
 		struct text_stream_t ts = {0};
 		ts.m_proto.m_fn_read = &text_stream_read;
 		ts.m_str = &query_text;
@@ -138,12 +140,10 @@ enum eProliteResult prolite_prepare(prolite_query_t query, const char* query_tex
 			*tail = query_text;
 
 		// Read a term and prepare it for execution
-		switch (context_prepare(&q->m_context,&ts.m_proto,&q->m_varinfo))
+		switch (context_prepare(&q->m_context,&ts.m_proto,&q->m_varnames))
 		{
 		case SOLVE_TRUE:
-
-			// TODO: Do something with varinfo!
-
+			q->m_varcount = q->m_context.m_substs->m_count;
 			result = PROLITE_TRUE;
 			break;
 

@@ -89,4 +89,8 @@
 
 #define UNBOX_IS_TYPE_BUILTIN(v,type) (UNBOX_TYPE(v) == (type) && (UNBOX_HI16(v) & 0xC000) == 0x4000)
 
+uint32_t is_builtin_string(const unsigned char* str, size_t len);
+struct string_ptr_t* box_stack_string(struct stack_t** stack, struct string_ptr_t** strings, const unsigned char* str, size_t len);
+uint64_t box_pointer(void* ptr);
+
 #endif /* BOX_TYPES_H_ */

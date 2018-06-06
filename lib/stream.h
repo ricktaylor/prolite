@@ -21,6 +21,4 @@ static inline int64_t stream_read(struct stream_t* s, void* dest, size_t len)
 	return (s && s->m_fn_read ? (*s->m_fn_read)(s,dest,len) : -1);
 }
 
-enum eSolveResult read_term(struct context_t* context, struct stream_t* s, union box_t** term, struct var_info_t** varinfo);
-
 #endif /* STREAM_H_INCLUDED_ */

@@ -146,12 +146,6 @@ struct context_t
 	struct module_t*       m_module;
 };
 
-struct var_info_t
-{
-	uint64_t    m_use_count;
-	union box_t m_name;
-};
-
 const union box_t* first_arg(const union box_t* v);
 const union box_t* next_arg(const union box_t* v);
 const union box_t* deref_term(struct substs_t* substs, const union box_t* v);

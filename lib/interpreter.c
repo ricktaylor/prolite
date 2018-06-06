@@ -743,11 +743,12 @@ enum eCompileResult compile_call(struct compile_context_t* context, const union 
 	enum eCompileResult result;
 	size_t frame;
 
-	while (get_debug_info(goal) && goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'c','a','l','l'))
+	do
 	{
-		// Optimize call(call(_)) -> call(_)
 		goal = deref_term(context->m_substs,first_arg(goal));
-	}
+
+	} // Optimize call(call(_)) -> call(_)
+	while (!get_debug_info(goal) && goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'c','a','l','l'));
 
 	switch (UNBOX_TYPE(goal->m_u64val))
 	{
@@ -919,11 +920,12 @@ static enum eCompileResult compile_once(struct compile_context_t* context, const
 	if (stack_push_ptr(&context->m_emit_stack,&solve_once) == -1)
 		return COMPILE_NOMEM;
 
-	while (get_debug_info(goal) && goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'o','n','c','e'))
+	do
 	{
-		// Optimize once(once(_)) -> once(_)
 		goal = deref_term(context->m_substs,first_arg(goal));
-	}
+
+	}  // Optimize once(once(_)) -> once(_)
+	while (!get_debug_info(goal) && goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'o','n','c','e'));
 
 	result = compile_call(context,goal);
 	if (result == COMPILE_ALWAYS_TRUE || result == COMPILE_ALWAYS_FAILS)
@@ -1132,65 +1134,66 @@ static enum eSolveResult start_fail(struct context_t* context, int unwind)
 	return unwind ? SOLVE_UNWIND : SOLVE_FAIL;
 }
 
-enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, struct var_info_t** varinfo)
+enum eSolveResult prepare_term(struct context_t* context, struct stream_t* s, union box_t** term, const char*** varnames);
+
+enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, const char*** varnames)
 {
-	enum eSolveResult result = context_reset(context);
+	size_t term_base = stack_top(context->m_call_stack);
+	union box_t* goal = NULL;
+	enum eSolveResult result = prepare_term(context,s,&goal,varnames);
 	if (result == SOLVE_TRUE)
 	{
-		size_t term_base = stack_top(context->m_call_stack);
-		union box_t* goal = NULL;
-		result = read_term(context,s,&goal,varinfo);
-		if (result == SOLVE_TRUE)
+		size_t frame = stack_top(context->m_call_stack);
+		struct compile_context_t compile_context;
+
+		compile_context.m_emit_stack = context->m_call_stack;
+		compile_context.m_substs = context->m_substs;
+
+		switch (compile(&compile_context,goal))
 		{
-			size_t frame = stack_top(context->m_call_stack);
-			struct compile_context_t compile_context;
-
-			compile_context.m_emit_stack = context->m_call_stack;
-			compile_context.m_substs = context->m_substs;
-
-			switch (compile(&compile_context,goal))
-			{
-			case COMPILE_OK:
-				if (stack_push(&context->m_call_stack,frame) == -1 ||
-					stack_push_ptr(&context->m_call_stack,&start) == -1)
-				{
-					result = SOLVE_NOMEM;
-				}
-				else
-					result = SOLVE_TRUE;
-				break;
-
-			case COMPILE_NOT_CALLABLE:
-				printf("type_error(callable(G)).\n");
-
-				result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
-				break;
-
-			case COMPILE_ALWAYS_TRUE:
-				result = stack_push_ptr(&context->m_call_stack,&start_true) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
-				break;
-
-			case COMPILE_ALWAYS_FAILS:
-				result = stack_push_ptr(&context->m_call_stack,&start_fail) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
-				break;
-
-			case COMPILE_NOMEM:
-				result = SOLVE_NOMEM;
-				break;
-			}
-		}
-
-		if (result == SOLVE_TRUE)
-		{
-			if (stack_push(&context->m_call_stack,term_base) == -1 ||
-				stack_push_ptr(&context->m_call_stack,&redo_prepare) == -1)
+		case COMPILE_OK:
+			if (stack_push(&context->m_call_stack,frame) == -1 ||
+				stack_push_ptr(&context->m_call_stack,&start) == -1)
 			{
 				result = SOLVE_NOMEM;
 			}
-		}
+			else
+				result = SOLVE_TRUE;
+			break;
 
-		if (result != SOLVE_TRUE)
-			stack_reset(&context->m_call_stack,term_base);
+		case COMPILE_NOT_CALLABLE:
+			printf("type_error(callable(G)).\n");
+
+			result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
+			break;
+
+		case COMPILE_ALWAYS_TRUE:
+			result = stack_push_ptr(&context->m_call_stack,&start_true) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
+			break;
+
+		case COMPILE_ALWAYS_FAILS:
+			result = stack_push_ptr(&context->m_call_stack,&start_fail) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
+			break;
+
+		case COMPILE_NOMEM:
+			result = SOLVE_NOMEM;
+			break;
+		}
+	}
+
+	if (result == SOLVE_TRUE)
+	{
+		if (stack_push(&context->m_call_stack,term_base) == -1 ||
+			stack_push_ptr(&context->m_call_stack,&redo_prepare) == -1)
+		{
+			result = SOLVE_NOMEM;
+		}
+	}
+
+	if (result != SOLVE_TRUE)
+	{
+		// TODO: Reset strings etc...
+		stack_reset(&context->m_call_stack,term_base);
 	}
 
 	return result;
