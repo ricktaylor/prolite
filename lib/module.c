@@ -13,6 +13,7 @@ struct predicate_t* new_predicate(struct module_t* module, const union box_t* he
 	struct stack_t* s = stack_new(100,module->m_stack->m_fn_malloc,module->m_stack->m_fn_free);
 	if (s)
 	{
+		int ok = 0;
 		pred = stack_malloc(&s,sizeof(struct predicate_t));
 		if (pred)
 		{
@@ -21,14 +22,15 @@ struct predicate_t* new_predicate(struct module_t* module, const union box_t* he
 			pred->m_module = module;
 
 			pred->m_indicator = copy_term(NULL,&pred->m_stack,&pred->m_strings,head);
-			if (!pred->m_indicator)
-			{
-				stack_delete(s);
-				return NULL;
-			}
+			if (pred->m_indicator)
+				ok = 1;
 		}
-		else
+
+		if (!ok)
+		{
 			stack_delete(s);
+			pred = NULL;
+		}
 	}
 
 	return pred;

@@ -218,45 +218,32 @@ static enum eSolveResult solve_compiled_clause(struct context_t* context, size_t
 
 static enum eSolveResult solve_user_defined(struct context_t* context, size_t frame)
 {
-	const struct predicate_t* pred = *(const struct predicate_t**)stack_at(context->m_instr_stack,frame);
+	enum eSolveResult result = SOLVE_FAIL;
+	struct predicate_t** pred = (struct predicate_t**)stack_at(context->m_instr_stack,frame);
 	const union box_t* goal = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame+1));
 
-	if (!pred)
-		pred = find_predicate(context->m_module,goal);
+	if (!*pred)
+		*pred = find_predicate(context->m_module,goal);
 
-	if (pred && pred->m_first_clause)
+	if (*pred && (*pred)->m_first_clause)
 	{
-		/* Emit all the current clauses now, to give us a 'logical database' */
-		struct clause_t* c;
-		for (c = pred->m_first_clause; c != NULL; c = c->m_next)
+		// Solve first_clause
+
+		if (result == SOLVE_TRUE)
 		{
-			// TODO: Jmp to the instructions
+			// Push a redo for all clauses onto the stack
 		}
 	}
 	else if (context->m_module->m_flags.unknown == 0)
-		return throw_existence_error(context,BOX_ATOM_BUILTIN(procedure),goal);
+		result = throw_existence_error(context,BOX_ATOM_BUILTIN(procedure),goal);
 
-	return SOLVE_FAIL;
+	return result;
 }
 
 enum eCompileResult compile_user_defined(struct compile_context_t* context, const union box_t* goal)
 {
 	const struct predicate_t* pred = find_predicate(context->m_module,goal);
-	if (pred && !pred->m_flags.dynamic)
-	{
-		struct clause_t* c;
-		for (c = pred->m_first_clause; c != NULL; c = c->m_next)
-		{
-			// TODO: Push substs
-
-			// Unify
-
-			// Jmp to the instructions
-
-			// Undo unify on fail
-		}
-	}
-	else if (stack_push_ptr(&context->m_emit_stack,&solve_user_defined) == -1 ||
+	if (stack_push_ptr(&context->m_emit_stack,&solve_user_defined) == -1 ||
 		stack_push_ptr(&context->m_emit_stack,pred) == -1 ||
 		stack_push_ptr(&context->m_emit_stack,goal) == -1)
 	{
