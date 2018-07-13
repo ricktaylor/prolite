@@ -81,6 +81,8 @@ struct predicate_t
 		unsigned multifile : 1;
 		unsigned discontiguous : 1;
 		unsigned public : 1;
+
+		unsigned compiled : 1;
 	} m_flags;
 
 	struct module_t*     m_module;
@@ -163,9 +165,10 @@ enum eSolveResult
 	SOLVE_UNWIND = -5
 };
 
+typedef enum eSolveResult (*solve_fn_t)(struct context_t*,size_t);
+
 static inline enum eSolveResult solve(struct context_t* context, size_t frame)
 {
-	typedef enum eSolveResult (*solve_fn_t)(struct context_t*,size_t);
 	return (**(const solve_fn_t*)stack_at(context->m_instr_stack,frame))(context,frame+1);
 }
 
