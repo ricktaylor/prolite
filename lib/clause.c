@@ -8,8 +8,9 @@ struct predicate_t* find_predicate(struct module_t* module, const union box_t* h
 struct predicate_t* new_predicate(struct module_t* module, const union box_t* head, int dynamic);
 void delete_predicate(struct predicate_t* predicate);
 int add_predicate(struct module_t* module, struct predicate_t* pred);
-void predicate_lock(struct predicate_t* predicate);
-void predicate_unlock(struct predicate_t* predicate);
+
+void predicate_lock(struct predicate_t* predicate) { /* TODO */ }
+void predicate_unlock(struct predicate_t* predicate) { /* TODO */ }
 
 static struct clause_t* new_clause(struct context_t* context)
 {
@@ -110,15 +111,11 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 
 	pred = find_predicate(context->m_module,head);
 	if (pred)
-		predicate_lock(pred);
-
-	if (pred && dynamic && !pred->m_flags.dynamic)
 	{
-		predicate_unlock(pred);
-		return throw_permission_error(context,BOX_ATOM_BUILTIN(modify),BOX_ATOM_BUILTIN(static_procedure),pred->m_indicator);
+		if (dynamic && !pred->m_flags.dynamic)
+			return throw_permission_error(context,BOX_ATOM_BUILTIN(modify),BOX_ATOM_BUILTIN(static_procedure),pred->m_indicator);
 	}
-
-	if (!pred)
+	else
 	{
 		pred = new_predicate(context->m_module,head,dynamic);
 		if (!pred)
@@ -135,6 +132,9 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 
 	if (result == SOLVE_TRUE)
 	{
+		if (!new_pred)
+			predicate_lock(pred);
+
 		// Add clause to predicate
 		if (!z)
 		{
@@ -155,7 +155,9 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 				pred->m_first_clause = clause;
 		}
 
-		if (new_pred && add_predicate(context->m_module,pred) != 0)
+		if (!new_pred)
+			predicate_unlock(pred);
+		else if (add_predicate(context->m_module,pred) != 0)
 			result = SOLVE_NOMEM;
 	}
 
@@ -163,14 +165,8 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 	{
 		delete_clause(clause);
 		if (new_pred)
-		{
 			delete_predicate(pred);
-			pred = NULL;
-		}
 	}
-
-	if (pred)
-		predicate_unlock(pred);
 
 	return result;
 }
@@ -247,36 +243,28 @@ static enum eSolveResult solve_compile_predicate(struct context_t* context, size
 	struct predicate_t* pred = *(struct predicate_t**)stack_at(context->m_instr_stack,frame);
 	//const union box_t* goal = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame+1));
 
-	predicate_lock(pred);
-
-	if (!pred->m_flags.compiled)
+	// Compile the predicate!!
+	struct clause_t* c = pred->m_last_clause;
+	do
 	{
-		struct clause_t* c = pred->m_last_clause;
-		do
-		{
-			// Push a JMP for c
+		// Push a JMP for c
 
 
 
 
-			if (c == pred->m_first_clause)
-				break;
+		if (c == pred->m_first_clause)
+			break;
 
-			c = c->m_prev;
-		}
-		while (result == SOLVE_TRUE);
-
-		if (result == SOLVE_TRUE)
-			pred->m_flags.compiled = 1;
+		c = c->m_prev;
 	}
-
-	predicate_unlock(pred);
+	while (result == SOLVE_TRUE);
 
 	if (result == SOLVE_TRUE)
 	{
 		// Patch the call to point to the compiled static function
 		solve_fn_t* fn = (solve_fn_t*)stack_at(context->m_instr_stack,frame-1);
 		*fn = &solve_static_predicate;
+
 		result = (*fn)(context,frame);
 	}
 
@@ -292,23 +280,13 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 	if (!*pred)
 		*pred = find_predicate(context->m_module,goal);
 
-	if (*pred)
-		predicate_lock(*pred);
-
 	if (*pred && (*pred)->m_first_clause)
 	{
 		if (!(*pred)->m_flags.dynamic)
-		{
-			// Patch the call to point to the JIT compile function
-			solve_fn_t* fn = (solve_fn_t*)stack_at(context->m_instr_stack,frame-1);
-			*fn = &solve_compile_predicate;
-
-			predicate_unlock(*pred);
-
-			return (*fn)(context,frame);
-		}
+			return solve_compile_predicate(context,frame);
 		else
 		{
+			// Solve each clause in turn
 			struct clause_t* c = (*pred)->m_last_clause;
 			do
 			{
@@ -330,19 +308,13 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 	else
 		result = SOLVE_FAIL;
 
-	if (*pred)
-		predicate_unlock(*pred);
-
 	return result;
 }
 
 enum eCompileResult compile_user_defined(struct compile_context_t* context, const union box_t* goal)
 {
 	enum eCompileResult result = COMPILE_OK;
-	const struct predicate_t* pred = find_predicate(context->m_module,goal);
-
-	if (pred)
-		predicate_lock(pred);
+	struct predicate_t* pred = find_predicate(context->m_module,goal);
 
 	if (pred && !pred->m_flags.dynamic && pred->m_first_clause)
 	{
@@ -352,8 +324,6 @@ enum eCompileResult compile_user_defined(struct compile_context_t* context, cons
 	}
 	else if (stack_push_ptr(&context->m_emit_stack,&solve_user_defined) == -1)
 		result = COMPILE_NOMEM;
-
-	predicate_unlock(pred);
 
 	if (result == COMPILE_OK)
 	{

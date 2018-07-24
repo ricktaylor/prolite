@@ -82,7 +82,6 @@ struct predicate_t
 		unsigned discontiguous : 1;
 		unsigned public : 1;
 
-		unsigned compiled : 1;
 	} m_flags;
 
 	struct module_t*     m_module;
