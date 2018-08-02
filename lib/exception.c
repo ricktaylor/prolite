@@ -43,6 +43,101 @@ static enum eSolveResult emit_error_line_info(struct context_t* context, struct 
 	return SOLVE_TRUE;
 }
 
+static inline int append_box_t(struct stack_t** stack, union box_t const** v, union box_t** term, size_t* term_size)
+{
+	*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+	if (!*term)
+		return -1;
+
+	(*term)[(*term_size)++] = *((*v)++);
+	return 0;
+}
+
+static int copy_term(struct context_t* context, struct string_ptr_t** strings, union box_t const** v, union box_t** new_term, size_t* term_size)
+{
+	int r = 0;
+	enum tag_type_t type = UNBOX_TYPE((*v)->m_u64val);
+	switch (type)
+	{
+	case prolite_compound:
+		{
+			uint64_t arity = UNBOX_MANT_48((*v)->m_u64val);
+			unsigned int hi16 = (arity >> 32);
+			if (hi16 & 0x8000)
+				arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
+			else if ((hi16 & 0xC000) == 0x4000)
+				arity = (hi16 & MAX_ARITY_BUILTIN);
+			else
+			{
+				// Copy functor atom
+				if (append_box_t(&context->m_scratch_stack,v,new_term,term_size))
+					return -1;
+			}
+
+			if (append_box_t(&context->m_scratch_stack,v,new_term,term_size))
+				return -1;
+
+			if (!r && UNBOX_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
+			{
+				// TODO: Debug info
+			}
+
+			while (arity--)
+			{
+				if (copy_term(context,strings,v,new_term,term_size) != 0)
+					return -1;
+			}
+		}
+		break;
+
+	case prolite_var:
+		{
+			const union box_t* ptr = deref_term(context->m_substs,*v);
+			if (ptr == *v)
+			{
+				// TODO: Make this a better error!
+				assert(0);
+
+				return -2;
+			}
+
+			return copy_term(context,strings,&ptr,new_term,term_size);
+		}
+		break;
+
+	case prolite_atom:
+	case prolite_chars:
+	case prolite_charcodes:
+		{
+			unsigned int hi16 = UNBOX_HI16((*v)->m_u64val);
+			if (hi16 & 0xC000)
+				r = append_box_t(&context->m_scratch_stack,v,new_term,term_size);
+			else
+			{
+				union box_t b[1];
+				struct string_ptr_t* s = unbox_pointer((*v)->m_u64val);
+				s = box_stack_string(&context->m_scratch_stack,strings,s->m_str,s->m_len);
+				if (!s)
+					return -1;
+
+				b[0].m_u64val = BOX_TYPE(type) | box_pointer(s);
+				r = append_box_t(&context->m_scratch_stack,(const union box_t**)&b,new_term,term_size);
+			}
+		}
+		break;
+
+	default:
+		r = append_box_t(&context->m_scratch_stack,v,new_term,term_size);
+	}
+
+	if (!r && UNBOX_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
+	{
+		// TODO: Debug info
+	}
+
+	return r;
+}
+
 enum eSolveResult emit_error(struct context_t* context, struct line_info_t* info, uint64_t error_functor, unsigned int arity, ...)
 {
 	enum eSolveResult result = SOLVE_TRUE;
@@ -71,7 +166,7 @@ enum eSolveResult emit_error(struct context_t* context, struct line_info_t* info
 	for (a = 0; result == SOLVE_TRUE && a < arity; ++a)
 	{
 		const union box_t* v = va_arg(args,union box_t*);
-		if (copy_term_append(context->m_substs,&context->m_scratch_stack,&strings,&v,pball,&term_size) != 0)
+		if (copy_term(context,&strings,&v,pball,&term_size) != 0)
 			result = SOLVE_NOMEM;
 	}
 
@@ -137,20 +232,24 @@ enum eSolveResult throw_evaluation_error(struct context_t* context, uint64_t err
 enum eSolveResult solve_throw(struct context_t* context, size_t frame)
 {
 	enum eSolveResult result = SOLVE_THROW;
-	const union box_t* ball = *(const union box_t**)stack_at(context->m_instr_stack,frame);
-	struct string_ptr_t* strings = NULL;
-	union box_t** scratch_ball;
 
+	const union box_t* ball = *(const union box_t**)stack_at(context->m_instr_stack,frame);
 	ball = deref_term(context->m_substs,first_arg(ball));
+
+	// TODO: Check for uninstantiated variables in ball!
 
 	stack_reset(&context->m_scratch_stack,0);
 	if (stack_push_ptr(&context->m_scratch_stack,NULL) == -1)
-		return SOLVE_NOMEM;
-
-	scratch_ball = (union box_t**)stack_at(context->m_scratch_stack,0);
-	*scratch_ball = copy_term(context->m_substs,&context->m_scratch_stack,&strings,ball);
-	if (!*scratch_ball)
 		result = SOLVE_NOMEM;
+	else
+	{
+		struct string_ptr_t* strings = NULL;
+		size_t term_size = 0;
+		union box_t** scratch_ball = (union box_t**)stack_at(context->m_scratch_stack,0);
+
+		if (copy_term(context,&strings,&ball,scratch_ball,&term_size) != 0)
+			result = SOLVE_NOMEM;
+	}
 
 	return result;
 }
