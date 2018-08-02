@@ -5,49 +5,6 @@
 #include <string.h>
 #include <assert.h>
 
-void delete_clause(struct clause_t* clause);
-
-struct predicate_t* new_predicate(struct module_t* module, const union box_t* head, int dynamic)
-{
-	struct predicate_t* pred = NULL;
-	struct stack_t* s = stack_new(100,module->m_stack->m_fn_malloc,module->m_stack->m_fn_free);
-	if (s)
-	{
-		int ok = 0;
-		pred = stack_malloc(&s,sizeof(struct predicate_t));
-		if (pred)
-		{
-			memset(pred,0,sizeof(struct predicate_t));
-			pred->m_stack = s;
-			pred->m_module = module;
-
-			pred->m_indicator = copy_term(NULL,&pred->m_stack,&pred->m_strings,head);
-			if (pred->m_indicator)
-				ok = 1;
-		}
-
-		if (!ok)
-		{
-			stack_delete(s);
-			pred = NULL;
-		}
-	}
-
-	return pred;
-}
-
-void delete_predicate(struct predicate_t* predicate)
-{
-	if (predicate)
-	{
-		struct clause_t* c;
-		for (c = predicate->m_first_clause; c != NULL; c = c->m_next)
-			delete_clause(c);
-
-		stack_delete(predicate->m_stack);
-	}
-}
-
 struct predicate_t* find_predicate(struct module_t* module, const union box_t* head)
 {
 	struct predicate_t* pred = NULL;
