@@ -65,7 +65,7 @@ struct clause_t
 	struct clause_t*     m_next;
 	struct clause_t*     m_prev;
 	struct stack_t*      m_stack;
-	struct substs_t*     m_substs;
+	size_t               m_var_count;
 	const union box_t*   m_head;
 	const union box_t*   m_body;
 	size_t               m_entry_point;
@@ -150,8 +150,6 @@ struct context_t
 const union box_t* first_arg(const union box_t* v);
 const union box_t* next_arg(const union box_t* v);
 const union box_t* deref_term(struct substs_t* substs, const union box_t* v);
-union box_t* copy_term(struct substs_t* substs, struct stack_t** stack, struct string_ptr_t** strings, const union box_t* v);
-int copy_term_append(struct substs_t* substs, struct stack_t** stack, struct string_ptr_t** strings, union box_t const** v, union box_t** new_term, size_t* term_size);
 
 enum eSolveResult
 {

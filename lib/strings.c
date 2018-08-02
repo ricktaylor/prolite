@@ -133,7 +133,7 @@ const unsigned char* unbox_compound(struct context_t* context, const union box_t
 	return unbox_string(context,b+1,flen);
 }
 
-static inline int copy_term_part(struct stack_t** stack, union box_t const** v, union box_t** term, size_t* term_size)
+/*static inline int copy_term_part(struct stack_t** stack, union box_t const** v, union box_t** term, size_t* term_size)
 {
 	*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
 	if (!*term)
@@ -232,4 +232,4 @@ union box_t* copy_term(struct substs_t* substs, struct stack_t** stack, struct s
 	if (copy_term_append(substs,stack,strings,&v,&r,&term_size) != 0)
 		r = NULL;
 	return r;
-}
+}*/
