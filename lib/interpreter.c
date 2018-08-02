@@ -87,17 +87,18 @@ inline const union box_t* deref_term(struct substs_t* substs, const union box_t*
 	do
 	{
 		if (UNBOX_TYPE(t->m_u64val) != prolite_var)
-			return t;
+			break;
 
 		var_idx = UNBOX_MANT_48(t->m_u64val);
 		assert(substs && var_idx < substs->m_count);
 
 		if (!substs->m_values[var_idx])
-			return t;
+			break;
 
 		t = substs->m_values[var_idx];
 	}
 	while (t != v);
+
 	return t;
 }
 
@@ -742,9 +743,9 @@ enum eCompileResult compile_call(struct compile_context_t* context, const union 
 
 	do
 	{
+		// Optimize call(call(_)) -> call(_)
 		goal = deref_term(context->m_substs,first_arg(goal));
-
-	} // Optimize call(call(_)) -> call(_)
+	}
 	while (!get_debug_info(goal) && goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'c','a','l','l'));
 
 	switch (UNBOX_TYPE(goal->m_u64val))
