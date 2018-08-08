@@ -82,24 +82,36 @@ static const union box_t* get_debug_info(const union box_t* v)
 
 inline const union box_t* deref_term(struct substs_t* substs, const union box_t* v)
 {
-	uint64_t var_idx;
-	const union box_t* t = v;
+	const union box_t* r = v;
 	do
 	{
-		if (UNBOX_TYPE(t->m_u64val) != prolite_var)
+		const union box_t* t = NULL;
+
+		if (UNBOX_TYPE(r->m_u64val) == prolite_var)
+		{
+			int64_t var_idx = var_index(r);
+			if (var_idx >= 0)
+			{
+				assert(substs && var_idx < substs->m_count);
+
+				t = substs->m_values[var_idx];
+			}
+			else
+			{
+				assert(substs && -var_idx < substs->m_count);
+
+				t = *(substs->m_values + substs->m_count + var_idx);
+			}
+		}
+
+		if (!t)
 			break;
 
-		var_idx = UNBOX_MANT_48(t->m_u64val);
-		assert(substs && var_idx < substs->m_count);
-
-		if (!substs->m_values[var_idx])
-			break;
-
-		t = substs->m_values[var_idx];
+		r = t;
 	}
-	while (t != v);
+	while (r != v);
 
-	return t;
+	return r;
 }
 
 enum eSolveResult unify(struct substs_t* substs, const union box_t* a, const union box_t* b)
@@ -147,18 +159,36 @@ enum eSolveResult unify(struct substs_t* substs, const union box_t* a, const uni
 	}
 	else if (UNBOX_TYPE(a->m_u64val) == prolite_var)
 	{
-		uint64_t var_idx = UNBOX_MANT_48(a->m_u64val);
-		assert(substs && var_idx < substs->m_count);
+		int64_t var_idx = var_index(a);
+		if (var_idx >= 0)
+		{
+			assert(substs && var_idx < substs->m_count);
 
-		substs->m_values[var_idx] = b;
+			substs->m_values[var_idx] = b;
+		}
+		else
+		{
+			assert(substs && -var_idx < substs->m_count);
+
+			*(substs->m_values + substs->m_count + var_idx) = b;
+		}
 		result = SOLVE_TRUE;
 	}
 	else if (UNBOX_TYPE(b->m_u64val) == prolite_var)
 	{
-		uint64_t var_idx = UNBOX_MANT_48(b->m_u64val);
-		assert(substs && var_idx < substs->m_count);
+		int64_t var_idx = var_index(b);
+		if (var_idx >= 0)
+		{
+			assert(substs && var_idx < substs->m_count);
 
-		substs->m_values[var_idx] = a;
+			substs->m_values[var_idx] = a;
+		}
+		else
+		{
+			assert(substs && -var_idx < substs->m_count);
+
+			*(substs->m_values + substs->m_count + var_idx) = a;
+		}
 		result = SOLVE_TRUE;
 	}
 

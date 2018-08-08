@@ -2150,6 +2150,10 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 			struct var_info_t* new_varinfo;
 			struct substs_t* new_substs;
 			
+			// Check for variable index overflow
+			if (i+1 >= UINT64_C(1) << 47)
+				return EMIT_NOMEM;
+
 			new_substs = stack_realloc(&context->m_call_stack,context->m_substs,sizeof(struct substs_t) + (context->m_substs->m_count * sizeof(union box_t)),sizeof(struct substs_t) + ((context->m_substs->m_count+1) * sizeof(union box_t)));
 			new_varinfo = stack_realloc(&context->m_scratch_stack,*varinfo,sizeof(struct var_info_t) * context->m_substs->m_count,sizeof(struct var_info_t) * (context->m_substs->m_count+1));
 			if (!new_substs || !new_varinfo)

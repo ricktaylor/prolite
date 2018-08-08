@@ -151,6 +151,13 @@ const union box_t* first_arg(const union box_t* v);
 const union box_t* next_arg(const union box_t* v);
 const union box_t* deref_term(struct substs_t* substs, const union box_t* v);
 
+static inline int64_t var_index(const union box_t* v)
+{
+	// Sign extend
+	struct pun { int64_t u48 : 48; } p;
+	return (p.u48 = UNBOX_MANT_48(v->m_u64val));
+}
+
 enum eSolveResult
 {
 	SOLVE_TRUE = 1,
