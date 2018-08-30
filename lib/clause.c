@@ -35,30 +35,29 @@ static void delete_clause(struct clause_t* clause)
 		stack_delete(clause->m_stack);
 }
 
-static enum eSolveResult compile_clause(struct clause_t* clause, struct context_t* context, const union box_t* goal)
+static enum eSolveResult compile_clause(struct clause_t* clause, struct context_t* context, const union box_t* head, const union box_t* body)
 {
 	enum eSolveResult result;
 	struct compile_context_t compile_context;
 
-	clause->m_head = copy_term(context->m_substs,&clause->m_stack,&clause->m_pred->m_strings,goal);
+	clause->m_head = copy_head(context,clause,head);
 	if (!clause->m_head)
 		return SOLVE_NOMEM;
 
-	if (clause->m_head->m_u64val != BOX_COMPOUND_EMBED_2(2,':','-'))
+	if (!body)
 		return SOLVE_TRUE;
 
-	clause->m_head = first_arg(clause->m_head);
-	clause->m_body = next_arg(clause->m_head);
-	clause->m_entry_point = stack_top(clause->m_stack);
+	body = copy_body(context,clause,body);
+	if (!body)
+		return SOLVE_NOMEM;
 
-	if (context->m_substs)
-		clause->m_var_count = context->m_substs->m_count;
+	clause->m_entry_point = stack_top(clause->m_stack);
 
 	compile_context.m_emit_stack = clause->m_stack;
 	compile_context.m_substs = context->m_substs;
 	compile_context.m_module = context->m_module;
 
-	switch (compile(&compile_context,clause->m_body))
+	switch (compile(&compile_context,body))
 	{
 	case COMPILE_OK:
 		result = SOLVE_TRUE;
@@ -75,7 +74,7 @@ static enum eSolveResult compile_clause(struct clause_t* clause, struct context_
 		break;
 
 	case COMPILE_NOT_CALLABLE:
-		result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),clause->m_body);
+		result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),body);
 		break;
 
 	case COMPILE_NOMEM:
@@ -224,8 +223,16 @@ static enum eSolveResult solve_dynamic_clause(struct context_t* context, struct 
 {
 	enum eSolveResult result;
 
+	// Grow substs to include head vars
+
+	// Unify goal with head
+
+	// Grow substs to include tail vars, and shift substs to head vars
+
+	// Call clause body
+
 	// Copy substs
-	struct substs_t* prev_substs = context->m_substs;
+	/*struct substs_t* prev_substs = context->m_substs;
 	size_t stack_base = stack_top(context->m_call_stack);
 	if (prev_substs)
 	{
@@ -255,7 +262,7 @@ static enum eSolveResult solve_dynamic_clause(struct context_t* context, struct 
 				}
 			}
 		}
-	}
+	}*/
 
 	// Deref all substs
 
@@ -284,7 +291,7 @@ static enum eSolveResult solve_dynamic_clause(struct context_t* context, struct 
 	result = unify(context->m_substs,goal,clause->m_head);
 	if (result == SOLVE_TRUE)
 	{
-		// Call clause->m_body
+		// Call clause->m_entrypoint
 	}
 
 	if (result != SOLVE_TRUE)
@@ -415,12 +422,17 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 {
 	enum eSolveResult result;
 	const union box_t* head = goal;
+	const union box_t* body = NULL;
 	struct predicate_t* pred;
 	int new_pred = 0;
 	struct clause_t* clause;
 
 	if (goal->m_u64val == BOX_COMPOUND_EMBED_2(2,':','-'))
-		head = deref_term(context->m_substs,first_arg(goal));
+	{
+		head = first_arg(goal);
+		body = deref_term(context->m_substs,next_arg(head));
+		head = deref_term(context->m_substs,head);
+	}
 
 	switch (UNBOX_TYPE(head->m_u64val))
 	{
@@ -454,7 +466,7 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 	if (!clause)
 		result = SOLVE_NOMEM;
 	else
-		result = compile_clause(clause,context,goal);
+		result = compile_clause(clause,context,head,body);
 
 	if (result == SOLVE_TRUE)
 	{

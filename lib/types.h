@@ -67,7 +67,6 @@ struct clause_t
 	struct stack_t*      m_stack;
 	size_t               m_var_count;
 	const union box_t*   m_head;
-	const union box_t*   m_body;
 	size_t               m_entry_point;
 };
 
