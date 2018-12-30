@@ -3,61 +3,10 @@
 #include "types.h"
 #include "stream.h"
 
-#include <assert.h>
 #include <string.h>
 #include <math.h>
 
 #include <stdio.h>
-
-const union box_t* next_arg(const union box_t* v);
-
-inline const union box_t* first_arg(const union box_t* v)
-{
-	assert(UNBOX_TYPE(v->m_u64val) == prolite_compound);
-
-	// Skip functor atom
-	if ((UNBOX_HI16(v->m_u64val) & 0xC000) == 0)
-		++v;
-
-	++v;
-
-	if (UNBOX_TYPE(v->m_u64val) == PROLITE_DEBUG_INFO)
-	{
-		// TODO: Debug info
-		++v;
-	}
-
-	return v;
-}
-
-inline const union box_t* next_arg(const union box_t* v)
-{
-	if (UNBOX_TYPE(v->m_u64val) == prolite_compound)
-	{
-		uint64_t arity = UNBOX_MANT_48(v->m_u64val);
-		unsigned int hi16 = (arity >> 32);
-		if (hi16 & 0x8000)
-			arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
-		else if ((hi16 & 0xC000) == 0x4000)
-			arity = (hi16 & MAX_ARITY_BUILTIN);
-
-		v = first_arg(v);
-		while (arity--)
-			v = next_arg(v);
-	}
-	else
-	{
-		++v;
-
-		if (UNBOX_TYPE(v->m_u64val) == PROLITE_DEBUG_INFO)
-		{
-			// TODO: Debug info
-			++v;
-		}
-	}
-
-	return v;
-}
 
 static const union box_t* get_debug_info(const union box_t* v)
 {
@@ -78,40 +27,6 @@ static const union box_t* get_debug_info(const union box_t* v)
 	}
 
 	return d;
-}
-
-inline const union box_t* deref_term(struct substs_t* substs, const union box_t* v)
-{
-	const union box_t* r = v;
-	do
-	{
-		const union box_t* t = NULL;
-
-		if (UNBOX_TYPE(r->m_u64val) == prolite_var)
-		{
-			int64_t var_idx = var_index(r);
-			if (var_idx >= 0)
-			{
-				assert(substs && var_idx < substs->m_count);
-
-				t = substs->m_values[var_idx];
-			}
-			else
-			{
-				assert(substs && -var_idx < substs->m_count);
-
-				t = *(substs->m_values + substs->m_count + var_idx);
-			}
-		}
-
-		if (!t)
-			break;
-
-		r = t;
-	}
-	while (r != v);
-
-	return r;
 }
 
 enum eSolveResult unify(struct substs_t* substs, const union box_t* a, const union box_t* b)
