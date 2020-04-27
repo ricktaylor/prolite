@@ -11,6 +11,8 @@
 
 uint32_t convert_char(struct context_t* context, uint32_t in_char)
 {
+	/* TODO */
+
 	return in_char;
 }
 
@@ -19,17 +21,16 @@ static uint32_t atom_to_code(const union box_t* b)
 	uint16_t hi16 = UNBOX_HI16(b->m_u64val);
 	uint32_t lo32 = UNBOX_LOW32(b->m_u64val);
 	unsigned int len = (hi16 & 0x0700) >> 8;
-
-	uint8_t c[4];
-
 	unsigned int count = 0;
 	uint32_t val = 0;
-
-	c[0] = (hi16 & 0xFF);
-	c[1] = (lo32 >> 24);
-	c[2] = (lo32 >> 16) & 0xFF;
-	c[3] = (lo32 >> 8) & 0xFF;
-	c[4] = lo32 & 0xFF;
+	uint8_t c[5] =
+	{
+		(hi16 & 0xFF),
+		(lo32 >> 24),
+		(lo32 >> 16) & 0xFF,
+		(lo32 >> 8) & 0xFF,
+		lo32 & 0xFF
+	};
 
 	if (c[0] <= 0x7f)
 		return len == 1 ? c[0] : -1;
@@ -355,7 +356,9 @@ enum eSolveResult solve_op(struct context_t* context, const union box_t* goal)
 	if (goal->m_u64val == BOX_COMPOUND_EMBED_1(2,'|'))
 		return throw_instantiation_error(context,NULL);
 
-	if (goal->m_u64val == BOX_COMPOUND_EMBED_1(2,'.'))
+	if (goal->m_u64val != BOX_COMPOUND_EMBED_1(2,'.'))
+		return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),goal);
+	else
 	{
 		const union box_t* list = first_arg(goal);
 		do
@@ -383,8 +386,6 @@ enum eSolveResult solve_op(struct context_t* context, const union box_t* goal)
 			}
 
 			list = next_arg(list);
-			if (list->m_u64val == BOX_ATOM_EMBED_2('[',']'))
-				return 0;
 		}
 		while (list->m_u64val == BOX_COMPOUND_EMBED_1(2,'.'));
 
@@ -393,11 +394,11 @@ enum eSolveResult solve_op(struct context_t* context, const union box_t* goal)
 		{
 			return throw_instantiation_error(context,NULL);
 		}
-
-		return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),list);
+		else if (list->m_u64val != BOX_ATOM_EMBED_2('[',']'))
+			return throw_type_error(context,BOX_ATOM_EMBED_4('a','t','o','m'),list);
 	}
 
-	return throw_type_error(context,BOX_ATOM_EMBED_4('l','i','s','t'),goal);
+	return 0;
 }
 
 enum eSolveResult solve_set_prolog_flag(struct context_t* context, const union box_t* goal)
