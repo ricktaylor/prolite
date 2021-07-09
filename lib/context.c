@@ -87,7 +87,7 @@ static uint32_t atom_to_code(const union packed_t* b)
 }
 #endif
 
-static struct operator_t* find_op(struct context_t* context, const union packed_t* b)
+static struct operator_t* find_op(struct context_t* context, const unsigned char* name, size_t name_len)
 {
 	static struct operator_t s_builtins[] =
 	{
@@ -108,67 +108,156 @@ static struct operator_t* find_op(struct context_t* context, const union packed_
 		assert(0);
 	}
 
-	switch (b->m_u64val)
+	switch (name_len)
 	{
-	case PACK_ATOM_EMBED_2(':','-'):
-	case PACK_ATOM_EMBED_3('-','-','>'):
-		return &s_builtins[0];
+	case 1:
+		switch (name[0])
+		{
+		case ';':
+			return &s_builtins[1];
 
-	case PACK_ATOM_EMBED_1(';'):
-		return &s_builtins[1];
+		case ',':
+			return &s_builtins[3];
 
-	case PACK_ATOM_EMBED_2('-','>'):
-		return &s_builtins[2];
+		case '=':
+		case '<':
+		case '>':
+			return &s_builtins[4];
 
-	case PACK_ATOM_EMBED_1(','):
-		return &s_builtins[3];
+		case '+':
+		case '-':
+			return &s_builtins[5];
 
-	case PACK_ATOM_EMBED_1('='):
-	case PACK_ATOM_EMBED_2('\\','='):
-	case PACK_ATOM_EMBED_2('=','='):
-	case PACK_ATOM_EMBED_3('\\','=','='):
-	case PACK_ATOM_EMBED_2('@','<'):
-	case PACK_ATOM_EMBED_3('@','=','<'):
-	case PACK_ATOM_EMBED_2('@','>'):
-	case PACK_ATOM_EMBED_3('@','>','='):
-	case PACK_ATOM_EMBED_3('=','.','.'):
-	case PACK_ATOM_EMBED_2('i','s'):
-	case PACK_ATOM_EMBED_3('=',':','='):
-	case PACK_ATOM_EMBED_3('=','\\','='):
-	case PACK_ATOM_EMBED_1('<'):
-	case PACK_ATOM_EMBED_2('=','<'):
-	case PACK_ATOM_EMBED_1('>'):
-	case PACK_ATOM_EMBED_2('>','='):
-		return &s_builtins[4];
+		case '*':
+		case '/':
+			return &s_builtins[6];
+	
+		case '^':
+			return &s_builtins[8];
 
-	case PACK_ATOM_EMBED_1('+'):
-	case PACK_ATOM_EMBED_1('-'):
-	case PACK_ATOM_EMBED_2('/','\\'):
-	case PACK_ATOM_EMBED_2('\\','/'):
-		return &s_builtins[5];
+		default:
+			break;
+		}
+		break;
 
-	case PACK_ATOM_EMBED_1('*'):
-	case PACK_ATOM_EMBED_1('/'):
-	case PACK_ATOM_EMBED_2('/','/'):
-	case PACK_ATOM_EMBED_3('r','e','m'):
-	case PACK_ATOM_EMBED_3('m','o','d'):
-	case PACK_ATOM_EMBED_2('<','<'):
-	case PACK_ATOM_EMBED_2('>','>'):
-	case PACK_ATOM_EMBED_3('d','i','v'):
-		return &s_builtins[6];
+	case 2:
+		switch (name[0])
+		{
+		case ':':
+			if (name[1] == '-')
+				return &s_builtins[0];
+			break;
 
-	case PACK_ATOM_EMBED_2('*','*'):
-		return &s_builtins[7];
+		case '-':
+			if (name[1] == '>')
+				return &s_builtins[2];
+			break;
 
-	case PACK_ATOM_EMBED_1('^'):
-		return &s_builtins[8];
+		case '\\':
+			if (name[1] == '=')
+				return &s_builtins[4];
+			if (name[1] == '/')
+				return &s_builtins[5];
+			break;
+
+		case '=':
+			if (name[1] == '=' || name[1] == '<')
+				return &s_builtins[4];
+			break;
+
+		case '@':
+			if (name[1] == '<' || name[1] == '>')
+				return &s_builtins[4];
+			break;
+
+		case 'i':
+			if (name[1] == 's')
+				return &s_builtins[4];
+			break;
+
+		case '>':
+			if (name[1] == '=')
+				return &s_builtins[4];
+			if (name[1] == '>')
+				return &s_builtins[6];
+			break;
+
+		case '/':
+			if (name[1] == '\\')
+				return &s_builtins[5];
+			if (name[1] == '/')
+				return &s_builtins[6];
+			break;
+
+		case '<':
+			if (name[1] == '<')
+				return &s_builtins[6];
+			break;
+
+		case '*':
+			if (name[1] == '*')
+				return &s_builtins[7];
+			break;
+
+		default:
+			break;
+		}
+		break;
+
+	case 3:
+		switch (name[0])
+		{
+		case '-':
+			if (name[1] == '-' && name[2] == '>')
+				return &s_builtins[0];
+			break;
+
+		case '\\':
+			if (name[1] == '=' && name[2] == '=')
+				return &s_builtins[4];
+			break;
+
+		case '@':
+			if ((name[1] == '=' && name[2] == '<') ||
+				(name[1] == '>' && name[2] == '='))
+					return &s_builtins[4];
+			break;
+
+		case '=':
+			if ((name[1] == '.' && name[2] == '.') ||
+				(name[1] == ':' && name[2] == '=') ||
+				(name[1] == '\\' && name[2] == '='))
+					return &s_builtins[4];
+			break;
+
+		case 'r':
+			if (name[1] == 'e' && name[2] == 'm')
+				return &s_builtins[6];
+			break;
+
+		case 'm':
+			if (name[1] == 'o' && name[2] == 'd')
+				return &s_builtins[6];
+			break;
+
+		case 'd':
+			if (name[1] == 'i' && name[2] == 'v')
+				return &s_builtins[6];
+			break;
+
+		default:
+			break;
+		}
+		break;
 
 	default:
-		return NULL;
+		break;
 	}
+
+	return NULL;
 }
 
-static struct operator_t* find_prefix_op(struct context_t* context, const union packed_t* b)
+static struct operator_t* find_prefix_op(struct context_t* context, const unsigned char* name, size_t name_len)
 {
 	static struct operator_t s_builtins[] =
 	{
@@ -183,39 +272,61 @@ static struct operator_t* find_prefix_op(struct context_t* context, const union 
 		assert(0);
 	}
 
-	switch (b->m_u64val)
+	switch (name_len)
 	{
-	case PACK_ATOM_EMBED_2(':','-'):
-	case PACK_ATOM_EMBED_2('?','-'):
-		return &s_builtins[0];
+	case 1:
+		switch (name[0])
+		{
+		case '-':
+		case '\\':
+		case '+':
+			return &s_builtins[2];
 
-	case PACK_ATOM_EMBED_2('\\','+'):
-		return &s_builtins[1];
+		default:
+			break;
+		}
+		break;
 
-	case PACK_ATOM_EMBED_1('-'):
-	case PACK_ATOM_EMBED_1('\\'):
-	case PACK_ATOM_EMBED_1('+'):
-		return &s_builtins[2];
+	case 2:
+		switch (name[0])
+		{
+		case ':':
+		case '?':
+			if (name[1] == '-')
+				return &s_builtins[0];
+			break;
+
+		case '\\':
+			if (name[1] == '+')
+				return &s_builtins[1];
+			break;
+
+		default:
+			break;
+		}
+		break;
 
 	default:
-		return NULL;
+		break;
 	}
+
+	return NULL;
 }
 
 /* Try to find a infix/postfix op, otherwise find prefix */
-struct operator_t* lookup_op(struct context_t* context, const union packed_t* b)
+struct operator_t* lookup_op(struct context_t* context, const unsigned char* name, size_t name_len)
 {
-	struct operator_t* op = find_op(context,b);
+	struct operator_t* op = find_op(context,name,name_len);
 	if (!op)
-		op = find_prefix_op(context,b);
+		op = find_prefix_op(context,name,name_len);
 	return op;
 }
 
 /* Try to find a prefix op, otherwise find infix/suffix */
-struct operator_t* lookup_prefix_op(struct context_t* context, const union packed_t* b)
+struct operator_t* lookup_prefix_op(struct context_t* context, const unsigned char* name, size_t name_len)
 {
-	struct operator_t* op = find_prefix_op(context,b);
+	struct operator_t* op = find_prefix_op(context,name,name_len);
 	if (!op)
-		op = find_op(context,b);
+		op = find_op(context,name,name_len);
 	return op;
 }
