@@ -2106,14 +2106,13 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 			if (!new_varinfo)
 				return EMIT_NOMEM;
 
-			context->m_substs = new_substs;
-			context->m_substs->m_values[context->m_substs->m_count] = NULL;
-			context->m_substs->m_count = context->m_substs->m_count+1;
-
 			*varinfo = new_varinfo;
 			(*varinfo)[context->m_substs->m_count].m_name = node->m_str;
 			(*varinfo)[context->m_substs->m_count].m_name_len = node->m_str_len;
 			(*varinfo)[context->m_substs->m_count].m_use_count = 1;
+
+			context->m_substs = new_substs;
+			context->m_substs->m_values[context->m_substs->m_count++] = NULL;			
 		}
 
 		node->m_arity = i;
@@ -2360,16 +2359,8 @@ static enum eEmitStatus copy_error_term(struct context_t* context, struct string
 		break;
 
 	case prolite_var:
-		{
-			const union packed_t* ptr = deref_term(context->m_substs,*v);
-			if (ptr == *v)
-			{
-				// TODO: Sort this out!
-				assert(0);
-			}
-
-			return copy_error_term(context,strings,&ptr,new_term,term_size);
-		}
+		// Not possible
+		assert(0);
 		break;
 
 	case prolite_atom:
@@ -2400,6 +2391,7 @@ static enum eEmitStatus copy_error_term(struct context_t* context, struct string
 	default:
 		if (append_packed_t(&context->m_scratch_stack,v,new_term,term_size) != 0)
 			return EMIT_NOMEM;
+		break;
 	}
 
 	if (UNPACK_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
@@ -2596,140 +2588,7 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 	return status;
 }
 
-#ifdef OLD
-static enum eEmitStatus clause_directive(struct context_t* context, const union packed_t* directive)
-{
-	assert(0);
-}
-
-static enum eEmitStatus ensure_loaded(struct context_t* context, const union packed_t* directive)
-{
-	assert(0);
-}
-
-static enum eEmitStatus compile_initializer(struct context_t* context, const union packed_t* directive)
-{
-	assert(0);
-}
-
-enum eSolveResult assert_clause(struct context_t* context, const union packed_t* clause, int z, int dynamic);
-
-static enum eEmitStatus directive_solve(struct context_t* context, const union packed_t* directive)
-{
-	assert(0);
-
-	switch (solve(context,directive))
-	{
-	case SOLVE_TRUE:
-		return EMIT_OK;
-
-	case SOLVE_NOMEM:
-		return EMIT_NOMEM;
-
-	case SOLVE_THROW:
-		return EMIT_THROW;
-
-	default:
-		// Should never happen
-		assert(0);
-		return (emit_error(context,get_debug_info(directive),PACK_ATOM_BUILTIN(system_error),0) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
-	}
-}
-
-static enum eEmitStatus include(struct context_t* context, const union packed_t* directive);
-
-static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
-{
-	enum eEmitStatus status;
-
-	struct parser_t parser = {0};
-	parser.m_s = s;
-	parser.m_line_info.m_end_line = 1;
-
-	do
-	{
-		union packed_t* term = NULL;
-		size_t stack_base = stack_top(context->m_call_stack);
-		struct var_info_t* varinfo = NULL;
-
-		status = parse_emit_term(context,&parser,&term,&varinfo);
-		if (status == EMIT_OK)
-		{
-			if (term->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
-			{
-				term = (union packed_t*)first_arg(term);
-				switch (term->m_u64val)
-				{
-				case PACK_COMPOUND_BUILTIN(dynamic,1):
-				case PACK_COMPOUND_BUILTIN(multifile,1):
-				case PACK_COMPOUND_BUILTIN(discontiguous,1):
-					status = clause_directive(context,term);
-					break;
-
-				case PACK_COMPOUND_BUILTIN(include,1):
-					status = include(context,term);
-					break;
-
-				case PACK_COMPOUND_BUILTIN(ensure_loaded,1):
-					status = ensure_loaded(context,term);
-					break;
-
-				case PACK_COMPOUND_BUILTIN(initialization,1):
-					status = compile_initializer(context,term);
-					break;
-
-				default:
-					status = directive_solve(context,term);
-					break;
-				}
-			}
-			else
-			{
-				/* Assert the term */
-				assert(0);
-
-				assert_clause(context,term,1,0);
-			}
-		}
-
-		if (status == EMIT_OK)
-		{
-			// TODO: Undo pointers...
-			stack_reset(&context->m_scratch_stack,0);
-			stack_reset(&context->m_call_stack,stack_base);
-		}
-	}
-	while (status == EMIT_OK);
-
-	if (status == EMIT_EOF)
-		status = EMIT_OK;
-
-	/* Compact the scratch stack because we may have allocated a lot */
-	stack_compact(context->m_scratch_stack);
-
-	return status;
-}
-
-static enum eEmitStatus include(struct context_t* context, const union packed_t* directive)
-{
-	enum eEmitStatus status;
-	struct stream_t* s = NULL;
-
-	/* TODO: Open stream 'directive' */
-
-	/* TODO: Twiddle with context */
-
-	status = load_file(context,s);
-	if (status == EMIT_OK)
-	{
-		/* TODO: Untwiddle context */
-	}
-
-	return status;
-}
-#endif
-
-enum eEmitStatus prepare_term(struct context_t* context, struct stream_t* s, union packed_t** term, const char*** varnames)
+enum eEmitStatus emit_term(struct context_t* context, struct stream_t* s, union packed_t** term, const char*** varnames)
 {
 	enum eEmitStatus result;
 	struct var_info_t* varinfo = NULL;

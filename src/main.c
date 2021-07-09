@@ -5,12 +5,12 @@
  *      Author: taylorr
  */
 
-#include "../lib/types.h"
 #include "../lib/stream.h"
 
 #include <string.h>
 #include <assert.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 typedef struct prolite_env
 {
@@ -114,6 +114,30 @@ static void query_delete(struct query_t* q)
 	stack_delete(q->m_context.m_call_stack);
 }
 
+static void write_label(const char* title, const char* name, const char* fmt, ...)
+{
+	fprintf(stdout,"%-10s: %s",name,title);
+
+	va_list args;
+	va_start(args,fmt);
+
+	vfprintf(stdout,fmt,args);
+
+	va_end(args);
+}
+
+static void write_line(const char* fmt, ...)
+{
+	fprintf(stdout,"%12s","");
+
+	va_list args;
+	va_start(args,fmt);
+
+	vfprintf(stdout,fmt,args);
+
+	va_end(args);
+}
+
 void prolite_pl2mir(struct query_t* q, const char* query_text, size_t query_len, const char** tail)
 {
 	struct text_stream_t ts = {0};
@@ -125,10 +149,26 @@ void prolite_pl2mir(struct query_t* q, const char* query_text, size_t query_len,
 
 	// Read a term and prepare it for execution
 	union packed_t* goal = NULL;
-	enum eEmitStatus result = prepare_term(&q->m_context,&ts.m_proto,&goal,&q->m_varnames);
+	enum eEmitStatus result = emit_term(&q->m_context,&ts.m_proto,&goal,&q->m_varnames);
 	if (result == EMIT_OK)
 	{
+		write_label("module","user","\n");
+		write_label("func","__init"," i32, p:Context");
 		
+		// Printf args
+		for (size_t i=0; i < q->m_context.m_substs->m_count; ++i)
+		{
+			fprintf(stdout,", p:arg%zu",i);
+		}
+		fprintf(stdout,"\n");
+
+		for (size_t i=0; i < q->m_context.m_substs->m_count; ++i)
+		{
+			write_line("# arg%zu = %s\n",i,q->m_varnames[i]);
+		}
+
+		write_line("endfun\n");
+		write_line("endmodule\n");
 	}
 }
 

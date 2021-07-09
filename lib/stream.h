@@ -29,6 +29,6 @@ enum eEmitStatus
 	EMIT_THROW
 };
 
-enum eEmitStatus prepare_term(struct context_t* context, struct stream_t* s, union packed_t** term, const char*** varnames);
+enum eEmitStatus emit_term(struct context_t* context, struct stream_t* s, union packed_t** term, const char*** varnames);
 
 #endif /* STREAM_H_INCLUDED_ */
