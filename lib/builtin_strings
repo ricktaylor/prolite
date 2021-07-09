@@ -48,4 +48,3 @@ DECLARE_BUILTIN_STRING(operator_specifier)
 DECLARE_BUILTIN_STRING(past_end_of_stream)
 DECLARE_BUILTIN_STRING(instantiation_error)
 DECLARE_BUILTIN_STRING(representation_error)
-

@@ -21,4 +21,14 @@ static inline int64_t stream_read(struct stream_t* s, void* dest, size_t len)
 	return (s && s->m_fn_read ? (*s->m_fn_read)(s,dest,len) : -1);
 }
 
+enum eEmitStatus
+{
+	EMIT_NOMEM = -1,
+	EMIT_OK = 0,
+	EMIT_EOF,
+	EMIT_THROW
+};
+
+enum eEmitStatus prepare_term(struct context_t* context, struct stream_t* s, union packed_t** term, const char*** varnames);
+
 #endif /* STREAM_H_INCLUDED_ */

@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <math.h>
 #include <assert.h>
+#include <stdarg.h>
 
 #ifdef _MSC_VER
 #include <float.h>
@@ -22,7 +23,7 @@ struct operator_t* lookup_prefix_op(struct context_t* context, const unsigned ch
 
 enum eTokenType
 {
-	tokMore = 0,
+	tokNeedMore = 0,
 	tokNoMem,
 	tokEOF,
 	tokInvalidSeq,
@@ -118,12 +119,12 @@ enum eASTError
 enum eCharMax
 {
 	CHAR_MAX_VALID = 0x1FFFF, /* Greatest valid unicode char */
-	CHAR_MORE,
+	CHAR_NEED_MORE,
 	CHAR_EOF,
 	CHAR_ILLEGAL_SEQ
 };
 
-static inline int token_append_char(struct context_t* context, struct token_t* token, unsigned char c)
+static int token_append_char(struct context_t* context, struct token_t* token, unsigned char c)
 {
 	if (token->m_alloc == token->m_len)
 	{
@@ -196,7 +197,7 @@ static uint32_t token_skip_ilseq(const unsigned char** p, const unsigned char* p
 				break;
 			}
 
-			return CHAR_MORE;
+			return CHAR_NEED_MORE;
 		}
 
 		if ((*p)[i] <= 0x7f)
@@ -222,7 +223,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 		if (eof)
 			return CHAR_EOF;
 
-		return CHAR_MORE;
+		return CHAR_NEED_MORE;
 	}
 
 	if (c[0] <= 0x7f)
@@ -244,7 +245,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 				if (eof)
 					return token_skip_ilseq(p,pe,eof,col,1);
 
-				return CHAR_MORE;
+				return CHAR_NEED_MORE;
 			}
 
 			if ((c[0] == 0xE0 && c[1] >= 0x80 && c[1] <= 0x9F) ||
@@ -263,7 +264,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 				if (eof)
 					return token_skip_ilseq(p,pe,eof,col,1);
 
-				return CHAR_MORE;
+				return CHAR_NEED_MORE;
 			}
 
 			if ((c[0] == 0xF0 && c[1] >= 0x80 && c[1] <= 0x8F) ||
@@ -283,7 +284,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 			if (eof)
 				return token_skip_ilseq(p,pe,eof,col,1);
 
-			return CHAR_MORE;
+			return CHAR_NEED_MORE;
 		}
 		else
 		{
@@ -316,7 +317,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 	return val;
 }
 
-static inline uint32_t token_get_char_conv(struct context_t* context, const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
+static uint32_t token_get_char_conv(struct context_t* context, const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
 {
 	uint32_t c = token_get_char(p,pe,eof,line,col);
 	if (context->m_module->m_flags.char_conversion && c <= CHAR_MAX_VALID)
@@ -485,8 +486,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		token->m_len = 0;
 
 		c = token_get_char_conv(context,p,pe,eof,&info->m_end_line,&info->m_end_col);
-		if (c == CHAR_MORE)
-			return tokMore;
+		if (c == CHAR_NEED_MORE)
+			return tokNeedMore;
 
 		/* Check for ( first*/
 		if (c == '(')
@@ -500,8 +501,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 	case eMultiComment2:
 	case eMultiComment3:
 		c = token_get_char_conv(context,p,pe,eof,&info->m_end_line,&info->m_end_col);
-		if (c == CHAR_MORE)
-			return tokMore;
+		if (c == CHAR_NEED_MORE)
+			return tokNeedMore;
 
 	layout:
 		for (;;)
@@ -532,9 +533,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 				case eaShortName:
 					*state = eStart;
-					if (token_append_char(context,token,(unsigned char)c) != 0)
-						return tokNoMem;
-					return tokName;
+					return token_append_char(context,token,(unsigned char)c) != 0 ? tokNoMem : tokName;
 
 				case eaSingleComment:
 					*state = eSingleComment;
@@ -646,8 +645,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 			/* Get the next character */
 			c = token_get_char_conv(context,p,pe,eof,&info->m_end_line,&info->m_end_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 		}
 
 	multi_comment:
@@ -657,16 +656,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	case eMultiComment1:
 		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-		if (c == CHAR_MORE)
-			return tokMore;
+		if (c == CHAR_NEED_MORE)
+			return tokNeedMore;
 
 		if (c != '*')
 		{
 			if (token_append_char(context,token,'/') != 0)
-			{
-				*state = eStart;
 				return tokNoMem;
-			}
+			
 			*state = eGraphicName;
 			goto graphic_name;
 		}
@@ -683,8 +680,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	case eDot:
 		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-		if (c == CHAR_MORE)
-			return tokMore;
+		if (c == CHAR_NEED_MORE)
+			return tokNeedMore;
 
 		if (c == CHAR_EOF)
 			return tokEnd;
@@ -702,10 +699,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		}
 
 		if (token_append_char(context,token,'.') != 0)
-		{
-			*state = eStart;
 			return tokNoMem;
-		}
+		
 		*state = eGraphicName;
 		goto graphic_name;
 
@@ -721,8 +716,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
 			switch (c)
 			{
-			case CHAR_MORE:
-				return tokMore;
+			case CHAR_NEED_MORE:
+				return tokNeedMore;
 
 			case CHAR_EOF:
 				*state = eStart;
@@ -741,16 +736,16 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 			case '\\':
 				c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-				if (c == CHAR_MORE)
-					return tokMore;
+				if (c == CHAR_NEED_MORE)
+					return tokNeedMore;
 
 				if (!token_meta_char(context,c,token))
 				{
 					if (c == 'o')
 					{
 						c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-						if (c == CHAR_MORE)
-							return tokMore;
+						if (c == CHAR_NEED_MORE)
+							return tokNeedMore;
 
 						if (c >= '0' && c <= '7')
 						{
@@ -768,8 +763,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					else if (c == 'x')
 					{
 						c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-						if (c == CHAR_MORE)
-							return tokMore;
+						if (c == CHAR_NEED_MORE)
+							return tokNeedMore;
 
 						if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
 						{
@@ -806,8 +801,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					size_t peek_col2 = peek_col;
 					const unsigned char* peek2 = peek;
 					c = token_get_char(&peek2,pe,eof,&peek_line2,&peek_col2);
-					if (c == CHAR_MORE)
-						return tokMore;
+					if (c == CHAR_NEED_MORE)
+						return tokNeedMore;
 
 					if (c != '\'')
 					{
@@ -822,10 +817,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					peek = peek2;
 				}
 				if (token_append_char(context,token,(unsigned char)c) != 0)
-				{
-					*state = eStart;
 					return tokNoMem;
-				}
 				break;
 
 			case '"':
@@ -835,8 +827,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					size_t peek_col2 = peek_col;
 					const unsigned char* peek2 = peek;
 					c = token_get_char(&peek2,pe,eof,&peek_line2,&peek_col2);
-					if (c == CHAR_MORE)
-						return tokMore;
+					if (c == CHAR_NEED_MORE)
+						return tokNeedMore;
 
 					if (c != '"')
 					{
@@ -851,10 +843,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					peek = peek2;
 				}
 				if (token_append_char(context,token,(unsigned char)c) != 0)
-				{
-					*state = eStart;
 					return tokNoMem;
-				}
 				break;
 
 			case '`':
@@ -864,8 +853,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					size_t peek_col2 = peek_col;
 					const unsigned char* peek2 = peek;
 					c = token_get_char(&peek2,pe,eof,&peek_line2,&peek_col2);
-					if (c == CHAR_MORE)
-						return tokMore;
+					if (c == CHAR_NEED_MORE)
+						return tokNeedMore;
 
 					if (c != '`')
 					{
@@ -880,10 +869,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					peek = peek2;
 				}
 				if (token_append_char(context,token,(unsigned char)c) != 0)
-				{
-					*state = eStart;
 					return tokNoMem;
-				}
 				break;
 
 			default:
@@ -896,10 +882,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					return tokInvalidChar;
 				}
 				if (token_append_unicode_char(context,token,c) != 0)
-				{
-					*state = eStart;
 					return tokNoMem;
-				}
 				break;
 			}
 
@@ -918,8 +901,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		for (;;)
 		{
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			if (c < '0' || c > '7')
 			{
@@ -930,11 +913,9 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				if (c == '\\')
 				{
 					if (token_append_unicode_char(context,token,meta) != 0)
-					{
-						*state = eStart;
 						return tokNoMem;
-					}
-					else if (*state == eSingleQuoteOct)
+					
+					if (*state == eSingleQuoteOct)
 						*state = eSingleQuote;
 					else if (*state == eDoubleQuoteOct)
 						*state = eDoubleQuote;
@@ -972,8 +953,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		for (;;)
 		{
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')))
 			{
@@ -984,10 +965,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				if (c == '\\')
 				{
 					if (token_append_unicode_char(context,token,meta) != 0)
-					{
-						*state = eStart;
 						return tokNoMem;
-					}
+					
 					else if (*state == eSingleQuoteHex)
 						*state = eSingleQuote;
 					else if (*state == eDoubleQuoteHex)
@@ -1026,30 +1005,27 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 	case eZero:
 	zero:
 		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-		if (c == CHAR_MORE)
-			return tokMore;
+		if (c == CHAR_NEED_MORE)
+			return tokNeedMore;
 
 		if (c == '\'')
 		{
 			/* No char_conversion for single_quoted_character */
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			if (c == '\'')
 			{
 				c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-				if (c == CHAR_MORE)
-					return tokMore;
+				if (c == CHAR_NEED_MORE)
+					return tokNeedMore;
 
 				if (c == '\'')
 				{
 					if (token_append_char(context,token,'\'') != 0)
-					{
-						*state = eStart;
 						return tokNoMem;
-					}
-
+					
 					info->m_end_line = peek_line;
 					info->m_end_col = peek_col;
 					*p = peek;
@@ -1059,8 +1035,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			else if (c == '\\')
 			{
 				c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-				if (c == CHAR_MORE)
-					return tokMore;
+				if (c == CHAR_NEED_MORE)
+					return tokNeedMore;
 
 				if (token_meta_char(context,c,token))
 				{
@@ -1072,8 +1048,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				else if (c == 'o')
 				{
 					c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-					if (c == CHAR_MORE)
-						return tokMore;
+					if (c == CHAR_NEED_MORE)
+						return tokNeedMore;
 
 					if (c >= '0' && c <= '7')
 					{
@@ -1085,8 +1061,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				else if (c == 'x')
 				{
 					c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-					if (c == CHAR_MORE)
-						return tokMore;
+					if (c == CHAR_NEED_MORE)
+						return tokNeedMore;
 
 					if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
 					{
@@ -1099,11 +1075,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			else if (c >= 32 && c <= CHAR_MAX_VALID)
 			{
 				if (token_append_unicode_char(context,token,c) != 0)
-				{
-					*state = eStart;
 					return tokNoMem;
-				}
-
+				
 				info->m_end_line = peek_line;
 				info->m_end_col = peek_col;
 				*p = peek;
@@ -1113,8 +1086,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		else if (c == 'b')
 		{
 			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			if (c == '0' || c == '1')
 			{
@@ -1125,8 +1098,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		else if (c == 'o')
 		{
 			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			if (c >= '0' && c <= '7')
 			{
@@ -1137,8 +1110,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		else if (c == 'x')
 		{
 			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
 			{
@@ -1161,17 +1134,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		for (;;)
 		{
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			if (c == '\\')
 			{
 				if (token_append_unicode_char(context,token,meta) != 0)
-				{
-					*state = eStart;
 					return tokNoMem;
-				}
-
+				
 				info->m_end_line = peek_line;
 				info->m_end_col = peek_col;
 				*p = peek;
@@ -1210,17 +1180,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		for (;;)
 		{
 			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			if (c == '\\')
 			{
 				if (token_append_unicode_char(context,token,meta) != 0)
-				{
-					*state = eStart;
 					return tokNoMem;
-				}
-
+				
 				info->m_end_line = peek_line;
 				info->m_end_col = peek_col;
 				*p = peek;
@@ -1265,8 +1232,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	decimal:
 		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-		if (c == CHAR_MORE)
-			return tokMore;
+		if (c == CHAR_NEED_MORE)
+			return tokNeedMore;
 
 		if (c < '0' || c > '9')
 		{
@@ -1275,11 +1242,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		}
 
 		if (token_append_char(context,token,'.') != 0)
-		{
-			*state = eStart;
 			return tokNoMem;
-		}
-
+		
 		*state = eFraction;
 		goto next_char;
 
@@ -1290,17 +1254,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	exponent:
 		c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
-		if (c == CHAR_MORE)
-			return tokMore;
+		if (c == CHAR_NEED_MORE)
+			return tokNeedMore;
 
 		if (c >= '0' && c <= '9')
 		{
 			if (token_append_char(context,token,'e') != 0)
-			{
-				*state = eStart;
 				return tokNoMem;
-			}
-
+			
 			*state = eMantissa;
 			goto next_char;
 		}
@@ -1309,17 +1270,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		{
 			/* Check the next char */
 			uint32_t c2 = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c2 == CHAR_MORE)
-				return tokMore;
+			if (c2 == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			if (c2 >= '0' && c2 <= '9')
 			{
 				if (token_append_char(context,token,'e') != 0 || token_append_char(context,token,(unsigned char)c) != 0)
-				{
-					*state = eStart;
 					return tokNoMem;
-				}
-
+				
 				*state = eMantissa;
 				c = c2;
 				goto next_char;
@@ -1335,17 +1293,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		peek_col = info->m_end_col;
 
 		if (token_append_unicode_char(context,token,c) != 0)
-		{
-			*state = eStart;
 			return tokNoMem;
-		}
-
+		
 	default:
 		for (;;)
 		{
 			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
-			if (c == CHAR_MORE)
-				return tokMore;
+			if (c == CHAR_NEED_MORE)
+				return tokNeedMore;
 
 			switch (*state)
 			{
@@ -1441,11 +1396,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 		next_char:
 			if (token_append_unicode_char(context,token,c) != 0)
-			{
-				*state = eStart;
 				return tokNoMem;
-			}
-
+			
 			info->m_end_line = peek_line;
 			info->m_end_col = peek_col;
 			*p = peek;
@@ -1490,12 +1442,12 @@ static enum eTokenType token_next(struct context_t* context, struct parser_t* pa
 			parser->m_buffer.m_len = pe - p;
 		}
 	}
-	while (tok == tokMore);
+	while (tok == tokNeedMore);
 
 	return tok;
 }
 
-static inline struct ast_node_t* syntax_error(enum eASTError error, enum eASTError* ast_err)
+static struct ast_node_t* syntax_error(enum eASTError error, enum eASTError* ast_err)
 {
 	*ast_err = error;
 	return NULL;
@@ -1538,7 +1490,7 @@ static struct ast_node_t* parse_number(struct context_t* context, struct parser_
 
 		node->m_type = AST_TYPE_DOUBLE;
 		if (isnan(dval))
-			node->m_u64 = BOX_EXP_16(0x7FF8);
+			node->m_u64 = PACK_EXP_16(0x7FF8);
 		else
 			node->m_dbl = dval;
 	}
@@ -1924,7 +1876,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 			return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_C,ast_err);
 		break;
 
-	case tokMore: 
+	case tokNeedMore: 
 		/* Shouldn't happen... */
 
 	case tokComma:
@@ -2102,14 +2054,6 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 	return node;
 }
 
-enum eEmitStatus
-{
-	EMIT_NOMEM = -1,
-	EMIT_OK = 0,
-	EMIT_EOF,
-	EMIT_THROW
-};
-
 struct var_info_t
 {
 	size_t               m_use_count;
@@ -2154,9 +2098,12 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 			if (i+1 >= UINT64_C(1) << 47)
 				return EMIT_NOMEM;
 
-			new_substs = stack_realloc(&context->m_call_stack,context->m_substs,sizeof(struct substs_t) + (context->m_substs->m_count * sizeof(union box_t)),sizeof(struct substs_t) + ((context->m_substs->m_count+1) * sizeof(union box_t)));
+			new_substs = stack_realloc(&context->m_call_stack,context->m_substs,sizeof(struct substs_t) + (context->m_substs->m_count * sizeof(union packed_t)),sizeof(struct substs_t) + ((context->m_substs->m_count+1) * sizeof(union packed_t)));
+			if (!new_substs)
+				return EMIT_NOMEM;
+
 			new_varinfo = stack_realloc(&context->m_scratch_stack,*varinfo,sizeof(struct var_info_t) * context->m_substs->m_count,sizeof(struct var_info_t) * (context->m_substs->m_count+1));
-			if (!new_substs || !new_varinfo)
+			if (!new_varinfo)
 				return EMIT_NOMEM;
 
 			context->m_substs = new_substs;
@@ -2181,54 +2128,54 @@ static enum eEmitStatus emit_node_vars(struct context_t* context, struct var_inf
 	return status;
 }
 
-static enum eEmitStatus emit_atomic(struct context_t* context, struct ast_node_t* node, enum tag_type_t type, union box_t** term, size_t* term_size)
+static enum eEmitStatus emit_atomic(struct context_t* context, struct ast_node_t* node, enum tag_type_t type, union packed_t** term, size_t* term_size)
 {
 	enum eEmitStatus status = EMIT_OK;
-	union box_t b;
+	union packed_t b;
 	uint32_t builtin;
 	if (node->m_str_len <= 5)
 	{
 		switch (node->m_str_len)
 		{
 		case 5:
-			b.m_u64val = BOX_TYPE_EMBED(type,0,5,node->m_str[0],node->m_str[1],node->m_str[2],node->m_str[3],node->m_str[4]);
+			b.m_u64val = PACK_TYPE_EMBED(type,0,5,node->m_str[0],node->m_str[1],node->m_str[2],node->m_str[3],node->m_str[4]);
 			break;
 
 		case 4:
-			b.m_u64val = BOX_TYPE_EMBED(type,0,4,node->m_str[0],node->m_str[1],node->m_str[2],node->m_str[3],0);
+			b.m_u64val = PACK_TYPE_EMBED(type,0,4,node->m_str[0],node->m_str[1],node->m_str[2],node->m_str[3],0);
 			break;
 
 		case 3:
-			b.m_u64val = BOX_TYPE_EMBED(type,0,3,node->m_str[0],node->m_str[1],node->m_str[2],0,0);
+			b.m_u64val = PACK_TYPE_EMBED(type,0,3,node->m_str[0],node->m_str[1],node->m_str[2],0,0);
 			break;
 
 		case 2:
-			b.m_u64val = BOX_TYPE_EMBED(type,0,2,node->m_str[0],node->m_str[1],0,0,0);
+			b.m_u64val = PACK_TYPE_EMBED(type,0,2,node->m_str[0],node->m_str[1],0,0,0);
 			break;
 
 		case 1:
-			b.m_u64val = BOX_TYPE_EMBED(type,0,1,node->m_str[0],0,0,0,0);
+			b.m_u64val = PACK_TYPE_EMBED(type,0,1,node->m_str[0],0,0,0,0);
 			break;
 
 		default:
-			b.m_u64val = BOX_TYPE_EMBED(type,0,0,0,0,0,0,0);
+			b.m_u64val = PACK_TYPE_EMBED(type,0,0,0,0,0,0,0);
 			break;
 		}
 	}
 	else if ((builtin = is_builtin_string(node->m_str,node->m_str_len)) != -1)
-		b.m_u64val = BOX_TYPE(type) | BOX_HI16(0x4000) | BOX_LOW32(builtin);
+		b.m_u64val = PACK_TYPE(type) | PACK_HI16(0x4000) | PACK_LOW32(builtin);
 	else
 	{
-		struct string_ptr_t* s = box_stack_string(&context->m_call_stack,&context->m_strings,node->m_str,node->m_str_len);
+		struct string_ptr_t* s = pack_stack_string(&context->m_call_stack,&context->m_strings,node->m_str,node->m_str_len);
 		if (!s)
 			status = EMIT_NOMEM;
 		else
-			b.m_u64val = BOX_TYPE(type) | box_pointer(s);
+			b.m_u64val = PACK_TYPE(type) | pack_pointer(s);
 	}
 
 	if (status == EMIT_OK)
 	{
-		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union packed_t),((*term_size)+1) * sizeof(union packed_t));
 		if (!*term)
 			status = EMIT_NOMEM;
 		else
@@ -2238,41 +2185,41 @@ static enum eEmitStatus emit_atomic(struct context_t* context, struct ast_node_t
 	return status;
 }
 
-static enum eEmitStatus emit_compound(struct context_t* context, struct ast_node_t* node, union box_t** term, size_t* term_size)
+static enum eEmitStatus emit_compound(struct context_t* context, struct ast_node_t* node, union packed_t** term, size_t* term_size)
 {
 	enum eEmitStatus status = EMIT_OK;
 	uint32_t builtin;
 	if (node->m_arity <= MAX_ARITY_EMBED && node->m_str_len <= 5)
 	{
-		union box_t b;
+		union packed_t b;
 		switch (node->m_str_len)
 		{
 		case 5:
-			b.m_u64val = BOX_TYPE_EMBED(prolite_compound,node->m_arity,5,node->m_str[0],node->m_str[1],node->m_str[2],node->m_str[3],node->m_str[4]);
+			b.m_u64val = PACK_TYPE_EMBED(prolite_compound,node->m_arity,5,node->m_str[0],node->m_str[1],node->m_str[2],node->m_str[3],node->m_str[4]);
 			break;
 
 		case 4:
-			b.m_u64val = BOX_TYPE_EMBED(prolite_compound,node->m_arity,4,node->m_str[0],node->m_str[1],node->m_str[2],node->m_str[3],0);
+			b.m_u64val = PACK_TYPE_EMBED(prolite_compound,node->m_arity,4,node->m_str[0],node->m_str[1],node->m_str[2],node->m_str[3],0);
 			break;
 
 		case 3:
-			b.m_u64val = BOX_TYPE_EMBED(prolite_compound,node->m_arity,3,node->m_str[0],node->m_str[1],node->m_str[2],0,0);
+			b.m_u64val = PACK_TYPE_EMBED(prolite_compound,node->m_arity,3,node->m_str[0],node->m_str[1],node->m_str[2],0,0);
 			break;
 
 		case 2:
-			b.m_u64val = BOX_TYPE_EMBED(prolite_compound,node->m_arity,2,node->m_str[0],node->m_str[1],0,0,0);
+			b.m_u64val = PACK_TYPE_EMBED(prolite_compound,node->m_arity,2,node->m_str[0],node->m_str[1],0,0,0);
 			break;
 
 		case 1:
-			b.m_u64val = BOX_TYPE_EMBED(prolite_compound,node->m_arity,1,node->m_str[0],0,0,0,0);
+			b.m_u64val = PACK_TYPE_EMBED(prolite_compound,node->m_arity,1,node->m_str[0],0,0,0,0);
 			break;
 
 		default:
-			b.m_u64val = BOX_TYPE_EMBED(prolite_compound,node->m_arity,0,0,0,0,0,0);
+			b.m_u64val = PACK_TYPE_EMBED(prolite_compound,node->m_arity,0,0,0,0,0,0);
 			break;
 		}
 
-		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union packed_t),((*term_size)+1) * sizeof(union packed_t));
 		if (!*term)
 			status = EMIT_NOMEM;
 		else
@@ -2280,20 +2227,20 @@ static enum eEmitStatus emit_compound(struct context_t* context, struct ast_node
 	}
 	else if (node->m_arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(node->m_str,node->m_str_len)) != -1)
 	{
-		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union packed_t),((*term_size)+1) * sizeof(union packed_t));
 		if (!*term)
 			status = EMIT_NOMEM;
 		else
-			(*term)[(*term_size)++].m_u64val = BOX_TYPE(prolite_compound) | BOX_HI16(0x4000 | node->m_arity) | BOX_LOW32(builtin);
+			(*term)[(*term_size)++].m_u64val = PACK_TYPE(prolite_compound) | PACK_HI16(0x4000 | node->m_arity) | PACK_LOW32(builtin);
 	}
 	else
 	{
-		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union box_t),((*term_size)+2) * sizeof(union box_t));
+		*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union packed_t),((*term_size)+2) * sizeof(union packed_t));
 		if (!*term)
 			status = EMIT_NOMEM;
 		else
 		{
-			(*term)[(*term_size)++].m_u64val = BOX_TYPE(prolite_compound) | BOX_MANT_48(node->m_arity);
+			(*term)[(*term_size)++].m_u64val = PACK_TYPE(prolite_compound) | PACK_MANT_48(node->m_arity);
 
 			status = emit_atomic(context,node,prolite_atom,term,term_size);
 		}
@@ -2302,7 +2249,7 @@ static enum eEmitStatus emit_compound(struct context_t* context, struct ast_node
 	return status;
 }
 
-static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_node_t* node, union box_t** term, size_t* term_size)
+static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_node_t* node, union packed_t** term, size_t* term_size)
 {
 	enum eEmitStatus status = EMIT_OK;
 	switch (node->m_type)
@@ -2333,15 +2280,15 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 	case AST_TYPE_DOUBLE:
 	case AST_TYPE_INTEGER:
 		{
-			union box_t b;
+			union packed_t b;
 			if (node->m_type == AST_TYPE_VAR)
-				b.m_u64val = BOX_TYPE(prolite_var) | BOX_MANT_48(node->m_arity);
+				b.m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(node->m_arity);
 			else if (node->m_type == AST_TYPE_DOUBLE)
 				b.m_dval = node->m_dbl;
 			else if (node->m_type == AST_TYPE_INTEGER)
-				b.m_u64val = BOX_TYPE(prolite_int32) | BOX_MANT_48((uint32_t)node->m_u64);
+				b.m_u64val = PACK_TYPE(prolite_int32) | PACK_MANT_48((uint32_t)node->m_u64);
 
-			*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+			*term = stack_realloc(&context->m_call_stack,*term,*term_size * sizeof(union packed_t),((*term_size)+1) * sizeof(union packed_t));
 			if (!*term)
 				status = EMIT_NOMEM;
 			else
@@ -2358,85 +2305,234 @@ static enum eEmitStatus emit_node_value(struct context_t* context, struct ast_no
 	return status;
 }
 
+static enum eEmitStatus emit_error_line_info(struct context_t* context, struct line_info_t* info, union packed_t** term, size_t* term_size)
+{
+	*term = stack_realloc(&context->m_scratch_stack,*term,*term_size * sizeof(union packed_t),((*term_size)+1) * sizeof(union packed_t));
+	if (!*term)
+		return EMIT_NOMEM;
+
+	if (!info)
+		(*term)[(*term_size)++].m_u64val = PACK_ATOM_EMBED_5('f','a','l','s','e');
+	else
+	{
+		// TODO: !!
+		(*term)[(*term_size)++].m_u64val = PACK_ATOM_EMBED_4('T','o','d','o');
+	}
+
+	return EMIT_OK;
+}
+
+static enum eEmitStatus copy_error_term(struct context_t* context, struct string_ptr_t** strings, union packed_t const** v, union packed_t** new_term, size_t* term_size)
+{
+	enum tag_type_t type = UNPACK_TYPE((*v)->m_u64val);
+	switch (type)
+	{
+	case prolite_compound:
+		{
+			uint64_t arity = UNPACK_MANT_48((*v)->m_u64val);
+			unsigned int hi16 = (arity >> 32);
+			if (hi16 & 0x8000)
+				arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
+			else if ((hi16 & 0xC000) == 0x4000)
+				arity = (hi16 & MAX_ARITY_BUILTIN);
+			else
+			{
+				// Copy functor atom
+				if (append_packed_t(&context->m_scratch_stack,v,new_term,term_size))
+					return EMIT_NOMEM;
+			}
+
+			if (append_packed_t(&context->m_scratch_stack,v,new_term,term_size))
+				return EMIT_NOMEM;
+
+			if (UNPACK_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
+			{
+				// TODO: Debug info
+			}
+
+			while (arity--)
+			{
+				enum eEmitStatus result = copy_error_term(context,strings,v,new_term,term_size);
+				if (result != EMIT_OK)
+					return result;
+			}			
+		}
+		break;
+
+	case prolite_var:
+		{
+			const union packed_t* ptr = deref_term(context->m_substs,*v);
+			if (ptr == *v)
+			{
+				// TODO: Sort this out!
+				assert(0);
+			}
+
+			return copy_error_term(context,strings,&ptr,new_term,term_size);
+		}
+		break;
+
+	case prolite_atom:
+	case prolite_chars:
+	case prolite_charcodes:
+		{
+			unsigned int hi16 = UNPACK_HI16((*v)->m_u64val);
+			if (hi16 & 0xC000)
+			{
+				if (append_packed_t(&context->m_scratch_stack,v,new_term,term_size) != 0)
+					return EMIT_NOMEM;
+			}
+			else
+			{
+				union packed_t b[1];
+				struct string_ptr_t* s = unpack_pointer((*v)->m_u64val);
+				s = pack_stack_string(&context->m_scratch_stack,strings,s->m_str,s->m_len);
+				if (!s)
+					return EMIT_NOMEM;
+
+				b[0].m_u64val = PACK_TYPE(type) | pack_pointer(s);
+				if (append_packed_t(&context->m_scratch_stack,(const union packed_t**)&b,new_term,term_size) != 0)
+					return EMIT_NOMEM;
+			}
+		}
+		break;
+
+	default:
+		if (append_packed_t(&context->m_scratch_stack,v,new_term,term_size) != 0)
+			return EMIT_NOMEM;
+	}
+
+	if (UNPACK_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
+	{
+		// TODO: Debug info
+	}
+
+	return EMIT_OK;
+}
+
+static enum eEmitStatus emit_error(struct context_t* context, struct line_info_t* info, uint64_t error_functor, unsigned int arity, ...)
+{
+	enum eEmitStatus result = EMIT_OK;
+	va_list args;
+	unsigned int a;
+	union packed_t** pball;
+	size_t term_size = 2;
+	struct string_ptr_t* strings = NULL;
+
+	stack_reset(&context->m_scratch_stack,0);
+	if (stack_push_ptr(&context->m_scratch_stack,NULL) == -1)
+		return EMIT_NOMEM;
+
+	pball = (union packed_t**)stack_at(context->m_scratch_stack,0);
+	*pball = stack_malloc(&context->m_scratch_stack,term_size * sizeof(union packed_t));
+	if (!*pball)
+		result = EMIT_NOMEM;
+	else
+	{
+		(*pball)[0].m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+		(*pball)[1].m_u64val = error_functor;
+	}
+
+	va_start(args,arity);
+
+	for (a = 0; result == EMIT_OK && a < arity; ++a)
+	{
+		const union packed_t* v = va_arg(args,union packed_t*);
+		if (copy_error_term(context,&strings,&v,pball,&term_size) != 0)
+			result = EMIT_NOMEM;
+	}
+
+	va_end(args);
+
+	if (result == EMIT_OK)
+		result = emit_error_line_info(context,info,pball,&term_size);
+
+	if (result == EMIT_OK)
+		result = EMIT_THROW;
+
+	return result;
+}
+
 static enum eEmitStatus emit_syntax_error_missing(struct context_t* context, uint64_t missing_atom, struct line_info_t* info)
 {
-	union box_t args[5];
-	args[0].m_u64val = BOX_COMPOUND_BUILTIN(missing,1);
+	union packed_t args[5];
+	args[0].m_u64val = PACK_COMPOUND_BUILTIN(missing,1);
 	args[1].m_u64val = missing_atom;
 
-	return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&args[0]) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+	return emit_error(context,info,PACK_COMPOUND_BUILTIN(syntax_error,1),1,&args[0]);
 }
 
 static enum eEmitStatus emit_ast_error(struct context_t* context, enum eASTError ast_err, struct line_info_t* info)
 {
-	union box_t arg;
+	union packed_t arg;
 
 	switch (ast_err)
 	{
 	case AST_ERR_FLOAT_OVERFLOW:
-		arg.m_u64val = BOX_ATOM_BUILTIN(float_overflow);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(evaluation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(float_overflow);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(evaluation_error,1),1,&arg);
 
 	case AST_ERR_FLOAT_UNDERFLOW:
-		arg.m_u64val = BOX_ATOM_BUILTIN(underflow);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(evaluation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(underflow);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(evaluation_error,1),1,&arg);
 
 	case AST_ERR_MAX_INTEGER:
-		arg.m_u64val = BOX_ATOM_BUILTIN(max_integer);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(representation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(max_integer);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(representation_error,1),1,&arg);
 
 	case AST_ERR_MIN_INTEGER:
-		arg.m_u64val = BOX_ATOM_BUILTIN(min_integer);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(representation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(min_integer);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(representation_error,1),1,&arg);
 
 	case AST_ERR_MAX_ARITY:
-		arg.m_u64val = BOX_ATOM_BUILTIN(max_arity);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(representation_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(max_arity);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(representation_error,1),1,&arg);
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE:
-		return emit_syntax_error_missing(context,BOX_ATOM_EMBED_1(')'),info);
+		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1(')'),info);
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE_L:
-		return emit_syntax_error_missing(context,BOX_ATOM_EMBED_1(']'),info);
+		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1(']'),info);
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE_C:
-		return emit_syntax_error_missing(context,BOX_ATOM_EMBED_1('}'),info);
+		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('}'),info);
 
 	case AST_SYNTAX_ERR_MISSING_SQ:
-		return emit_syntax_error_missing(context,BOX_ATOM_EMBED_1('\''),info);
+		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('\''),info);
 
 	case AST_SYNTAX_ERR_MISSING_DQ:
-		return emit_syntax_error_missing(context,BOX_ATOM_EMBED_1('"'),info);
+		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('"'),info);
 
 	case AST_SYNTAX_ERR_MISSING_BQ:
-		return emit_syntax_error_missing(context,BOX_ATOM_EMBED_1('`'),info);
+		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('`'),info);
 
 	case AST_SYNTAX_ERR_INVALID_ARG:
-		arg.m_u64val = BOX_ATOM_BUILTIN(invalid_argument);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(invalid_argument);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
 
 	case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
-		arg.m_u64val = BOX_ATOM_BUILTIN(unexpected_token);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(unexpected_token);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
 
 	case AST_SYNTAX_ERR_INVALID_CHAR:
-		arg.m_u64val = BOX_ATOM_BUILTIN(invalid_character);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(invalid_character);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
 
 	case AST_SYNTAX_ERR_INVALID_ESCAPE:
-		arg.m_u64val = BOX_ATOM_BUILTIN(invalid_escape);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(invalid_escape);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
 
 	case AST_SYNTAX_ERR_INVALID_UTF8:
-		arg.m_u64val = BOX_ATOM_BUILTIN(invalid_utf8);
-		return (emit_error(context,info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg) == SOLVE_NOMEM ? EMIT_NOMEM : EMIT_THROW);
+		arg.m_u64val = PACK_ATOM_BUILTIN(invalid_utf8);
+		return emit_error(context,info,PACK_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
 
 	default:
-		return EMIT_NOMEM;
+		assert(0);
+		return EMIT_OK;
 	}
 }
 
-static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser_t* parser, union box_t** term, struct var_info_t** varinfo)
+static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser_t* parser, union packed_t** term, struct var_info_t** varinfo)
 {
 	enum eEmitStatus status = EMIT_OK;
 	enum eASTError ast_err = AST_ERR_NONE;
@@ -2449,13 +2545,13 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 		/* Reset scratch stack */
 		stack_reset(&context->m_scratch_stack,0);
 
-		/* Reset token because we just trashed it */
+		/* Reset token because we just trashed it by resetting the stack */
 		next.m_alloc = 0;
 		next.m_len = 0;
 		next.m_str = NULL;
 
 		if (node)
-			status = emit_syntax_error_missing(context,BOX_ATOM_EMBED_1('.'),&parser->m_line_info);
+			status = emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('.'),&parser->m_line_info);
 		else if (next_type != tokEOF)
 			status = emit_ast_error(context,ast_err,&parser->m_line_info);
 		else
@@ -2463,7 +2559,19 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 
 		/* Skip to what looks like the end of a complete term */
 		while (next_type != tokEnd && next_type != tokEOF)
+		{
 			next_type = token_next(context,parser,&next);
+			if (next_type == tokNoMem)
+			{
+				/* Reset scratch stack */
+				stack_reset(&context->m_scratch_stack,0);
+
+				/* Reset token because we just trashed it by resetting the stack */
+				next.m_alloc = 0;
+				next.m_len = 0;
+				next.m_str = NULL;
+			}
+		}
 	}
 	else
 	{
@@ -2475,8 +2583,8 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 			status = emit_node_value(context,node,term,&term_len);
 			if (status == EMIT_OK)
 			{
-				/* Emit one more box_t as it can be read while looking for debug info */
-				*term = stack_realloc(&context->m_call_stack,*term,term_len * sizeof(union box_t),(term_len + 1) * sizeof(union box_t));
+				/* Emit one more packed_t as it can be read while looking for debug info */
+				*term = stack_realloc(&context->m_call_stack,*term,term_len * sizeof(union packed_t),(term_len + 1) * sizeof(union packed_t));
 				if (!*term)
 					status = EMIT_NOMEM;
 				else
@@ -2488,28 +2596,29 @@ static enum eEmitStatus parse_emit_term(struct context_t* context, struct parser
 	return status;
 }
 
-static enum eEmitStatus clause_directive(struct context_t* context, const union box_t* directive)
+#ifdef OLD
+static enum eEmitStatus clause_directive(struct context_t* context, const union packed_t* directive)
 {
 	assert(0);
 }
 
-static enum eEmitStatus ensure_loaded(struct context_t* context, const union box_t* directive)
+static enum eEmitStatus ensure_loaded(struct context_t* context, const union packed_t* directive)
 {
 	assert(0);
 }
 
-static enum eEmitStatus compile_initializer(struct context_t* context, const union box_t* directive)
+static enum eEmitStatus compile_initializer(struct context_t* context, const union packed_t* directive)
 {
 	assert(0);
 }
 
-enum eSolveResult assert_clause(struct context_t* context, const union box_t* clause, int z, int dynamic);
+enum eSolveResult assert_clause(struct context_t* context, const union packed_t* clause, int z, int dynamic);
 
-static enum eEmitStatus directive_solve(struct context_t* context, const union box_t* directive)
+static enum eEmitStatus directive_solve(struct context_t* context, const union packed_t* directive)
 {
 	assert(0);
 
-	/*switch (solve(context,directive))
+	switch (solve(context,directive))
 	{
 	case SOLVE_TRUE:
 		return EMIT_OK;
@@ -2523,11 +2632,11 @@ static enum eEmitStatus directive_solve(struct context_t* context, const union b
 	default:
 		// Should never happen
 		assert(0);
-		return (emit_error(context,get_debug_info(directive),BOX_ATOM_BUILTIN(system_error),0) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
-	}*/
+		return (emit_error(context,get_debug_info(directive),PACK_ATOM_BUILTIN(system_error),0) == EMIT_OK ? EMIT_THROW : EMIT_NOMEM);
+	}
 }
 
-static enum eEmitStatus include(struct context_t* context, const union box_t* directive);
+static enum eEmitStatus include(struct context_t* context, const union packed_t* directive);
 
 static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 {
@@ -2539,33 +2648,33 @@ static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 
 	do
 	{
-		union box_t* term = NULL;
+		union packed_t* term = NULL;
 		size_t stack_base = stack_top(context->m_call_stack);
 		struct var_info_t* varinfo = NULL;
 
 		status = parse_emit_term(context,&parser,&term,&varinfo);
 		if (status == EMIT_OK)
 		{
-			if (term->m_u64val == BOX_COMPOUND_EMBED_2(1,':','-'))
+			if (term->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
 			{
-				term = (union box_t*)first_arg(term);
+				term = (union packed_t*)first_arg(term);
 				switch (term->m_u64val)
 				{
-				case BOX_COMPOUND_BUILTIN(dynamic,1):
-				case BOX_COMPOUND_BUILTIN(multifile,1):
-				case BOX_COMPOUND_BUILTIN(discontiguous,1):
+				case PACK_COMPOUND_BUILTIN(dynamic,1):
+				case PACK_COMPOUND_BUILTIN(multifile,1):
+				case PACK_COMPOUND_BUILTIN(discontiguous,1):
 					status = clause_directive(context,term);
 					break;
 
-				case BOX_COMPOUND_BUILTIN(include,1):
+				case PACK_COMPOUND_BUILTIN(include,1):
 					status = include(context,term);
 					break;
 
-				case BOX_COMPOUND_BUILTIN(ensure_loaded,1):
+				case PACK_COMPOUND_BUILTIN(ensure_loaded,1):
 					status = ensure_loaded(context,term);
 					break;
 
-				case BOX_COMPOUND_BUILTIN(initialization,1):
+				case PACK_COMPOUND_BUILTIN(initialization,1):
 					status = compile_initializer(context,term);
 					break;
 
@@ -2601,7 +2710,7 @@ static enum eEmitStatus load_file(struct context_t* context, struct stream_t* s)
 	return status;
 }
 
-static enum eEmitStatus include(struct context_t* context, const union box_t* directive)
+static enum eEmitStatus include(struct context_t* context, const union packed_t* directive)
 {
 	enum eEmitStatus status;
 	struct stream_t* s = NULL;
@@ -2618,51 +2727,39 @@ static enum eEmitStatus include(struct context_t* context, const union box_t* di
 
 	return status;
 }
+#endif
 
-enum eSolveResult prepare_term(struct context_t* context, struct stream_t* s, union box_t** term, const char*** varnames)
+enum eEmitStatus prepare_term(struct context_t* context, struct stream_t* s, union packed_t** term, const char*** varnames)
 {
-	enum eSolveResult result;
-	union box_t arg;
+	enum eEmitStatus result;
 	struct var_info_t* varinfo = NULL;
 
 	struct parser_t parser = {0};
 	parser.m_s = s;
 	parser.m_line_info.m_end_line = 1;
 
-	switch (parse_emit_term(context,&parser,term,&varinfo))
+	result = parse_emit_term(context,&parser,term,&varinfo);
+	if (result == EMIT_EOF)
 	{
-	case EMIT_EOF:
-		arg.m_u64val = BOX_ATOM_BUILTIN(past_end_of_stream);
-		result = emit_error(context,&parser.m_line_info,BOX_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
-		break;
-
-	case EMIT_NOMEM:
-		result = SOLVE_NOMEM;
-		break;
-
-	case EMIT_THROW:
-		result = SOLVE_THROW;
-		break;
-
-	default:
-		result = SOLVE_TRUE;
-		break;
+		union packed_t arg;
+		arg.m_u64val = PACK_ATOM_BUILTIN(past_end_of_stream);
+		result = emit_error(context,&parser.m_line_info,PACK_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
 	}
 
-	if (result == SOLVE_TRUE)
+	if (result == EMIT_OK)
 	{
 		// Copy varinfo to call_stack
-		*varnames = stack_malloc(&context->m_call_stack,sizeof(union box_t*) * context->m_substs->m_count);
+		*varnames = stack_malloc(&context->m_call_stack,sizeof(union packed_t*) * context->m_substs->m_count);
 		if (!*varnames)
-			result = SOLVE_NOMEM;
+			result = EMIT_NOMEM;
 		else
 		{
 			size_t i;
-			for (i = 0; result == SOLVE_TRUE && i < context->m_substs->m_count; ++i)
+			for (i = 0; result == EMIT_OK && i < context->m_substs->m_count; ++i)
 			{
 				char* n = stack_malloc(&context->m_call_stack,varinfo[i].m_name_len+1);
 				if (!n)
-					result = SOLVE_NOMEM;
+					result = EMIT_NOMEM;
 				else
 				{
 					memcpy(n,varinfo[i].m_name,varinfo[i].m_name_len);
@@ -2673,7 +2770,7 @@ enum eSolveResult prepare_term(struct context_t* context, struct stream_t* s, un
 		}
 	}
 
-	if (result == SOLVE_TRUE)
+	if (result == EMIT_OK)
 		stack_reset(&context->m_scratch_stack,0);
 
 	// We have just made heavy use of the scratch stack

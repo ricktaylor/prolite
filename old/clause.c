@@ -4,7 +4,7 @@
 #include <string.h>
 #include <assert.h>
 
-struct predicate_t* find_predicate(struct module_t* module, const union box_t* head);
+struct predicate_t* find_predicate(struct module_t* module, const union packed_t* head);
 int add_predicate(struct module_t* module, struct predicate_t* pred);
 
 void predicate_lock(struct predicate_t* predicate) { /* TODO */ }
@@ -35,7 +35,7 @@ static void delete_clause(struct clause_t* clause)
 		stack_delete(clause->m_stack);
 }
 
-static struct predicate_t* new_predicate(struct module_t* module, const union box_t* head, int dynamic)
+static struct predicate_t* new_predicate(struct module_t* module, const union packed_t* head, int dynamic)
 {
 	struct predicate_t* pred = NULL;
 	struct stack_t* s = stack_new(100,module->m_stack->m_fn_malloc,module->m_stack->m_fn_free);
@@ -76,9 +76,9 @@ void delete_predicate(struct predicate_t* predicate)
 	}
 }
 
-static inline int append_box_t(struct stack_t** stack, union box_t const** v, union box_t** term, size_t* term_size)
+static inline int append_packed_t(struct stack_t** stack, union packed_t const** v, union packed_t** term, size_t* term_size)
 {
-	*term = stack_realloc(stack,*term,*term_size * sizeof(union box_t),((*term_size)+1) * sizeof(union box_t));
+	*term = stack_realloc(stack,*term,*term_size * sizeof(union packed_t),((*term_size)+1) * sizeof(union packed_t));
 	if (!*term)
 		return -1;
 
@@ -86,15 +86,15 @@ static inline int append_box_t(struct stack_t** stack, union box_t const** v, un
 	return 0;
 }
 
-static int copy_term(struct context_t* context, struct string_ptr_t** strings, union box_t const** v, union box_t** new_term, size_t* term_size)
+static int copy_term(struct context_t* context, struct string_ptr_t** strings, union packed_t const** v, union packed_t** new_term, size_t* term_size)
 {
 	int r = 0;
-	enum tag_type_t type = UNBOX_TYPE((*v)->m_u64val);
+	enum tag_type_t type = UNPACK_TYPE((*v)->m_u64val);
 	switch (type)
 	{
 	case prolite_compound:
 		{
-			uint64_t arity = UNBOX_MANT_48((*v)->m_u64val);
+			uint64_t arity = UNPACK_MANT_48((*v)->m_u64val);
 			unsigned int hi16 = (arity >> 32);
 			if (hi16 & 0x8000)
 				arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
@@ -103,14 +103,14 @@ static int copy_term(struct context_t* context, struct string_ptr_t** strings, u
 			else
 			{
 				// Copy functor atom
-				if (append_box_t(&context->m_scratch_stack,v,new_term,term_size))
+				if (append_packed_t(&context->m_scratch_stack,v,new_term,term_size))
 					return -1;
 			}
 
-			if (append_box_t(&context->m_scratch_stack,v,new_term,term_size))
+			if (append_packed_t(&context->m_scratch_stack,v,new_term,term_size))
 				return -1;
 
-			if (!r && UNBOX_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
+			if (!r && UNPACK_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
 			{
 				// TODO: Debug info
 			}
@@ -125,7 +125,7 @@ static int copy_term(struct context_t* context, struct string_ptr_t** strings, u
 
 	case prolite_var:
 		{
-			const union box_t* ptr = deref_term(context->m_substs,*v);
+			const union packed_t* ptr = deref_term(context->m_substs,*v);
 			if (ptr == *v)
 			{
 				// TODO: Make this a better error!
@@ -142,28 +142,28 @@ static int copy_term(struct context_t* context, struct string_ptr_t** strings, u
 	case prolite_chars:
 	case prolite_charcodes:
 		{
-			unsigned int hi16 = UNBOX_HI16((*v)->m_u64val);
+			unsigned int hi16 = UNPACK_HI16((*v)->m_u64val);
 			if (hi16 & 0xC000)
-				r = append_box_t(&context->m_scratch_stack,v,new_term,term_size);
+				r = append_packed_t(&context->m_scratch_stack,v,new_term,term_size);
 			else
 			{
-				union box_t b[1];
-				struct string_ptr_t* s = unbox_pointer((*v)->m_u64val);
-				s = box_stack_string(&context->m_scratch_stack,strings,s->m_str,s->m_len);
+				union packed_t b[1];
+				struct string_ptr_t* s = unpack_pointer((*v)->m_u64val);
+				s = pack_stack_string(&context->m_scratch_stack,strings,s->m_str,s->m_len);
 				if (!s)
 					return -1;
 
-				b[0].m_u64val = BOX_TYPE(type) | box_pointer(s);
-				r = append_box_t(&context->m_scratch_stack,(const union box_t**)&b,new_term,term_size);
+				b[0].m_u64val = PACK_TYPE(type) | pack_pointer(s);
+				r = append_packed_t(&context->m_scratch_stack,(const union packed_t**)&b,new_term,term_size);
 			}
 		}
 		break;
 
 	default:
-		r = append_box_t(&context->m_scratch_stack,v,new_term,term_size);
+		r = append_packed_t(&context->m_scratch_stack,v,new_term,term_size);
 	}
 
-	if (!r && UNBOX_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
+	if (!r && UNPACK_TYPE((*v)->m_u64val) == PROLITE_DEBUG_INFO)
 	{
 		// TODO: Debug info
 	}
@@ -171,17 +171,17 @@ static int copy_term(struct context_t* context, struct string_ptr_t** strings, u
 	return r;
 }
 
-static const union box_t* copy_head(struct context_t* context, struct clause_t* clause, const union box_t* head, int64_t** var_rewrites, size_t* var_count)
+static const union packed_t* copy_head(struct context_t* context, struct clause_t* clause, const union packed_t* head, int64_t** var_rewrites, size_t* var_count)
 {
 
 }
 
-static const union box_t* copy_body(struct context_t* context, struct clause_t* clause, const union box_t* head, int64_t** var_rewrites, size_t* var_count)
+static const union packed_t* copy_body(struct context_t* context, struct clause_t* clause, const union packed_t* head, int64_t** var_rewrites, size_t* var_count)
 {
 
 }
 
-static enum eSolveResult compile_clause(struct clause_t* clause, struct predicate_t* pred, struct context_t* context, const union box_t* head, const union box_t* body)
+static enum eSolveResult compile_clause(struct clause_t* clause, struct predicate_t* pred, struct context_t* context, const union packed_t* head, const union packed_t* body)
 {
 	enum eSolveResult result = SOLVE_TRUE;
 	struct compile_context_t compile_context;
@@ -231,7 +231,7 @@ static enum eSolveResult compile_clause(struct clause_t* clause, struct predicat
 			break;
 
 		case COMPILE_NOT_CALLABLE:
-			result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),body);
+			result = throw_type_error(context,PACK_ATOM_BUILTIN(callable),body);
 			break;
 
 		case COMPILE_NOMEM:
@@ -245,23 +245,23 @@ static enum eSolveResult compile_clause(struct clause_t* clause, struct predicat
 	return result;
 }
 
-enum eSolveResult assert_clause(struct context_t* context, const union box_t* goal, int z, int dynamic)
+enum eSolveResult assert_clause(struct context_t* context, const union packed_t* goal, int z, int dynamic)
 {
 	enum eSolveResult result;
-	const union box_t* head = goal;
-	const union box_t* body = NULL;
+	const union packed_t* head = goal;
+	const union packed_t* body = NULL;
 	struct predicate_t* pred;
 	int new_pred = 0;
 	struct clause_t* clause;
 
-	if (goal->m_u64val == BOX_COMPOUND_EMBED_2(2,':','-'))
+	if (goal->m_u64val == PACK_COMPOUND_EMBED_2(2,':','-'))
 	{
 		head = first_arg(goal);
 		body = deref_term(context->m_substs,next_arg(head));
 		head = deref_term(context->m_substs,head);
 	}
 
-	switch (UNBOX_TYPE(head->m_u64val))
+	switch (UNPACK_TYPE(head->m_u64val))
 	{
 	case prolite_var:
 		return throw_instantiation_error(context,head);
@@ -271,14 +271,14 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 		break;
 
 	default:
-		return throw_type_error(context,BOX_ATOM_BUILTIN(callable),head);
+		return throw_type_error(context,PACK_ATOM_BUILTIN(callable),head);
 	}
 
 	pred = find_predicate(context->m_module,head);
 	if (pred)
 	{
 		if (dynamic && !pred->m_flags.dynamic)
-			return throw_permission_error(context,BOX_ATOM_BUILTIN(modify),BOX_ATOM_BUILTIN(static_procedure),pred->m_indicator);
+			return throw_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(static_procedure),pred->m_indicator);
 	}
 	else
 	{
@@ -340,13 +340,13 @@ enum eSolveResult assert_clause(struct context_t* context, const union box_t* go
 
 enum eSolveResult solve_asserta(struct context_t* context, size_t frame)
 {
-	const union box_t* goal = *(const union box_t**)stack_at(context->m_instr_stack,frame);
+	const union packed_t* goal = *(const union packed_t**)stack_at(context->m_instr_stack,frame);
 	return assert_clause(context,deref_term(context->m_substs,first_arg(goal)),0,1);
 }
 
 enum eSolveResult solve_assertz(struct context_t* context, size_t frame)
 {
-	const union box_t* goal = *(const union box_t**)stack_at(context->m_instr_stack,frame);
+	const union packed_t* goal = *(const union packed_t**)stack_at(context->m_instr_stack,frame);
 	return assert_clause(context,deref_term(context->m_substs,first_arg(goal)),1,1);
 }
 
@@ -397,7 +397,7 @@ static enum eSolveResult solve_compiled_clause(struct context_t* context, size_t
 {
 	enum eSolveResult result = SOLVE_TRUE;
 	struct predicate_t* pred = *(struct predicate_t**)stack_at(context->m_instr_stack,frame);
-	const union box_t* goal = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame+1));
+	const union packed_t* goal = deref_term(context->m_substs,*(const union packed_t**)stack_at(context->m_instr_stack,frame+1));
 
 	// TODO
 
@@ -408,7 +408,7 @@ static enum eSolveResult jit_static_predicate(struct context_t* context, size_t 
 {
 	enum eSolveResult result = SOLVE_TRUE;
 	struct predicate_t* pred = *(struct predicate_t**)stack_at(context->m_instr_stack,frame);
-	//const union box_t* goal = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame+1));
+	//const union packed_t* goal = deref_term(context->m_substs,*(const union packed_t**)stack_at(context->m_instr_stack,frame+1));
 
 	predicate_lock(pred);
 
@@ -443,7 +443,7 @@ static enum eSolveResult jit_static_predicate(struct context_t* context, size_t 
 	return result;
 }*/
 
-static enum eSolveResult solve_dynamic_clause(struct context_t* context, struct clause_t* clause, const union box_t* goal)
+static enum eSolveResult solve_dynamic_clause(struct context_t* context, struct clause_t* clause, const union packed_t* goal)
 {
 	enum eSolveResult result;
 
@@ -460,7 +460,7 @@ static enum eSolveResult solve_dynamic_clause(struct context_t* context, struct 
 	size_t stack_base = stack_top(context->m_call_stack);
 	if (prev_substs)
 	{
-		context->m_substs = stack_malloc(&context->m_call_stack,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
+		context->m_substs = stack_malloc(&context->m_call_stack,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union packed_t*)));
 		if (!context->m_substs)
 		{
 			context->m_substs = prev_substs;
@@ -476,7 +476,7 @@ static enum eSolveResult solve_dynamic_clause(struct context_t* context, struct 
 				if (prev_substs->m_values[i])
 				{
 					context->m_substs->m_values[i] = deref_term(prev_substs,prev_substs->m_values[i]);
-					if (UNBOX_TYPE(context->m_substs->m_values[i]->m_u64val) != prolite_var)
+					if (UNPACK_TYPE(context->m_substs->m_values[i]->m_u64val) != prolite_var)
 						copy = 0;
 				}
 
@@ -502,7 +502,7 @@ static enum eSolveResult solve_dynamic_clause(struct context_t* context, struct 
 	if (prev_substs)
 		new_subst_count += prev_substs->m_count;
 
-	context->m_substs = stack_malloc(&context->m_call_stack,sizeof(struct substs_t) + (new_subst_count * sizeof(union box_t*)));
+	context->m_substs = stack_malloc(&context->m_call_stack,sizeof(struct substs_t) + (new_subst_count * sizeof(union packed_t*)));
 	if (!context->m_substs)
 	{
 		context->m_substs = prev_substs;
@@ -510,7 +510,7 @@ static enum eSolveResult solve_dynamic_clause(struct context_t* context, struct 
 	}
 
 	if (prev_substs)
-		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
+		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union packed_t*)));
 
 	result = unify(context->m_substs,goal,clause->m_head);
 	if (result == SOLVE_TRUE)
@@ -534,7 +534,7 @@ static enum eSolveResult redo_dynamic_predicate(struct context_t* context, int u
 	return SOLVE_FAIL;
 }
 
-static enum eSolveResult solve_dynamic_predicate(struct context_t* context, const union box_t* goal)
+static enum eSolveResult solve_dynamic_predicate(struct context_t* context, const union packed_t* goal)
 {
 	enum eSolveResult result = SOLVE_FAIL;
 	size_t clause_count = stack_pop(&context->m_call_stack);
@@ -572,7 +572,7 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 {
 	enum eSolveResult result = SOLVE_TRUE;
 	struct predicate_t** pred = (struct predicate_t**)stack_at(context->m_instr_stack,frame);
-	const union box_t* goal = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame+1));
+	const union packed_t* goal = deref_term(context->m_substs,*(const union packed_t**)stack_at(context->m_instr_stack,frame+1));
 
 	if (!*pred)
 		*pred = find_predicate(context->m_module,goal);
@@ -619,14 +619,14 @@ static enum eSolveResult solve_user_defined(struct context_t* context, size_t fr
 		}
 	}
 	else if (context->m_module->m_flags.unknown == 0)
-		result = throw_existence_error(context,BOX_ATOM_BUILTIN(procedure),goal);
+		result = throw_existence_error(context,PACK_ATOM_BUILTIN(procedure),goal);
 	else
 		result = SOLVE_FAIL;
 
 	return result;
 }
 
-enum eCompileResult compile_user_defined(struct compile_context_t* context, const union box_t* goal)
+enum eCompileResult compile_user_defined(struct compile_context_t* context, const union packed_t* goal)
 {
 	enum eCompileResult result = COMPILE_OK;
 	struct predicate_t* pred = find_predicate(context->m_module,goal);

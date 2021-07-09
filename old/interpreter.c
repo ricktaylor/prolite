@@ -8,19 +8,19 @@
 
 #include <stdio.h>
 
-static const union box_t* get_debug_info(const union box_t* v)
+static const union packed_t* get_debug_info(const union packed_t* v)
 {
-	const union box_t* d = NULL;
+	const union packed_t* d = NULL;
 
-	if (UNBOX_TYPE(v->m_u64val) == prolite_compound)
+	if (UNPACK_TYPE(v->m_u64val) == prolite_compound)
 	{
 		// Skip functor atom
-		if ((UNBOX_HI16(v->m_u64val) & 0xC000) == 0)
+		if ((UNPACK_HI16(v->m_u64val) & 0xC000) == 0)
 			++v;
 	}
 
 	++v;
-	if (UNBOX_TYPE(v->m_u64val) == PROLITE_DEBUG_INFO)
+	if (UNPACK_TYPE(v->m_u64val) == PROLITE_DEBUG_INFO)
 	{
 		// TODO: Debug info
 		d = v;
@@ -29,7 +29,7 @@ static const union box_t* get_debug_info(const union box_t* v)
 	return d;
 }
 
-enum eSolveResult unify(struct substs_t* substs, const union box_t* a, const union box_t* b)
+enum eSolveResult unify(struct substs_t* substs, const union packed_t* a, const union packed_t* b)
 {
 	enum eSolveResult result = SOLVE_FAIL;
 
@@ -38,10 +38,10 @@ enum eSolveResult unify(struct substs_t* substs, const union box_t* a, const uni
 
 	if (a == b)
 	{
-		if (UNBOX_TYPE(a->m_u64val) == prolite_compound)
+		if (UNPACK_TYPE(a->m_u64val) == prolite_compound)
 		{
 			uint64_t arity;
-			uint64_t all48 = UNBOX_MANT_48(a->m_u64val);
+			uint64_t all48 = UNPACK_MANT_48(a->m_u64val);
 			unsigned int hi16 = (all48 >> 32);
 
 			if (hi16 & 0x8000)
@@ -72,7 +72,7 @@ enum eSolveResult unify(struct substs_t* substs, const union box_t* a, const uni
 
 		result = SOLVE_TRUE;
 	}
-	else if (UNBOX_TYPE(a->m_u64val) == prolite_var)
+	else if (UNPACK_TYPE(a->m_u64val) == prolite_var)
 	{
 		int64_t var_idx = var_index(a);
 		if (var_idx >= 0)
@@ -89,7 +89,7 @@ enum eSolveResult unify(struct substs_t* substs, const union box_t* a, const uni
 		}
 		result = SOLVE_TRUE;
 	}
-	else if (UNBOX_TYPE(b->m_u64val) == prolite_var)
+	else if (UNPACK_TYPE(b->m_u64val) == prolite_var)
 	{
 		int64_t var_idx = var_index(b);
 		if (var_idx >= 0)
@@ -125,7 +125,7 @@ static enum eSolveResult solve_cut(struct context_t* context, size_t frame)
 	return stack_push_ptr(&context->m_call_stack,&redo_cut) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
 }
 
-static inline enum eCompileResult compile_cut(struct compile_context_t* context, const union box_t* goal)
+static inline enum eCompileResult compile_cut(struct compile_context_t* context, const union packed_t* goal)
 {
 	return stack_push_ptr(&context->m_emit_stack,&solve_cut) == -1 ? COMPILE_NOMEM : COMPILE_OK;
 }
@@ -144,7 +144,7 @@ static enum eSolveResult solve_repeat(struct context_t* context, size_t frame)
 	return stack_push_ptr(&context->m_call_stack,&redo_repeat) == -1 ? SOLVE_NOMEM : SOLVE_TRUE;
 }
 
-static inline enum eCompileResult compile_repeat(struct compile_context_t* context, const union box_t* goal)
+static inline enum eCompileResult compile_repeat(struct compile_context_t* context, const union packed_t* goal)
 {
 	return stack_push_ptr(&context->m_emit_stack,&solve_repeat) == -1 ? COMPILE_NOMEM : COMPILE_OK;
 }
@@ -216,7 +216,7 @@ again:
 	return result;
 }
 
-static enum eCompileResult compile_and(struct compile_context_t* context, const union box_t* goal)
+static enum eCompileResult compile_and(struct compile_context_t* context, const union packed_t* goal)
 {
 	enum eCompileResult result;
 	size_t frame = stack_top(context->m_emit_stack);
@@ -297,7 +297,7 @@ static enum eSolveResult solve_if_then(struct context_t* context, size_t frame)
 	return result;
 }
 
-static enum eCompileResult compile_if_then(struct compile_context_t* context, const union box_t* goal)
+static enum eCompileResult compile_if_then(struct compile_context_t* context, const union packed_t* goal)
 {
 	enum eCompileResult result;
 	size_t frame = stack_top(context->m_emit_stack);
@@ -381,7 +381,7 @@ static enum eSolveResult solve_if_then_else(struct context_t* context, size_t fr
 	return result;
 }
 
-static enum eCompileResult compile_if_then_else(struct compile_context_t* context, const union box_t* if_then_goal, const union box_t* else_goal)
+static enum eCompileResult compile_if_then_else(struct compile_context_t* context, const union packed_t* if_then_goal, const union packed_t* else_goal)
 {
 	enum eCompileResult result;
 	size_t frame = stack_top(context->m_emit_stack);
@@ -509,17 +509,17 @@ static enum eSolveResult solve_or(struct context_t* context, size_t frame)
 	return result;
 }
 
-static enum eCompileResult compile_or(struct compile_context_t* context, const union box_t* goal)
+static enum eCompileResult compile_or(struct compile_context_t* context, const union packed_t* goal)
 {
 	enum eCompileResult result;
-	const union box_t* else_goal;
+	const union packed_t* else_goal;
 	size_t frame;
 
 	goal = first_arg(goal);
 	else_goal = deref_term(context->m_substs,next_arg(goal));
 	goal = deref_term(context->m_substs,goal);
 
-	if (goal->m_u64val == BOX_COMPOUND_EMBED_2(2,'-','>'))
+	if (goal->m_u64val == PACK_COMPOUND_EMBED_2(2,'-','>'))
 		return compile_if_then_else(context,goal,else_goal);
 
 	frame = stack_top(context->m_emit_stack);
@@ -623,17 +623,17 @@ static enum eSolveResult solve_compile(struct context_t* context, size_t frame)
 {
 	enum eSolveResult result;
 	size_t stack_base;
-	const union box_t* goal = deref_term(context->m_substs,*(const union box_t**)stack_at(context->m_instr_stack,frame));
+	const union packed_t* goal = deref_term(context->m_substs,*(const union packed_t**)stack_at(context->m_instr_stack,frame));
 	struct compile_context_t compile_context;
 
-	switch (UNBOX_TYPE(goal->m_u64val))
+	switch (UNPACK_TYPE(goal->m_u64val))
 	{
 	case prolite_compound:
 	case prolite_atom:
 		break;
 
 	default:
-		return throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
+		return throw_type_error(context,PACK_ATOM_BUILTIN(callable),goal);
 	}
 
 	compile_context.m_emit_stack = context->m_call_stack;
@@ -650,7 +650,7 @@ static enum eSolveResult solve_compile(struct context_t* context, size_t frame)
 		break;
 
 	case COMPILE_NOT_CALLABLE:
-		result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
+		result = throw_type_error(context,PACK_ATOM_BUILTIN(callable),goal);
 		break;
 
 	case COMPILE_ALWAYS_TRUE:
@@ -681,7 +681,7 @@ static enum eSolveResult solve_compile(struct context_t* context, size_t frame)
 	return result;
 }
 
-enum eCompileResult compile_call(struct compile_context_t* context, const union box_t* goal)
+enum eCompileResult compile_call(struct compile_context_t* context, const union packed_t* goal)
 {
 	enum eCompileResult result;
 	size_t frame;
@@ -691,9 +691,9 @@ enum eCompileResult compile_call(struct compile_context_t* context, const union 
 		// Optimize call(call(_)) -> call(_)
 		goal = deref_term(context->m_substs,first_arg(goal));
 	}
-	while (!get_debug_info(goal) && goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'c','a','l','l'));
+	while (!get_debug_info(goal) && goal->m_u64val == PACK_COMPOUND_EMBED_4(1,'c','a','l','l'));
 
-	switch (UNBOX_TYPE(goal->m_u64val))
+	switch (UNPACK_TYPE(goal->m_u64val))
 	{
 	case prolite_compound:
 	case prolite_atom:
@@ -739,17 +739,17 @@ static enum eSolveResult solve_unify(struct context_t* context, size_t frame)
 	enum eSolveResult result;
 	struct substs_t* prev_substs = context->m_substs;
 	size_t stack_base = stack_top(context->m_call_stack);
-	const union box_t *goal = first_arg(*(const union box_t**)stack_at(context->m_instr_stack,frame));
+	const union packed_t *goal = first_arg(*(const union packed_t**)stack_at(context->m_instr_stack,frame));
 
 	if (prev_substs)
 	{
-		context->m_substs = stack_malloc(&context->m_call_stack,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
+		context->m_substs = stack_malloc(&context->m_call_stack,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union packed_t*)));
 		if (!context->m_substs)
 		{
 			context->m_substs = prev_substs;
 			return SOLVE_NOMEM;
 		}
-		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
+		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union packed_t*)));
 	}
 
 	result = unify(context->m_substs,goal,next_arg(goal));
@@ -777,17 +777,17 @@ static enum eSolveResult solve_not_unifiable(struct context_t* context, size_t f
 	enum eSolveResult result;
 	struct substs_t* prev_substs = context->m_substs;
 	size_t stack_base = stack_top(context->m_call_stack);
-	const union box_t *goal = first_arg(*(const union box_t**)stack_at(context->m_instr_stack,frame));
+	const union packed_t *goal = first_arg(*(const union packed_t**)stack_at(context->m_instr_stack,frame));
 
 	if (prev_substs)
 	{
-		context->m_substs = stack_malloc(&context->m_call_stack,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
+		context->m_substs = stack_malloc(&context->m_call_stack,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union packed_t*)));
 		if (!context->m_substs)
 		{
 			context->m_substs = prev_substs;
 			return SOLVE_NOMEM;
 		}
-		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union box_t*)));
+		memcpy(context->m_substs,prev_substs,sizeof(struct substs_t) + (prev_substs->m_count * sizeof(union packed_t*)));
 	}
 
 	result = unify(context->m_substs,goal,next_arg(goal));
@@ -817,7 +817,7 @@ static enum eSolveResult solve_not_proveable(struct context_t* context, size_t f
 	return result;
 }
 
-static enum eCompileResult compile_not_proveable(struct compile_context_t* context, const union box_t* goal)
+static enum eCompileResult compile_not_proveable(struct compile_context_t* context, const union packed_t* goal)
 {
 	enum eCompileResult result;
 	size_t frame = stack_top(context->m_emit_stack);
@@ -855,7 +855,7 @@ static enum eSolveResult solve_once(struct context_t* context, size_t frame)
 	return result;
 }
 
-static enum eCompileResult compile_once(struct compile_context_t* context, const union box_t* goal)
+static enum eCompileResult compile_once(struct compile_context_t* context, const union packed_t* goal)
 {
 	enum eCompileResult result;
 	size_t frame = stack_top(context->m_emit_stack);
@@ -868,7 +868,7 @@ static enum eCompileResult compile_once(struct compile_context_t* context, const
 		goal = deref_term(context->m_substs,first_arg(goal));
 
 	}  // Optimize once(once(_)) -> once(_)
-	while (!get_debug_info(goal) && goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'o','n','c','e'));
+	while (!get_debug_info(goal) && goal->m_u64val == PACK_COMPOUND_EMBED_4(1,'o','n','c','e'));
 
 	result = compile_call(context,goal);
 	if (result == COMPILE_ALWAYS_TRUE || result == COMPILE_ALWAYS_FAILS)
@@ -881,16 +881,16 @@ static enum eSolveResult solve_halt(struct context_t* context, size_t frame)
 {
 	enum eSolveResult result = SOLVE_HALT;
 
-	const union box_t* goal = *(const union box_t**)stack_at(context->m_instr_stack,frame);
-	if (goal->m_u64val == BOX_COMPOUND_EMBED_4(1,'h','a','l','t'))
+	const union packed_t* goal = *(const union packed_t**)stack_at(context->m_instr_stack,frame);
+	if (goal->m_u64val == PACK_COMPOUND_EMBED_4(1,'h','a','l','t'))
 	{
 		goal = deref_term(context->m_substs,first_arg(goal));
 
 		// halt/1
-		if (UNBOX_TYPE(goal->m_u64val) == prolite_var)
+		if (UNPACK_TYPE(goal->m_u64val) == prolite_var)
 			result = throw_instantiation_error(context,goal);
-		else if (UNBOX_TYPE(goal->m_u64val) != prolite_int32)
-			result = throw_type_error(context,BOX_ATOM_BUILTIN(integer),goal);
+		else if (UNPACK_TYPE(goal->m_u64val) != prolite_int32)
+			result = throw_type_error(context,PACK_ATOM_BUILTIN(integer),goal);
 		else
 		{
 			stack_reset(&context->m_scratch_stack,0);
@@ -902,7 +902,7 @@ static enum eSolveResult solve_halt(struct context_t* context, size_t frame)
 	return result;
 }
 
-static inline enum eCompileResult compile_builtin(struct compile_context_t* context, enum eSolveResult (*solve_fn)(struct context_t*,size_t), const union box_t* goal)
+static inline enum eCompileResult compile_builtin(struct compile_context_t* context, enum eSolveResult (*solve_fn)(struct context_t*,size_t), const union packed_t* goal)
 {
 	if (stack_push_ptr(&context->m_emit_stack,solve_fn) == -1 ||
 		stack_push_ptr(&context->m_emit_stack,goal) == -1)
@@ -916,12 +916,12 @@ static inline enum eCompileResult compile_builtin(struct compile_context_t* cont
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
 enum eSolveResult solve_##f(struct context_t* context, size_t frame);
 
-#include "builtin_functions.h"
+#include "builtin_functions"
 
-enum eCompileResult compile_catch(struct compile_context_t* context, const union box_t* goal);
-enum eCompileResult compile_user_defined(struct compile_context_t* context, const union box_t* goal);
+enum eCompileResult compile_catch(struct compile_context_t* context, const union packed_t* goal);
+enum eCompileResult compile_user_defined(struct compile_context_t* context, const union packed_t* goal);
 
-enum eCompileResult compile(struct compile_context_t* context, const union box_t* goal)
+enum eCompileResult compile(struct compile_context_t* context, const union packed_t* goal)
 {
 	enum eCompileResult result;
 	size_t frame = stack_top(context->m_emit_stack);
@@ -937,12 +937,12 @@ enum eCompileResult compile(struct compile_context_t* context, const union box_t
 
 	switch (goal->m_u64val)
 	{
-	case BOX_ATOM_EMBED_4('t','r','u','e'):
+	case PACK_ATOM_EMBED_4('t','r','u','e'):
 		result = COMPILE_ALWAYS_TRUE;
 		break;
 
-	case BOX_ATOM_EMBED_4('f','a','i','l'):
-	case BOX_ATOM_EMBED_5('f','a','l','s','e'):
+	case PACK_ATOM_EMBED_4('f','a','i','l'):
+	case PACK_ATOM_EMBED_5('f','a','l','s','e'):
 		result = COMPILE_ALWAYS_FAILS;
 		break;
 
@@ -954,18 +954,18 @@ enum eCompileResult compile(struct compile_context_t* context, const union box_t
 	case (n): result = compile_builtin(context,&solve_##f,goal); break; \
 		break;
 
-#include "builtin_functions.h"
+#include "builtin_functions"
 
 	default:
-		switch (UNBOX_TYPE(goal->m_u64val))
+		switch (UNPACK_TYPE(goal->m_u64val))
 		{
 		case prolite_var:
 			result = compile_call(context,goal);
 			break;
 
 		case prolite_compound:
-			if ((goal->m_u64val & BOX_COMPOUND_EMBED_4(0,'c','a','l','l')) == BOX_COMPOUND_EMBED_4(0,'c','a','l','l') ||
-				(goal->m_u64val & BOX_COMPOUND_BUILTIN(call,0)) == BOX_COMPOUND_BUILTIN(call,0))
+			if ((goal->m_u64val & PACK_COMPOUND_EMBED_4(0,'c','a','l','l')) == PACK_COMPOUND_EMBED_4(0,'c','a','l','l') ||
+				(goal->m_u64val & PACK_COMPOUND_BUILTIN(call,0)) == PACK_COMPOUND_BUILTIN(call,0))
 			{
 				// TODO: call/N
 				assert(0);
@@ -1077,12 +1077,12 @@ static enum eSolveResult start_fail(struct context_t* context, int unwind)
 	return unwind ? SOLVE_UNWIND : SOLVE_FAIL;
 }
 
-enum eSolveResult prepare_term(struct context_t* context, struct stream_t* s, union box_t** term, const char*** varnames);
+enum eSolveResult prepare_term(struct context_t* context, struct stream_t* s, union packed_t** term, const char*** varnames);
 
 enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s, const char*** varnames)
 {
 	size_t term_base = stack_top(context->m_call_stack);
-	union box_t* goal = NULL;
+	union packed_t* goal = NULL;
 	enum eSolveResult result = prepare_term(context,s,&goal,varnames);
 	if (result == SOLVE_TRUE)
 	{
@@ -1108,7 +1108,7 @@ enum eSolveResult context_prepare(struct context_t* context, struct stream_t* s,
 		case COMPILE_NOT_CALLABLE:
 			printf("type_error(callable(G)).\n");
 
-			result = throw_type_error(context,BOX_ATOM_BUILTIN(callable),goal);
+			result = throw_type_error(context,PACK_ATOM_BUILTIN(callable),goal);
 			break;
 
 		case COMPILE_ALWAYS_TRUE:
