@@ -8,7 +8,7 @@
 #ifndef TYPES_H_
 #define TYPES_H_
 
-#include "stack.h"
+#include "heap.h"
 #include "packed_types.h"
 
 #include <assert.h>
@@ -20,18 +20,23 @@ enum builtin_atoms_t
 #include "builtin_strings"
 };
 
-struct substs_t
+struct string_t
 {
-	size_t                m_count;
-	const union packed_t* m_values[];
+	size_t               m_len;
+	const unsigned char* m_str;
+	unsigned char        m_data[5]; //< May be used for embedded strings
 };
 
-struct string_ptr_t
+struct debug_info_t
 {
-	struct string_ptr_t* m_prev;
-	size_t               m_len;
-	unsigned char        m_str[];
+	int TODO;
 };
+
+
+
+
+
+
 
 struct predicate_t;
 
@@ -40,7 +45,6 @@ struct clause_t
 	struct predicate_t*   m_pred;
 	struct clause_t*      m_next;
 	struct clause_t*      m_prev;
-	struct stack_t*       m_stack;
 	size_t                m_var_count;
 	const union packed_t* m_head;
 	size_t                m_entry_point;
@@ -60,9 +64,7 @@ struct predicate_t
 	} m_flags;
 
 	struct module_t*      m_module;
-	struct stack_t*       m_stack;
 	const union packed_t* m_indicator;
-	struct string_ptr_t*  m_strings;
 	struct clause_t*      m_first_clause;
 	struct clause_t*      m_last_clause;
 	struct clause_t*      m_free_clause;
@@ -71,7 +73,7 @@ struct predicate_t
 struct predicate_table_t
 {
 	// TODO; This can be a much faster data structure
-	struct stack_t*     m_stack;
+	//struct stack_t*     m_stack;
 
 	size_t              m_count;
 	struct predicate_t* m_predicates[];
@@ -107,131 +109,36 @@ struct module_t
 		unsigned colon_sets_calling_context : 1;
 	} m_flags;
 
-	struct stack_t*           m_stack;
 	struct operator_t*        m_operators;
 	struct predicate_table_t* m_predicates;
 };
 
 struct context_t
 {
-	struct stack_t*        m_scratch_stack;
-	struct stack_t*        m_call_stack;
-	const struct stack_t*  m_instr_stack;
-	struct substs_t*       m_substs;
-	struct string_ptr_t*   m_strings;
-	struct module_t*       m_module;
+	struct heap_t*        m_heap;
+	union packed_t*       m_stack;
+
+	struct module_t*      m_module;
 };
 
-struct line_info_t
+union packed_t* push_string(union packed_t* stack, enum tag_type_t type, const unsigned char* str, size_t len);
+union packed_t* push_compound(union packed_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len);
+
+static inline union packed_t* push_integer(union packed_t* stack, int32_t v)
 {
-	size_t         m_start_line;
-	size_t         m_start_col;
-	size_t         m_end_line;
-	size_t         m_end_col;
-};
-
-static inline const union packed_t* first_arg(const union packed_t* v)
-{
-	assert(UNPACK_TYPE(v->m_u64val) == prolite_compound);
-
-	// Skip functor atom
-	if ((UNPACK_HI16(v->m_u64val) & 0xC000) == 0)
-		++v;
-
-	++v;
-
-	if (UNPACK_TYPE(v->m_u64val) == PROLITE_DEBUG_INFO)
-	{
-		// TODO: Skip Debug info
-		++v;
-	}
-
-	return v;
+	(--stack)->m_u64val = PACK_TYPE(prolite_int32) | PACK_MANT_48(v);
+	return stack;
 }
 
-static inline const union packed_t* next_arg(const union packed_t* v)
+static inline union packed_t* push_double(union packed_t* stack, double v)
 {
-	if (UNPACK_TYPE(v->m_u64val) == prolite_compound)
-	{
-		uint64_t arity = UNPACK_MANT_48(v->m_u64val);
-		unsigned int hi16 = (arity >> 32);
-		if (hi16 & 0x8000)
-			arity = (hi16 & (MAX_ARITY_EMBED << 11)) >> 11;
-		else if ((hi16 & 0xC000) == 0x4000)
-			arity = (hi16 & MAX_ARITY_BUILTIN);
-
-		v = first_arg(v);
-		while (arity--)
-			v = next_arg(v);
-	}
-	else
-	{
-		++v;
-
-		if (UNPACK_TYPE(v->m_u64val) == PROLITE_DEBUG_INFO)
-		{
-			// TODO: Skip Debug info
-			++v;
-		}
-	}
-
-	return v;
+	(--stack)->m_dval = v;
+	return stack;
 }
 
-static inline int64_t var_index(const union packed_t* v)
-{
-	// Sign extend
-	struct pun { int64_t u48 : 48; } p;
-	return (p.u48 = UNPACK_MANT_48(v->m_u64val));
-}
-
-static inline const union packed_t* deref_term(const struct substs_t* substs, const union packed_t* v)
-{
-	const union packed_t* r = v;
-	do
-	{
-		const union packed_t* t = NULL;
-
-		if (UNPACK_TYPE(r->m_u64val) == prolite_var)
-		{
-			int64_t var_idx = var_index(r);
-			if (var_idx >= 0)
-			{
-				assert(substs && var_idx < substs->m_count);
-
-				t = substs->m_values[var_idx];
-			}
-			else
-			{
-				assert(substs && -var_idx < substs->m_count);
-
-				t = *(substs->m_values + substs->m_count + var_idx);
-			}
-		}
-
-		if (!t)
-			break;
-
-		r = t;
-	}
-	while (r != v);
-
-	return r;
-}
-
-static inline int append_packed_t(struct stack_t** stack, union packed_t const** v, union packed_t** term, size_t* term_size)
-{
-	*term = stack_realloc(stack,*term,*term_size * sizeof(union packed_t),((*term_size)+1) * sizeof(union packed_t));
-	if (!*term)
-		return -1;
-
-	(*term)[(*term_size)++] = *((*v)++);
-	return 0;
-}
-
-uint32_t is_builtin_string(const unsigned char* str, size_t len);
-struct string_ptr_t* pack_stack_string(struct stack_t** stack, struct string_ptr_t** strings, const unsigned char* str, size_t len);
-uint64_t pack_pointer(void* ptr);
-void* unpack_pointer(uint64_t v);
+const union packed_t* get_first_arg(const union packed_t* compound, uint64_t* arity, struct debug_info_t* debug_info);
+const union packed_t* get_next_arg(const union packed_t* p, struct debug_info_t* debug_info);
+struct string_t get_compound(const union packed_t** b, uint64_t* arity, struct debug_info_t* debug_info);
+struct string_t get_string(const union packed_t** b, struct debug_info_t* debug_info);
 
 #endif /* TYPES_H_ */

@@ -8,6 +8,47 @@
 
 #include <stdio.h>
 
+static inline int64_t var_index(const union packed_t* v)
+{
+	// Sign extend
+	struct pun { int64_t u48 : 48; } p;
+	return (p.u48 = UNPACK_MANT_48(v->m_u64val));
+}
+
+static inline const union packed_t* deref_term(const struct substs_t* substs, const union packed_t* v)
+{
+	const union packed_t* r = v;
+	do
+	{
+		const union packed_t* t = NULL;
+
+		if (UNPACK_TYPE(r->m_u64val) == prolite_var)
+		{
+			int64_t var_idx = var_index(r);
+			if (var_idx >= 0)
+			{
+				assert(substs && var_idx < substs->m_count);
+
+				t = substs->m_values[var_idx];
+			}
+			else
+			{
+				assert(substs && -var_idx < substs->m_count);
+
+				t = *(substs->m_values + substs->m_count + var_idx);
+			}
+		}
+
+		if (!t)
+			break;
+
+		r = t;
+	}
+	while (r != v);
+
+	return r;
+}
+
 static const union packed_t* get_debug_info(const union packed_t* v)
 {
 	const union packed_t* d = NULL;

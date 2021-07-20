@@ -4,10 +4,12 @@ ACLOCAL_AMFLAGS = -I m4
 lib_LTLIBRARIES = libprolite.la
 
 libprolite_la_SOURCES = \
-	lib/stack.c \
+	lib/heap.c \
 	lib/types.c \
 	lib/parser.c \
-	lib/context.c	
+	lib/context.c \
+	lib/compile.c
+
 				
 libprolite_la_LDFLAGS = -pthread
 

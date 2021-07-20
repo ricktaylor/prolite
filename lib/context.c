@@ -19,19 +19,22 @@ uint32_t convert_char(struct context_t* context, uint32_t in_char)
 #ifdef UNUSED
 static uint32_t atom_to_code(const union packed_t* b)
 {
-	uint16_t hi16 = UNPACK_HI16(b->m_u64val);
-	uint32_t lo32 = UNPACK_LOW32(b->m_u64val);
-	unsigned int len = (hi16 & 0x0700) >> 8;
+	uint64_t all48 = UNPACK_MANT_48(b->m_u64val);
+	unsigned int len = ((all48 >> 40) & 0x07);
 	unsigned int count = 0;
 	uint32_t val = 0;
+	
 	uint8_t c[5] =
 	{
-		(hi16 & 0xFF),
-		(lo32 >> 24),
-		(lo32 >> 16) & 0xFF,
-		(lo32 >> 8) & 0xFF,
-		lo32 & 0xFF
+		(all48 >> 32) & 0xFF,
+		(all48 >> 24) & 0xFF,
+		(all48 >> 16) & 0xFF,
+		(all48 >> 8) & 0xFF,
+		all48 & 0xFF
 	};
+
+	if (!((all48 >> 32) & 0x8000))
+		return -1;
 
 	if (c[0] <= 0x7f)
 		return len == 1 ? c[0] : -1;
@@ -329,4 +332,65 @@ struct operator_t* lookup_prefix_op(struct context_t* context, const unsigned ch
 	if (!op)
 		op = find_op(context,name,name_len);
 	return op;
+}
+
+// TODO: Move these around later...
+
+#include <string.h>
+
+struct module_t* module_new(struct context_t* context, const char* name)
+{
+	// TODO: Much more here!!
+
+	struct module_t* module = heap_malloc(&context->m_heap,sizeof(struct module_t));
+	if (module)
+	{
+		memset(module,0,sizeof(struct module_t));
+		module->m_flags.char_conversion = 1;
+		module->m_flags.back_quotes = 1;
+	}
+
+	return module;
+}
+
+void module_delete(struct module_t* module)
+{
+	// TODO
+}
+
+struct context_t* context_new(void)
+{
+	const size_t stack_size = 65536;
+
+	// Create a new context
+	struct context_t* retval = NULL;
+	struct heap_t* h = heap_new(8000,&malloc,&free);
+	if (h)
+	{
+		struct context_t* c = heap_malloc(&h,sizeof(struct context_t));
+		if (c)
+		{
+			memset(c,0,sizeof(struct context_t));			
+			c->m_stack = malloc(stack_size * sizeof(union packed_t));
+			c->m_stack += stack_size;
+			c->m_heap = h;
+			c->m_module = module_new(c,"user");
+			if (c->m_module)
+			{
+				retval = c;
+			}
+		}
+
+		if (!retval)
+			heap_delete(h);
+	}
+
+	return retval;
+}
+
+void context_delete(struct context_t* c)
+{
+	module_delete(c->m_module);
+	//stack_delete(c->m_call_stack);
+	heap_delete(c->m_heap);
 }

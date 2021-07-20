@@ -53,8 +53,10 @@ enum tag_type_t
 	prolite_var = 4,
 	prolite_chars = 5,
 	prolite_charcodes = 6,
-
 	// unused = 7,
+
+	// Do not use range 8..0x8000
+
 	// unused = 0x8001,
 	// unused = 0x8002,
 	// unused = 0x8003,
@@ -70,29 +72,26 @@ enum tag_type_t
 #define PACK_MANT_48(v)   (((v) & (UINT64_C(0xFFFF) << 32) >> 32) | (((v) & UINT64_C(0xFFFFFFFF)) << 32))
 #define UNPACK_MANT_48(v) (((v) & (UINT64_C(0xFFFF) << 32) | (((v) & (UINT64_C(0xFFFFFFFF) << 32)) >> 32))
 #else
-#define PACK_EXP_16(v)    ((UINT64_C(0xFFFF) & (v)) << 48)
+#define PACK_EXP_16(v)    ((UINT64_C(0xFFFF) & (uint64_t)(v)) << 48)
 #define UNPACK_EXP_16(v)  ((uint16_t)((uint64_t)(v) >> 48))
-#define PACK_MANT_48(v)   ((v) & ~(UINT64_C(0xFFFF) << 48))
+#define PACK_MANT_48(v)   ((uint64_t)(v) & ~(UINT64_C(0xFFFF) << 48))
 #define UNPACK_MANT_48(v) PACK_MANT_48(v)
 #endif
 
-#define PACK_TYPE(type)   PACK_EXP_16(0x7FF0 | ((type) & 0x8007))
+#define PACK_TYPE(type)   PACK_EXP_16(0x7FF0 | (type))
 #define UNPACK_TYPE(v)    (UNPACK_EXP_16(v) & 0x8007)
 
-#define PACK_HI16(u16)    PACK_MANT_48((UINT64_C(0xFFFF) & (u16)) << 32)
-#define UNPACK_HI16(v)    ((uint16_t)(UNPACK_MANT_48(v) >> 32))
-
-#define PACK_LOW32(u32)   PACK_MANT_48(UINT64_C(0xFFFFFFFF) & (u32))
-#define UNPACK_LOW32(v)   ((uint32_t)(UNPACK_MANT_48(v) & UINT64_C(0xFFFFFFFF)))
-
-#define PACK_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (PACK_TYPE(type) | PACK_HI16(0x8000 | (((flags) & 0xF) << 11) | (((count) & 7) << 8) | (a)) | PACK_LOW32(((b) << 24) | ((c) << 16) | ((d) << 8) | (e)))
-#define UNPACK_IS_TYPE_EMBED(v,type)                 (UNPACK_TYPE(v) == (type) && (UNPACK_HI16(v) & 0x8000))
+#define PACK_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (PACK_TYPE(type) | PACK_MANT_48(((UINT64_C(0x8000) | (((flags) & 0xF) << 11) | (((count) & 7) << 8) | (uint8_t)(a)) << 32) | (((uint32_t)(b) & 0xFF) << 24) | (((uint32_t)(c) & 0xFF) << 16) | (((uint32_t)(d) & 0xFF) << 8) | (uint8_t)(e)))
 
 #define PACK_ATOM_EMBED_1(c)              PACK_TYPE_EMBED(prolite_atom,0,1,c,0,0,0,0)
 #define PACK_ATOM_EMBED_2(c1,c2)          PACK_TYPE_EMBED(prolite_atom,0,2,c1,c2,0,0,0)
 #define PACK_ATOM_EMBED_3(c1,c2,c3)       PACK_TYPE_EMBED(prolite_atom,0,3,c1,c2,c3,0,0)
 #define PACK_ATOM_EMBED_4(c1,c2,c3,c4)    PACK_TYPE_EMBED(prolite_atom,0,4,c1,c2,c3,c4,0)
 #define PACK_ATOM_EMBED_5(c1,c2,c3,c4,c5) PACK_TYPE_EMBED(prolite_atom,0,5,c1,c2,c3,c4,c5)
+
+#define PACK_ATOM_BUILTIN(name)        (PACK_TYPE(prolite_atom) | PACK_MANT_48((UINT64_C(0x4000) << 32) | (uint32_t)(BUILTIN_ATOM_##name)))
+
+#define MAX_ATOM_LEN      ((UINT64_C(1) << 47) - 1)
 
 #define PACK_COMPOUND_EMBED_1(a,c)              PACK_TYPE_EMBED(prolite_compound,a,1,c,0,0,0,0)
 #define PACK_COMPOUND_EMBED_2(a,c1,c2)          PACK_TYPE_EMBED(prolite_compound,a,2,c1,c2,0,0,0)
@@ -104,10 +103,7 @@ enum tag_type_t
 #define MAX_ARITY_BUILTIN 0x3FFF
 #define MAX_ARITY         ((UINT64_C(1) << 47) - 1)
 
-#define PACK_ATOM_BUILTIN(name)        (PACK_TYPE(prolite_atom) | PACK_HI16(0x4000) | PACK_LOW32(BUILTIN_ATOM_##name))
-#define PACK_COMPOUND_BUILTIN(f,a)     (PACK_TYPE(prolite_compound) | PACK_HI16(0x4000 | (a)) | PACK_LOW32(BUILTIN_ATOM_##f))
-
-#define UNPACK_IS_TYPE_BUILTIN(v,type) (UNPACK_TYPE(v) == (type) && (UNPACK_HI16(v) & 0xC000) == 0x4000)
+#define PACK_COMPOUND_BUILTIN(f,a)     (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(a) & MAX_ARITY_BUILTIN)) << 32) | (uint32_t)(BUILTIN_ATOM_##f)))
 
 union packed_t
 {
