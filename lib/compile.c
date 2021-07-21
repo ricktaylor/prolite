@@ -14,7 +14,6 @@ enum OpCodes
 	OP_BUILTIN,
 	OP_THROW,
 	OP_SET_CUT,
-	OP_CLEAR_CUT,
 	OP_PUSH_CUT,
 	OP_POP_CUT,
 	OP_BCTH, ///< Branch Cut, Throw, Halt
@@ -100,104 +99,119 @@ typedef const char* builtin_fn_t;
 builtin_fn_t builtin_call = "call";
 builtin_fn_t builtin_repeat = "repeat";
 
-static struct continuation_t* compile_goal(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal);
+static struct continuation_t* compile_goal(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal);
 
-static struct continuation_t* compile_true(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static struct continuation_t* compile_true(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
-	return c_true;
+	return cont;
 }
 
-static struct continuation_t* compile_false(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static struct continuation_t* compile_false(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
-	struct continuation_t* c = new_continuation(context);
-	if (c)
+	return new_continuation(context);
+}
+
+static struct continuation_t* goto_next(struct compile_context_t* context, struct continuation_t* c, struct continuation_t* next)
+{
+	union opcode_t* ops = append_opcodes(context,c->m_tail,2);
+	if (!ops)
+		c = NULL;
+	else if (next->m_function)
 	{
-		c->m_entry_point = c_fail;
-		c->m_tail = c_true->m_tail;
-	}	
+		(ops++)->m_opcode = OP_CALL;
+		while (next->m_entry_point->m_len == 3 &&
+			next->m_entry_point->m_ops[0].m_opcode == OP_CALL &&
+			next->m_entry_point->m_ops[2].m_opcode == OP_RET)
+		{
+			next->m_entry_point = next->m_entry_point->m_ops[1].m_pval;
+		}
+
+		ops->m_pval = next->m_entry_point;
+	}
+	else
+	{
+		(ops++)->m_opcode = OP_JMP;
+		while (next->m_entry_point->m_len == 2 && next->m_entry_point->m_ops[0].m_opcode == OP_JMP)
+			next->m_entry_point = next->m_entry_point->m_ops[1].m_pval;
+
+		ops->m_pval = next->m_entry_point;
+		c->m_tail = next->m_tail;
+	}
 	return c;
 }
 
-static struct continuation_t* compile_cut(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static struct continuation_t* compile_cut(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
 	struct continuation_t* c = new_continuation(context);
 	if (c)
 	{
-		union opcode_t* ops = append_opcodes(context,c->m_tail,3);
+		union opcode_t* ops = append_opcodes(context,c->m_tail,1);
 		if (!ops)
 			c = NULL;
 		else
 		{
-			(ops++)->m_opcode = OP_SET_CUT;
-			if (c_true->m_function)
-			{
-				(ops++)->m_opcode = OP_CALL;
-				ops->m_pval = c_true->m_entry_point;
-			}
-			else
-			{
-				(ops++)->m_opcode = OP_JMP;
-				ops->m_pval = c_true->m_entry_point;
-				c->m_tail = c_true->m_tail;
-			}
-
+			ops->m_opcode = OP_SET_CUT;
 			c->m_always_cth = 1;
+
+			c = goto_next(context,c,cont);
 		}
 	}
 	return c;
 }
 
-static struct continuation_t* compile_and(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static struct continuation_t* branch_goal(struct compile_context_t* context, struct continuation_t* c, enum OpCodes op)
+{
+	struct continuation_t* c1 = new_continuation(context);
+	if (!c1)
+		c = NULL;
+	else
+	{
+		c1->m_always_cth = c->m_always_cth;
+
+		struct continuation_t* c2 = new_continuation(context);
+		if (!c2)
+			c = NULL;
+		else
+		{
+			c2->m_always_cth = 1;
+
+			union opcode_t* ops = append_opcodes(context,c1->m_tail,2);
+			if (!ops)
+				c = NULL;
+			else
+			{
+				(ops++)->m_opcode = op;
+				ops->m_pval = c2->m_entry_point;
+				c = goto_next(context,c1,c);
+				if (c)
+					c = goto_next(context,c,c2);
+			}
+		}
+	}
+	return c;
+}
+
+static struct continuation_t* compile_and(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
 	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	const union packed_t* g2 = get_next_arg(g1,NULL);
-
-	struct continuation_t* c = compile_goal(context,c_true,c_fail,g2);
+	
+	struct continuation_t* c = compile_goal(context,cont,g2);
 	if (c)
 	{
-		struct continuation_t* c2 = new_continuation(context);
-		if (c2)
+		c = branch_goal(context,c,OP_BTH);
+		if (c)
 		{
-			union opcode_t* ops = append_opcodes(context,c2->m_tail,4);
-			if (ops)
-			{
-				(ops++)->m_opcode = OP_BTH;
-				(ops++)->m_pval = c_fail;
-
-				if (c->m_function)
-				{
-					(ops++)->m_opcode = OP_CALL;
-					ops->m_pval = c->m_entry_point;
-				}
-				else
-				{
-					(ops++)->m_opcode = OP_JMP;
-					ops->m_pval = c->m_entry_point;
-					c2->m_tail = c->m_tail;
-				}
-				
-				int always_cth = c->m_always_cth;
-				c = compile_goal(context,c2,c_fail,g1);
-				if (c)
-				{
-					if (always_cth)
-						c->m_always_cth = 1;
-
-					// Remove spurious entry tests
-					if (c->m_entry_point->m_len == 4 &&
-						c->m_entry_point->m_ops[0].m_opcode == OP_BTH &&
-						c->m_entry_point->m_ops[2].m_opcode == OP_JMP)
-					{
-						c->m_entry_point = c->m_entry_point->m_ops[3].m_pval;
-					}
-				}
-			}
+			int always_cth = c->m_always_cth;
+			c = compile_goal(context,c,g1);
+			if (c && always_cth)
+				c->m_always_cth = 1;
 		}
 	}
 	return c;
 }
 
-static struct continuation_t* compile_if_then_else(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal, const union packed_t* g_else)
+static struct continuation_t* compile_if_then_else(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal, const union packed_t* g_else)
 {
 	const union packed_t* g_if = get_first_arg(goal,NULL,NULL);
 	const union packed_t* g_then = get_next_arg(g_if,NULL);
@@ -212,7 +226,7 @@ static struct continuation_t* compile_if_then_else(struct compile_context_t* con
 		{	
 			(ops++)->m_opcode = OP_POP_CUT;
 			(ops++)->m_opcode = OP_JMP;
-			ops->m_pval = compile_goal(context,c_true,c_fail,g_then);
+			ops->m_pval = compile_goal(context,cont,g_then);
 			if (ops->m_pval)
 			{
 				ops = append_opcodes(context,b2,3);
@@ -220,10 +234,8 @@ static struct continuation_t* compile_if_then_else(struct compile_context_t* con
 				{	
 					(ops++)->m_opcode = OP_POP_CUT;
 					(ops++)->m_opcode = OP_JMP;
-					if (!g_else)
-						ops->m_pval = c_fail;
-					else
-						ops->m_pval = compile_goal(context,c_true,c_fail,g_else);
+					if (g_else)
+						ops->m_pval = compile_goal(context,cont,g_else);
 					
 					if (ops->m_pval)
 					{
@@ -233,7 +245,7 @@ static struct continuation_t* compile_if_then_else(struct compile_context_t* con
 							(ops++)->m_opcode = OP_PUSH_CUT;
 							(ops++)->m_opcode = OP_SET_CUT;
 							(ops++)->m_opcode = OP_JMP;
-							ops->m_pval = compile_goal(context,b1,b2,g_if);
+							ops->m_pval = compile_goal(context,b1,g_if);
 							if (ops->m_pval)
 								return b;
 						}
@@ -245,47 +257,47 @@ static struct continuation_t* compile_if_then_else(struct compile_context_t* con
 	return NULL;
 }
 
-static struct continuation_t* compile_or(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static struct continuation_t* compile_or(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
 	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	const union packed_t* g2 = get_next_arg(g1,NULL);
 	
 	if (g1->m_u64val == PACK_COMPOUND_EMBED_2(2,'-','>'))
-		return compile_if_then_else(context,c_true,c_fail,g1,g2);
+		return compile_if_then_else(context,cont,g1,g2);
 
 	if (g1->m_u64val == PACK_ATOM_EMBED_4('f','a','i','l') ||
 		g1->m_u64val == PACK_ATOM_EMBED_5('f','a','l','s','e'))
 	{
-		return compile_goal(context,c_true,c_fail,g2);
+		return compile_goal(context,cont,g2);
 	}
 
 	if (g2->m_u64val == PACK_ATOM_EMBED_4('f','a','i','l') ||
 		g2->m_u64val == PACK_ATOM_EMBED_5('f','a','l','s','e'))
 	{
-		return compile_goal(context,c_true,c_fail,g1);
+		return compile_goal(context,cont,g1);
 	}
 
-	// Convert c_true to a function callee
-	if (!c_true->m_function)
+	// Convert cont to a function callee
+	if (!cont->m_function)
 	{
-		union opcode_t* ops = append_opcodes(context,c_true->m_tail,1);
+		union opcode_t* ops = append_opcodes(context,cont->m_tail,1);
 		if (!ops)
-			c_true = NULL;
+			cont = NULL;
 		else
 		{
 			ops->m_opcode = OP_RET;
-			c_true->m_function = 1;
+			cont->m_function = 1;
 		}
 	}
 
-	// Compile g2
-	struct continuation_t* c = NULL;
-	if (c_true)
+	// Compile g1
+	struct continuation_t* c = cont;
+	if (c)
 	{
-		// Convert c_true to a call
-		if (c_true->m_entry_point->m_len != 3 ||
-			c_true->m_entry_point->m_ops[0].m_opcode != OP_CALL ||
-			c_true->m_entry_point->m_ops[2].m_opcode != OP_RET)
+		// Convert cont to a call
+		if (cont->m_entry_point->m_len != 3 ||
+			cont->m_entry_point->m_ops[0].m_opcode != OP_CALL ||
+			cont->m_entry_point->m_ops[2].m_opcode != OP_RET)
 		{
 			c = new_continuation(context);
 			if (c)
@@ -296,124 +308,79 @@ static struct continuation_t* compile_or(struct compile_context_t* context, stru
 				else
 				{	
 					(ops++)->m_opcode = OP_CALL;
-					ops->m_pval = c_true->m_entry_point;
+					ops->m_pval = cont->m_entry_point;
+					
+					c->m_always_cth = cont->m_always_cth;
 				}
-			}
+			}			
 		}
-		else
-			c = c_true;
 
 		if (c)
-			c = compile_goal(context,c,c_fail,g2);
+			c = compile_goal(context,c,g1);
 	}
-			
+
+	// Compile g2
 	if (c && !c->m_always_cth)
 	{
-		struct continuation_t* c1 = new_continuation(context);
-		if (!c1)
-			c = NULL;
-		else
-		{
-			union opcode_t* ops = append_opcodes(context,c1->m_tail,4);
-			if (!ops)
-				c = NULL;
-			else
-			{	
-				(ops++)->m_opcode = OP_BCTH;
-				(ops++)->m_pval = c_fail;
-
-				if (c->m_function)
-				{
-					(ops++)->m_opcode = OP_CALL;
-					ops->m_pval = c->m_entry_point;
-				}
-				else
-				{
-					(ops++)->m_opcode = OP_JMP;
-					ops->m_pval = c->m_entry_point;
-					c1->m_tail = c->m_tail;
-				}
-				c = c1;
-			}
-		}
-	}
-	
-	// Compile g1
-	if (c)
-	{
-		// Convert c_true to a call
-		struct continuation_t* c1 = NULL;
-		if (c_true->m_entry_point->m_len != 3 ||
-			c_true->m_entry_point->m_ops[0].m_opcode != OP_CALL ||
-			c_true->m_entry_point->m_ops[2].m_opcode != OP_RET)
+		// Convert cont to a call
+		struct continuation_t* c1 = cont;
+		if (cont->m_entry_point->m_len != 3 ||
+			cont->m_entry_point->m_ops[0].m_opcode != OP_CALL ||
+			cont->m_entry_point->m_ops[2].m_opcode != OP_RET)
 		{
 			c1 = new_continuation(context);
-			if (c1)
+			if (!c1)
+				c = NULL;
+			else
 			{
 				union opcode_t* ops = append_opcodes(context,c1->m_tail,2);
 				if (!ops)
 					c = NULL;
 				else
-				{	
+				{
 					(ops++)->m_opcode = OP_CALL;
-					ops->m_pval = c_true->m_entry_point;
+					ops->m_pval = cont->m_entry_point;
+
+					c1->m_always_cth = cont->m_always_cth;
 				}
 			}
 		}
-		else
-			c1 = c_true;
-
-		if (c1)
+		
+		if (c)
 		{
-			c1 = compile_goal(context,c1,c->m_entry_point,g1);
-			if (!c1)
-				c = NULL;
-			else
-			{ 
-				union opcode_t* ops = append_opcodes(context,c1->m_tail,2);
-				if (!ops)
-					c = NULL;
-				else
-				{	
-					(ops++)->m_opcode = OP_JMP;
-					(ops++)->m_pval = c->m_entry_point;
-					c1->m_tail = c->m_tail;
-					c = c1;
-				}			
+			struct continuation_t* c2 = compile_goal(context,c1,g2);
+			if (c2)
+			{
+				c2 = branch_goal(context,c2,OP_BCTH);
+				if (c2)
+					c = goto_next(context,c,c2);
 			}
 		}
 	}
 	return c;
 }
 
-static struct continuation_t* compile_if_then(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static struct continuation_t* compile_if_then(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
-	return compile_if_then_else(context,c_true,c_fail,goal,NULL);
+	return compile_if_then_else(context,cont,goal,NULL);
 }
 
-static struct continuation_t* compile_builtin(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, builtin_fn_t fn)
+static struct continuation_t* compile_builtin(struct compile_context_t* context, struct continuation_t* cont, builtin_fn_t fn)
 {
-	if (!c_true->m_function)
+	if (!cont->m_function)
 	{
-		union opcode_t* ops = append_opcodes(context,c_true->m_tail,1);
+		union opcode_t* ops = append_opcodes(context,cont->m_tail,1);
 		if (!ops)
-			c_true = NULL;
+			cont = NULL;
 		else
 		{
 			ops->m_opcode = OP_RET;
-			c_true->m_function = 1;
+			cont->m_function = 1;
 		}
 	}	
 
-	while (c_true->m_entry_point->m_len == 3 &&
-		c_true->m_entry_point->m_ops[0].m_opcode == OP_CALL &&
-		c_true->m_entry_point->m_ops[2].m_opcode == OP_RET)
-	{
-		c_true->m_entry_point = c_true->m_entry_point->m_ops[1].m_pval;
-	}
-	
 	struct continuation_t* c = NULL;
-	if (c_true)
+	if (cont)
 	{
 		c = new_continuation(context);
 		if (c)
@@ -425,260 +392,151 @@ static struct continuation_t* compile_builtin(struct compile_context_t* context,
 			{
 				(ops++)->m_opcode = OP_BUILTIN;
 				(ops++)->m_pval = fn;
-				ops->m_pval = c_true->m_entry_point;
+
+				while (cont->m_entry_point->m_len == 3 &&
+					cont->m_entry_point->m_ops[0].m_opcode == OP_CALL &&
+					cont->m_entry_point->m_ops[2].m_opcode == OP_RET)
+				{
+					cont->m_entry_point = cont->m_entry_point->m_ops[1].m_pval;
+				}
+				ops->m_pval = cont->m_entry_point;
+
+				c->m_always_cth = cont->m_always_cth;
 			}
 		}
 	}
 	return c;
 }
 
-struct continuation_t* compile_user_defined(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+struct continuation_t* compile_user_defined(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
-	return compile_builtin(context,c_true,c_fail,"user_defined");
+	return compile_builtin(context,cont,"user_defined");
 }
 
-struct continuation_t* compile_callN(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+struct continuation_t* compile_callN(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
-	return compile_builtin(context,c_true,c_fail,"Call/N");
+	return compile_builtin(context,cont,"Call/N");
 }
 
-static struct continuation_t* compile_call(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static struct continuation_t* compile_call(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
 	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	uint16_t type = UNPACK_TYPE(g1->m_u64val);
+
 	struct continuation_t* c;
-	
-	switch (UNPACK_TYPE(g1->m_u64val))
+	if (type == prolite_atom || type == prolite_compound)
+		c = compile_goal(context,cont,g1);
+	else if (type == prolite_var)
+		c =  compile_builtin(context,cont,builtin_call);
+	else
 	{
-	case prolite_atom:
-	case prolite_compound:
-		c = new_continuation(context);
-		if (c)
-		{
-			struct cfg_block_t* b = new_cfg_block(context);
-			if (!b)
-				c = NULL;
-			else
-			{
-				union opcode_t* ops = append_opcodes(context,b,3);
-				if (!ops)
-					c = NULL;
-				else
-				{	
-					(ops++)->m_opcode = OP_POP_CUT;
-					(ops++)->m_opcode = OP_JMP;
-					ops->m_pval = c_fail;
-					
-					ops = append_opcodes(context,c->m_tail,3);
-					if (!ops)
-						c = NULL;
-					else
-					{
-						struct continuation_t* c3 = compile_goal(context,c_true,b,g1);
-						if (!c3)
-							c = NULL;
-						else
-						{
-							(ops++)->m_opcode = OP_PUSH_CUT;
-							(ops++)->m_opcode = OP_JMP;
-							ops->m_pval = c3->m_entry_point;
-							c->m_tail = c3->m_tail;
-
-							ops = append_opcodes(context,c->m_tail,1);
-							if (!ops)
-								c = NULL;
-							else
-								ops->m_opcode = OP_POP_CUT;
-						}
-					}
-				}
-			}
-		}
-		break;
-
-	default:
 		// We know this throws...
 		c = new_continuation(context);
 		if (c)
 		{
-			union opcode_t* ops = append_opcodes(context,c->m_tail,3);
+			union opcode_t* ops = append_opcodes(context,c->m_tail,2);
 			if (!ops)
 				c = NULL;
 			else
 			{
 				(ops++)->m_opcode = OP_THROW;
 				(ops++)->m_pval = builtin_call;
-				ops->m_pval = c_fail;
 				c->m_always_cth = 1;
 			}
 		}
-		break;
+		return c;
 	}
 
-	return c;
-}
-
-static struct continuation_t* compile_once(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
-{
-	struct continuation_t* c = NULL;
-	struct continuation_t* c2 = new_continuation(context);
-	if (c2)
+	if (c)
 	{
-		struct cfg_block_t* b = new_cfg_block(context);
-		if (b)
-		{
-			union opcode_t* ops = append_opcodes(context,b,3);
-			if (ops)
-			{	
-				(ops++)->m_opcode = OP_POP_CUT;
-				(ops++)->m_opcode = OP_JMP;
-				ops->m_pval = c_fail;
-				c_fail = b;
-
-				c = compile_call(context,c2,c_fail,goal);
-				if (c)
-				{
-					union opcode_t* ops = append_opcodes(context,c2->m_tail,5);
-					if (!ops)
-						c = NULL;
-					else
-					{
-						(ops++)->m_opcode = OP_BTH;
-						(ops++)->m_pval = c_fail;
-						(ops++)->m_opcode = OP_SET_CUT;
-						(ops++)->m_opcode = OP_JMP;
-						ops->m_pval = c_true->m_entry_point;
-						c->m_tail = c_true->m_tail;
-						c->m_always_cth = 1;
-
-						ops = append_opcodes(context,c->m_tail,1);
-						if (!ops)
-							c = NULL;
-						else
-							ops->m_opcode = OP_POP_CUT;
-					}
-				}
-			}
-		}
-	}
-	
-	/*if (c)
-	{
-		c1 = new_continuation(context);
-		if (!c1)
+		union opcode_t* ops = append_opcodes(context,c->m_tail,1);
+		if (!ops)
 			c = NULL;
 		else
 		{
-			union opcode_t* ops = append_opcodes(context,c->m_tail,1);
-			if (ops)
-			{
-				ops->m_opcode = OP_POP_CUT;
-			
-				struct cfg_block_t* b = new_cfg_block(context);
-				if (b)
-				{
-					union opcode_t* ops = append_opcodes(context,b,3);
-					if (ops)
-					{	
-						(ops++)->m_opcode = OP_POP_CUT;
-						(ops++)->m_opcode = OP_JMP;
-						ops->m_pval = c_fail;
-						
-						ops = append_opcodes(context,c1->m_tail,3);
-						if (ops)
-						{
-							(ops++)->m_opcode = OP_PUSH_CUT;
-							(ops++)->m_opcode = OP_JMP;
-							ops->m_pval = c->m_entry_point;
-						}
-					}
-				}
-			}
-		}
-
-	}*/
-	return c;
-}
-
-static struct continuation_t* compile_repeat(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
-{
-	if (c_true->m_always_cth)
-		return c_true;
-
-	// Compile goal
-	struct continuation_t* c = new_continuation(context);
-	if (c)
-	{
-		while (c_true->m_entry_point->m_len == 3 &&
-			c_true->m_entry_point->m_ops[0].m_opcode == OP_CALL)
-		{
-			c_true->m_entry_point = c_true->m_entry_point->m_ops[1].m_pval;
-			c_true->m_function = 1;
-		}
-
-		if (!c_true->m_function)
-		{
-			union opcode_t* ops = append_opcodes(context,c_true->m_tail,1);
-			if (!ops)
+			ops->m_opcode = OP_POP_CUT;
+		
+			struct continuation_t* c1 = new_continuation(context);
+			if (!c1)
 				c = NULL;
 			else
 			{
-				ops->m_opcode = OP_RET;
-				c_true->m_function = 1;
-
-				union opcode_t* ops = append_opcodes(context,c->m_tail,2);
+				ops = append_opcodes(context,c1->m_tail,1);
 				if (!ops)
 					c = NULL;
 				else
-				{	
-					(ops++)->m_opcode = OP_CALL;
-					ops->m_pval = c_true->m_entry_point;
-				}	
-			}
-		}
-		else
-			c = c_true;
+				{
+					ops->m_opcode = OP_PUSH_CUT;
+					c1->m_always_cth = c->m_always_cth;
 
-		if (c)
-			c = compile_goal(context,c,c_fail,goal);
-	}
-
-	if (c)
-	{
-		if (!c->m_always_cth && c->m_entry_point != c_fail)
-		{
-			union opcode_t* ops = append_opcodes(context,c->m_tail,4);
-			if (!ops)
-				c = NULL;
-			else
-			{	
-				(ops++)->m_opcode = OP_BCTH;
-				(ops++)->m_pval = c_fail;
-
-				(ops++)->m_opcode = OP_JMP;
-				ops->m_pval = c->m_entry_point;
-				
-				c->m_entry_point = c_true->m_entry_point;
-				c->m_always_cth = 1;
+					c = goto_next(context,c1,c);
+				}
 			}
 		}
 	}
 	return c;
 }
 
-static struct continuation_t* compile_not_proveable(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static struct continuation_t* compile_once(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+{
+	struct continuation_t* c = compile_cut(context,cont,NULL);
+	if (c)
+		c = compile_call(context,c,goal);
+	
+	return c;
+}
+
+static struct continuation_t* compile_repeat(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+{
+	// Remove spurious compile_and checks
+	if (cont->m_entry_point->m_len == 4 &&
+		cont->m_entry_point->m_ops[0].m_opcode == OP_BTH &&
+		cont->m_entry_point->m_ops[2].m_opcode == OP_JMP)
+	{
+		cont->m_entry_point = cont->m_entry_point->m_ops[3].m_pval;
+	}
+
+	if (cont->m_always_cth)
+		return cont;
+
+	struct continuation_t* c = new_continuation(context);
+	if (c)
+	{
+		c->m_always_cth = 1;
+
+		union opcode_t* ops = append_opcodes(context,cont->m_tail,2);
+		if (!ops)
+			c = NULL;
+		else
+		{
+			(ops++)->m_opcode = OP_BCTH;
+			ops->m_pval = c->m_entry_point;
+			
+			cont = goto_next(context,cont,cont);
+			if (!cont)
+				c = NULL;
+			else
+				c->m_entry_point = cont->m_entry_point;
+		}
+	}
+	return c;
+}
+
+/*
+static struct continuation_t* compile_not_proveable(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
 	struct continuation_t* c = new_continuation(context);
 	if (c)
 	{
 		c->m_entry_point = c_fail;
-		c->m_tail = c_true->m_tail;
+		c->m_tail = cont->m_tail;
 		
-		c = compile_call(context,c,c_true->m_entry_point,goal);
+		c = compile_call(context,c,cont->m_entry_point,goal);
 	}
 	return c;
-}
+}*/
 
-static struct continuation_t* compile_goal(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static struct continuation_t* compile_goal(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
 	int debug = 0;
 
@@ -686,11 +544,11 @@ static struct continuation_t* compile_goal(struct compile_context_t* context, st
 	switch (goal->m_u64val)
 	{
 #define DECLARE_BUILTIN_STATIC(f,n) \
-	case (n): c = compile_##f(context,c_true,c_fail,goal); break;
+	case (n): c = compile_##f(context,cont,goal); break;
 
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
-	case (n): c = compile_builtin(context,c_true,c_fail,builtin_##f); break;
+	case (n): c = compile_builtin(context,cont,builtin_##f); break;
 			
 #include "builtin_functions"
 
@@ -702,18 +560,18 @@ static struct continuation_t* compile_goal(struct compile_context_t* context, st
 				(goal->m_u64val & PACK_COMPOUND_BUILTIN(call,0)) == PACK_COMPOUND_BUILTIN(call,0) ||
 				goal[1].m_u64val == PACK_ATOM_EMBED_4('c','a','l','l'))
 			{
-				c = compile_callN(context,c_true,c_fail,goal);
+				c = compile_callN(context,cont,goal);
 			}
 			else
-				c = compile_user_defined(context,c_true,c_fail,goal);
+				c = compile_user_defined(context,cont,goal);
 			break;
 
 		case prolite_atom:
-			c = compile_user_defined(context,c_true,c_fail,goal);
+			c = compile_user_defined(context,cont,goal);
 			break;
 
 		default:
-			c = compile_call(context,c_true,c_fail,goal);
+			c = compile_call(context,cont,goal);
 			break;
 		}
 		break;
@@ -729,18 +587,17 @@ static struct continuation_t* compile_goal(struct compile_context_t* context, st
 
 static void dumpCFG(const struct cfg_block_t* s, FILE* f);
 
-static int compile_term(struct compile_context_t* context, struct continuation_t* c_true, const struct cfg_block_t* c_fail, const union packed_t* goal)
+static int compile_term(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
-	struct continuation_t* c = compile_goal(context,c_true,c_fail,goal);
+	struct continuation_t* c = compile_goal(context,cont,goal);
 	if (!c)
 		return -1;
 	
-	union opcode_t* ops = append_opcodes(context,c->m_tail,2);
+	union opcode_t* ops = append_opcodes(context,c->m_tail,1);
 	if (!ops)
 		return -1;
 
-	(ops++)->m_opcode = OP_JMP;
-	ops->m_pval = c_fail;
+	ops->m_opcode = OP_END;
 	
 	// TODO: Link!!
 
@@ -772,25 +629,15 @@ void compile(struct context_t* context, struct stream_t* s)
 		struct compile_context_t cc = {0};
 		cc.m_heap = context->m_heap;
 
-		struct continuation_t* c_true = new_continuation(&cc);
-		if (c_true)
+		struct continuation_t* cont = new_continuation(&cc);
+		if (cont)
 		{
-			union opcode_t* ops = append_opcodes(&cc,c_true->m_tail,1);
+			union opcode_t* ops = append_opcodes(&cc,cont->m_tail,1);
 			if (ops)
 			{
 				ops->m_opcode = OP_TRUE;
 		
-				struct continuation_t* c_fail = new_continuation(&cc);
-				if (c_fail)
-				{
-					ops = append_opcodes(&cc,c_fail->m_tail,1);
-					if (ops)
-					{
-						ops->m_opcode = OP_END;
-						
-						compile_term(&cc,c_true,c_fail->m_entry_point,sp);
-					}
-				}
+				compile_term(&cc,cont,sp);
 			}
 		}
 
@@ -848,7 +695,7 @@ static void dumpCFGBlock(const struct cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"if \\ (builtin_%s)|<f%zu_t> Call",(const char*)blk->m_ops[i+1].m_pval,i);
+			fprintf(f,"if \\ (builtin_%s)|<f%zu_t> ...Call",(const char*)blk->m_ops[i+1].m_pval,i);
 			i+=2;
 			break;
 
@@ -859,10 +706,6 @@ static void dumpCFGBlock(const struct cfg_block_t* blk, FILE* f)
 
 		case OP_SET_CUT:
 			fprintf(f,"Cut\\ =\\ 1");
-			break;
-
-		case OP_CLEAR_CUT:
-			fprintf(f,"Cut\\ =\\ 0");
 			break;
 
 		case OP_PUSH_CUT:
