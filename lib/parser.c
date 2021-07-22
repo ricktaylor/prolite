@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <math.h>
 #include <assert.h>
+#include <setjmp.h>
 
 #ifdef _MSC_VER
 #include <float.h>
@@ -23,7 +24,6 @@ struct operator_t* lookup_prefix_op(struct context_t* context, const unsigned ch
 enum eTokenType
 {
 	tokNeedMore = 0,
-	tokNoMem,
 	tokEOF,
 	tokInvalidSeq,
 	tokInvalidEscape,
@@ -73,6 +73,7 @@ struct parser_t
 	struct stream_t*    m_s;
 	struct token_t      m_buffer;
 	struct line_info_t  m_line_info;
+	jmp_buf             m_jmp;
 	int                 m_eof;
 };
 
@@ -131,33 +132,30 @@ enum eCharMax
 	CHAR_ILLEGAL_SEQ
 };
 
-static int token_append_char(struct context_t* context, struct token_t* token, unsigned char c)
+static void token_append_char(struct context_t* context, struct parser_t* parser, struct token_t* token, unsigned char c)
 {
 	if (token->m_alloc == token->m_len)
 	{
 		size_t new_size = (token->m_alloc == 0 ? 16 : token->m_alloc * 2);
 		unsigned char* new_str = heap_realloc(&context->m_heap,token->m_str,token->m_alloc,new_size);
 		if (!new_str)
-			return -1;
+			longjmp(parser->m_jmp,1);
 
 		token->m_alloc = new_size;
 		token->m_str = new_str;
 	}
 
 	token->m_str[token->m_len++] = c;
-	return 0;
 }
 
-static int token_append_unicode_char(struct context_t* context, struct token_t* token, uint32_t unicode_char)
+static void token_append_unicode_char(struct context_t* context, struct parser_t* parser, struct token_t* token, uint32_t unicode_char)
 {
 	if (unicode_char <= 0x7F)
-	{
-		return token_append_char(context,token,(unsigned char)unicode_char);
-	}
+		token_append_char(context,parser,token,(unsigned char)unicode_char);
 	else
 	{
 		unsigned char chars[4] = {0};
-		unsigned int i,count;
+		unsigned int count;
 
 		if (unicode_char <= 0x7FF)
 		{
@@ -181,13 +179,8 @@ static int token_append_unicode_char(struct context_t* context, struct token_t* 
 			count = 3;
 		}
 
-		for (i=0; i<count; ++i)
-		{
-			if (token_append_char(context,token,chars[i]) == -1)
-				return -1;
-		}
-
-		return 0;
+		for (unsigned int i = 0; i < count; ++i)
+			token_append_char(context,parser,token,chars[i]);
 	}
 }
 
@@ -221,10 +214,7 @@ static uint32_t token_skip_ilseq(const unsigned char** p, const unsigned char* p
 
 static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
 {
-	unsigned int count = 0;
-	uint32_t val;
 	const unsigned char* c = *p;
-
 	if (c == pe)
 	{
 		if (eof)
@@ -232,6 +222,9 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 
 		return CHAR_NEED_MORE;
 	}
+
+	unsigned int count = 0;
+	uint32_t val;
 
 	if (c[0] <= 0x7f)
 	{
@@ -295,8 +288,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 		}
 		else
 		{
-			unsigned int i;
-			for (i=1;i<count;++i)
+			for (unsigned int i = 1; i < count; ++i)
 			{
 				if ((c[i] & 0xC0) != 0x80)
 				{
@@ -428,7 +420,7 @@ static const enum eAction actions[128] =
 	/* | */ eaBar, /* } */ eaCloseC, /* ~ */ eaGraphic, /*0x7f */ eaErr
 };
 
-static int token_meta_char(struct context_t* context, uint32_t meta, struct token_t* token)
+static int token_meta_char(struct context_t* context, struct parser_t* parser, uint32_t meta, struct token_t* token)
 {
 	unsigned char c = 0;
 	switch (meta)
@@ -439,7 +431,7 @@ static int token_meta_char(struct context_t* context, uint32_t meta, struct toke
 	case '`':
 		c = (unsigned char)meta;
 		break;
-		
+
 	case 'a':
 		c = 7;
 		break;
@@ -472,17 +464,15 @@ static int token_meta_char(struct context_t* context, uint32_t meta, struct toke
 		return 0;
 	}
 
-	if (token_append_char(context,token,c) == -1)
-		return -1;
-
+	token_append_char(context,parser,token,c);
 	return 1;
 }
 
-static enum eTokenType parse_token(struct context_t* context, enum eState* state, const unsigned char** p, const unsigned char* pe, int eof, struct token_t* token, struct line_info_t* info)
+static enum eTokenType parse_token(struct context_t* context, struct parser_t* parser, enum eState* state, const unsigned char** p, const unsigned char* pe, struct token_t* token)
 {
 	const unsigned char* peek = *p;
-	size_t peek_line = info->m_end_line;
-	size_t peek_col = info->m_end_col;
+	size_t peek_line = parser->m_line_info.m_end_line;
+	size_t peek_col = parser->m_line_info.m_end_col;
 	uint32_t c;
 	uint32_t meta;
 
@@ -492,7 +482,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		/* Clear the current token */
 		token->m_len = 0;
 
-		c = token_get_char_conv(context,p,pe,eof,&info->m_end_line,&info->m_end_col);
+		c = token_get_char_conv(context,p,pe,parser->m_eof,&parser->m_line_info.m_end_line,&parser->m_line_info.m_end_col);
 		if (c == CHAR_NEED_MORE)
 			return tokNeedMore;
 
@@ -507,7 +497,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 	case eSingleComment:
 	case eMultiComment2:
 	case eMultiComment3:
-		c = token_get_char_conv(context,p,pe,eof,&info->m_end_line,&info->m_end_col);
+		c = token_get_char_conv(context,p,pe,parser->m_eof,&parser->m_line_info.m_end_line,&parser->m_line_info.m_end_col);
 		if (c == CHAR_NEED_MORE)
 			return tokNeedMore;
 
@@ -534,13 +524,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				switch (actions[c & 0x7F])
 				{
 				case eaWhitespace:
-					info->m_start_line = info->m_end_line;
-					info->m_start_col = info->m_end_col;
+					parser->m_line_info.m_start_line = parser->m_line_info.m_end_line;
+					parser->m_line_info.m_start_col = parser->m_line_info.m_end_col;
 					break;
 
 				case eaShortName:
 					*state = eStart;
-					return token_append_char(context,token,(unsigned char)c) != 0 ? tokNoMem : tokName;
+					token_append_char(context,parser,token,(unsigned char)c);
+					return tokName;
 
 				case eaSingleComment:
 					*state = eSingleComment;
@@ -628,8 +619,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			{
 				if (c == '\n')
 				{
-					info->m_start_line = info->m_end_line;
-					info->m_start_col = info->m_end_col;
+					parser->m_line_info.m_start_line = parser->m_line_info.m_end_line;
+					parser->m_line_info.m_start_col = parser->m_line_info.m_end_col;
 					*state = eLayout;
 				}
 			}
@@ -642,8 +633,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			{
 				if (c == '/')
 				{
-					info->m_start_line = info->m_end_line;
-					info->m_start_col = info->m_end_col;
+					parser->m_line_info.m_start_line = parser->m_line_info.m_end_line;
+					parser->m_line_info.m_start_col = parser->m_line_info.m_end_col;
 					*state = eLayout;
 				}
 				else if (c != '*')
@@ -651,42 +642,40 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			}
 
 			/* Get the next character */
-			c = token_get_char_conv(context,p,pe,eof,&info->m_end_line,&info->m_end_col);
+			c = token_get_char_conv(context,p,pe,parser->m_eof,&parser->m_line_info.m_end_line,&parser->m_line_info.m_end_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 		}
 
 	multi_comment:
 		peek = *p;
-		peek_line = info->m_end_line;
-		peek_col = info->m_end_col;
+		peek_line = parser->m_line_info.m_end_line;
+		peek_col = parser->m_line_info.m_end_col;
 
 	case eMultiComment1:
-		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
+		c = token_get_char_conv(context,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 		if (c == CHAR_NEED_MORE)
 			return tokNeedMore;
 
 		if (c != '*')
 		{
-			if (token_append_char(context,token,'/') != 0)
-				return tokNoMem;
-			
+			token_append_char(context,parser,token,'/');
 			*state = eGraphicName;
 			goto graphic_name;
 		}
 
 		*p = peek;
-		info->m_end_line = peek_line;
-		info->m_end_col = peek_col;
+		parser->m_line_info.m_end_line = peek_line;
+		parser->m_line_info.m_end_col = peek_col;
 		*state = eMultiComment2;
 		goto layout;
 
 	dot:
 		peek = *p;
-		peek_col = info->m_end_col;
+		peek_col = parser->m_line_info.m_end_col;
 
 	case eDot:
-		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
+		c = token_get_char_conv(context,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 		if (c == CHAR_NEED_MORE)
 			return tokNeedMore;
 
@@ -705,22 +694,20 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			return tokEnd;
 		}
 
-		if (token_append_char(context,token,'.') != 0)
-			return tokNoMem;
-		
+		token_append_char(context,parser,token,'.');
 		*state = eGraphicName;
 		goto graphic_name;
 
 	quote:
 		peek = *p;
-		peek_col = info->m_end_col;
+		peek_col = parser->m_line_info.m_end_col;
 
 	case eSingleQuote:
 	case eDoubleQuote:
 	case eBackQuote:
 		for (;;)
 		{
-			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			switch (c)
 			{
 			case CHAR_NEED_MORE:
@@ -735,22 +722,22 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				return tokMissingBQ;
 
 			case CHAR_ILLEGAL_SEQ:
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 				*state = eStart;
 				return tokInvalidSeq;
 
 			case '\\':
-				c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+				c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 				if (c == CHAR_NEED_MORE)
 					return tokNeedMore;
 
-				if (!token_meta_char(context,c,token))
+				if (!token_meta_char(context,parser,c,token))
 				{
 					if (c == 'o')
 					{
-						c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+						c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 						if (c == CHAR_NEED_MORE)
 							return tokNeedMore;
 
@@ -769,7 +756,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					}
 					else if (c == 'x')
 					{
-						c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+						c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 						if (c == CHAR_NEED_MORE)
 							return tokNeedMore;
 
@@ -789,8 +776,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 					if (c != '\n')
 					{
-						info->m_end_line = peek_line;
-						info->m_end_col = peek_col;
+						parser->m_line_info.m_end_line = peek_line;
+						parser->m_line_info.m_end_col = peek_col;
 						*p = peek;
 						*state = eStart;
 						if (c == CHAR_ILLEGAL_SEQ)
@@ -807,14 +794,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					size_t peek_line2 = peek_line;
 					size_t peek_col2 = peek_col;
 					const unsigned char* peek2 = peek;
-					c = token_get_char(&peek2,pe,eof,&peek_line2,&peek_col2);
+					c = token_get_char(&peek2,pe,parser->m_eof,&peek_line2,&peek_col2);
 					if (c == CHAR_NEED_MORE)
 						return tokNeedMore;
 
 					if (c != '\'')
 					{
-						info->m_end_line = peek_line;
-						info->m_end_col = peek_col;
+						parser->m_line_info.m_end_line = peek_line;
+						parser->m_line_info.m_end_col = peek_col;
 						*p = peek;
 						return tokName;
 					}
@@ -823,8 +810,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					peek_col = peek_col2;
 					peek = peek2;
 				}
-				if (token_append_char(context,token,(unsigned char)c) != 0)
-					return tokNoMem;
+				token_append_char(context,parser,token,(unsigned char)c);
 				break;
 
 			case '"':
@@ -833,14 +819,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					size_t peek_line2 = peek_line;
 					size_t peek_col2 = peek_col;
 					const unsigned char* peek2 = peek;
-					c = token_get_char(&peek2,pe,eof,&peek_line2,&peek_col2);
+					c = token_get_char(&peek2,pe,parser->m_eof,&peek_line2,&peek_col2);
 					if (c == CHAR_NEED_MORE)
 						return tokNeedMore;
 
 					if (c != '"')
 					{
-						info->m_end_line = peek_line;
-						info->m_end_col = peek_col;
+						parser->m_line_info.m_end_line = peek_line;
+						parser->m_line_info.m_end_col = peek_col;
 						*p = peek;
 						return tokDQL;
 					}
@@ -849,8 +835,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					peek_col = peek_col2;
 					peek = peek2;
 				}
-				if (token_append_char(context,token,(unsigned char)c) != 0)
-					return tokNoMem;
+				token_append_char(context,parser,token,(unsigned char)c);
 				break;
 
 			case '`':
@@ -859,14 +844,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					size_t peek_line2 = peek_line;
 					size_t peek_col2 = peek_col;
 					const unsigned char* peek2 = peek;
-					c = token_get_char(&peek2,pe,eof,&peek_line2,&peek_col2);
+					c = token_get_char(&peek2,pe,parser->m_eof,&peek_line2,&peek_col2);
 					if (c == CHAR_NEED_MORE)
 						return tokNeedMore;
 
 					if (c != '`')
 					{
-						info->m_end_line = peek_line;
-						info->m_end_col = peek_col;
+						parser->m_line_info.m_end_line = peek_line;
+						parser->m_line_info.m_end_col = peek_col;
 						*p = peek;
 						return tokBackQuote;
 					}
@@ -875,26 +860,24 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 					peek_col = peek_col2;
 					peek = peek2;
 				}
-				if (token_append_char(context,token,(unsigned char)c) != 0)
-					return tokNoMem;
+				token_append_char(context,parser,token,(unsigned char)c);
 				break;
 
 			default:
 				if (c < 32)
 				{
-					info->m_end_line = peek_line;
-					info->m_end_col = peek_col;
+					parser->m_line_info.m_end_line = peek_line;
+					parser->m_line_info.m_end_col = peek_col;
 					*p = peek;
 					*state = eStart;
 					return tokInvalidChar;
 				}
-				if (token_append_unicode_char(context,token,c) != 0)
-					return tokNoMem;
+				token_append_unicode_char(context,parser,token,c);
 				break;
 			}
 
-			info->m_end_line = peek_line;
-			info->m_end_col = peek_col;
+			parser->m_line_info.m_end_line = peek_line;
+			parser->m_line_info.m_end_col = peek_col;
 			*p = peek;
 		}
 
@@ -907,21 +890,20 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		meta = 0;
 		for (;;)
 		{
-			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 
 			if (c < '0' || c > '7')
 			{
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 
 				if (c == '\\')
 				{
-					if (token_append_unicode_char(context,token,meta) != 0)
-						return tokNoMem;
-					
+					token_append_unicode_char(context,parser,token,meta);
+
 					if (*state == eSingleQuoteOct)
 						*state = eSingleQuote;
 					else if (*state == eDoubleQuoteOct)
@@ -942,8 +924,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			meta = (meta << 3) | (c - '0');
 			if (meta > CHAR_MAX_VALID)
 			{
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 				*state = eStart;
 				return tokInvalidEscape;
@@ -959,22 +941,21 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		meta = 0;
 		for (;;)
 		{
-			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 
 			if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')))
 			{
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 
 				if (c == '\\')
 				{
-					if (token_append_unicode_char(context,token,meta) != 0)
-						return tokNoMem;
-					
-					else if (*state == eSingleQuoteHex)
+					token_append_unicode_char(context,parser,token,meta);
+
+					if (*state == eSingleQuoteHex)
 						*state = eSingleQuote;
 					else if (*state == eDoubleQuoteHex)
 						*state = eDoubleQuote;
@@ -1001,8 +982,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 			if (meta > CHAR_MAX_VALID)
 			{
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 				*state = eStart;
 				return tokInvalidEscape;
@@ -1011,50 +992,48 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	case eZero:
 	zero:
-		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
+		c = token_get_char_conv(context,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 		if (c == CHAR_NEED_MORE)
 			return tokNeedMore;
 
 		if (c == '\'')
 		{
 			/* No char_conversion for single_quoted_character */
-			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 
 			if (c == '\'')
 			{
-				c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+				c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 				if (c == CHAR_NEED_MORE)
 					return tokNeedMore;
 
 				if (c == '\'')
 				{
-					if (token_append_char(context,token,'\'') != 0)
-						return tokNoMem;
-					
-					info->m_end_line = peek_line;
-					info->m_end_col = peek_col;
+					token_append_char(context,parser,token,'\'');
+					parser->m_line_info.m_end_line = peek_line;
+					parser->m_line_info.m_end_col = peek_col;
 					*p = peek;
 					return tokCharCode;
 				}
 			}
 			else if (c == '\\')
 			{
-				c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+				c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 				if (c == CHAR_NEED_MORE)
 					return tokNeedMore;
 
-				if (token_meta_char(context,c,token))
+				if (token_meta_char(context,parser,c,token))
 				{
-					info->m_end_line = peek_line;
-					info->m_end_col = peek_col;
+					parser->m_line_info.m_end_line = peek_line;
+					parser->m_line_info.m_end_col = peek_col;
 					*p = peek;
 					return tokCharCode;
 				}
 				else if (c == 'o')
 				{
-					c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+					c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 					if (c == CHAR_NEED_MORE)
 						return tokNeedMore;
 
@@ -1067,7 +1046,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				}
 				else if (c == 'x')
 				{
-					c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+					c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 					if (c == CHAR_NEED_MORE)
 						return tokNeedMore;
 
@@ -1081,18 +1060,17 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			}
 			else if (c >= 32 && c <= CHAR_MAX_VALID)
 			{
-				if (token_append_unicode_char(context,token,c) != 0)
-					return tokNoMem;
-				
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				token_append_unicode_char(context,parser,token,c);
+
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 				return tokCharCode;
 			}
 		}
 		else if (c == 'b')
 		{
-			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char_conv(context,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 
@@ -1104,7 +1082,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		}
 		else if (c == 'o')
 		{
-			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char_conv(context,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 
@@ -1116,7 +1094,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		}
 		else if (c == 'x')
 		{
-			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char_conv(context,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 
@@ -1135,22 +1113,21 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 	case eOctalCharCode:
 		/* We know *p == "0'\o" */
 		peek = *p + 4;
-		peek_col = info->m_end_col + 4;
+		peek_col = parser->m_line_info.m_end_col + 4;
 
 		meta = 0;
 		for (;;)
 		{
-			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 
 			if (c == '\\')
 			{
-				if (token_append_unicode_char(context,token,meta) != 0)
-					return tokNoMem;
-				
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				token_append_unicode_char(context,parser,token,meta);
+
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 				*state = eStart;
 				return tokCharCode;
@@ -1162,8 +1139,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				c = '0';
 				*state = eInteger;
 				peek = *p + 1;
-				peek_line = info->m_end_line;
-				peek_col = info->m_end_col + 1;
+				peek_line = parser->m_line_info.m_end_line;
+				peek_col = parser->m_line_info.m_end_col + 1;
 				goto next_char;
 			}
 
@@ -1171,8 +1148,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			meta = (meta << 3) | (c - '0');
 			if (meta > CHAR_MAX_VALID)
 			{
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 				*state = eStart;
 				return tokInvalidEscape;
@@ -1182,21 +1159,20 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 	case eHexCharCode:
 		/* We know *p == "0'\x" */
 		peek = *p + 4;
-		peek_col = info->m_end_col + 4;
+		peek_col = parser->m_line_info.m_end_col + 4;
 		meta = 0;
 		for (;;)
 		{
-			c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 
 			if (c == '\\')
 			{
-				if (token_append_unicode_char(context,token,meta) != 0)
-					return tokNoMem;
-				
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				token_append_unicode_char(context,parser,token,meta);
+
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 				*state = eStart;
 				return tokCharCode;
@@ -1208,8 +1184,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 				c = '0';
 				*state = eInteger;
 				peek = *p + 1;
-				peek_line = info->m_end_line;
-				peek_col = info->m_end_col + 1;
+				peek_line = parser->m_line_info.m_end_line;
+				peek_col = parser->m_line_info.m_end_col + 1;
 				goto next_char;
 			}
 
@@ -1224,8 +1200,8 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 			if (meta > CHAR_MAX_VALID)
 			{
-				info->m_end_line = peek_line;
-				info->m_end_col = peek_col;
+				parser->m_line_info.m_end_line = peek_line;
+				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
 				*state = eStart;
 				return tokInvalidEscape;
@@ -1238,7 +1214,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		++peek_col;
 
 	decimal:
-		c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
+		c = token_get_char_conv(context,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 		if (c == CHAR_NEED_MORE)
 			return tokNeedMore;
 
@@ -1248,9 +1224,7 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			return tokInt;
 		}
 
-		if (token_append_char(context,token,'.') != 0)
-			return tokNoMem;
-		
+		token_append_char(context,parser,token,'.');
 		*state = eFraction;
 		goto next_char;
 
@@ -1260,15 +1234,13 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		++peek_col;
 
 	exponent:
-		c = token_get_char(&peek,pe,eof,&peek_line,&peek_col);
+		c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
 		if (c == CHAR_NEED_MORE)
 			return tokNeedMore;
 
 		if (c >= '0' && c <= '9')
 		{
-			if (token_append_char(context,token,'e') != 0)
-				return tokNoMem;
-			
+			token_append_char(context,parser,token,'e');
 			*state = eMantissa;
 			goto next_char;
 		}
@@ -1276,15 +1248,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 		if (c == '-' || c == '+')
 		{
 			/* Check the next char */
-			uint32_t c2 = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
+			uint32_t c2 = token_get_char_conv(context,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c2 == CHAR_NEED_MORE)
 				return tokNeedMore;
 
 			if (c2 >= '0' && c2 <= '9')
 			{
-				if (token_append_char(context,token,'e') != 0 || token_append_char(context,token,(unsigned char)c) != 0)
-					return tokNoMem;
-				
+				token_append_char(context,parser,token,'e');
+				token_append_char(context,parser,token,(unsigned char)c);
 				*state = eMantissa;
 				c = c2;
 				goto next_char;
@@ -1296,16 +1267,14 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 
 	append_chars:
 		peek = *p;
-		peek_line = info->m_end_line;
-		peek_col = info->m_end_col;
+		peek_line = parser->m_line_info.m_end_line;
+		peek_col = parser->m_line_info.m_end_col;
+		token_append_unicode_char(context,parser,token,c);
 
-		if (token_append_unicode_char(context,token,c) != 0)
-			return tokNoMem;
-		
 	default:
 		for (;;)
 		{
-			c = token_get_char_conv(context,&peek,pe,eof,&peek_line,&peek_col);
+			c = token_get_char_conv(context,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 			if (c == CHAR_NEED_MORE)
 				return tokNeedMore;
 
@@ -1403,11 +1372,9 @@ static enum eTokenType parse_token(struct context_t* context, enum eState* state
 			}
 
 		next_char:
-			if (token_append_unicode_char(context,token,c) != 0)
-				return tokNoMem;
-			
-			info->m_end_line = peek_line;
-			info->m_end_col = peek_col;
+			token_append_unicode_char(context,parser,token,c);
+			parser->m_line_info.m_end_line = peek_line;
+			parser->m_line_info.m_end_col = peek_col;
 			*p = peek;
 		}
 	}
@@ -1433,14 +1400,14 @@ static enum eTokenType token_next(struct context_t* context, struct parser_t* pa
 			int64_t i = stream_read(parser->m_s,&c,1);
 			if (i == 0)
 				parser->m_eof = 1;
-			else if (token_append_char(context,&parser->m_buffer,c) != 0)
-				return tokNoMem;
+			else
+				token_append_char(context,parser,&parser->m_buffer,c);
 		}
 
 		p = start = parser->m_buffer.m_str;
 		pe = start + parser->m_buffer.m_len;
 
-		tok = parse_token(context,&state,&p,pe,parser->m_eof,token,&parser->m_line_info);
+		tok = parse_token(context,parser,&state,&p,pe,token);
 
 		if (p == pe)
 			parser->m_buffer.m_len = 0;
@@ -1461,11 +1428,11 @@ static struct ast_node_t* syntax_error(enum eASTError error, enum eASTError* ast
 	return NULL;
 }
 
-static struct ast_node_t* atom_to_compound(struct context_t* context, struct ast_node_t* node, enum eASTError* ast_err)
+static struct ast_node_t* atom_to_compound(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eASTError* ast_err)
 {
 	struct ast_node_t* new_node = heap_realloc(&context->m_heap,node,sizeof(struct ast_node_t),sizeof(struct ast_node_t) + sizeof(struct ast_node_t*));
 	if (!new_node)
-		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		longjmp(parser->m_jmp,1);
 
 	new_node->m_type = AST_TYPE_COMPOUND;
 	new_node->m_arity = 0;
@@ -1479,7 +1446,7 @@ static struct ast_node_t* parse_number(struct context_t* context, struct parser_
 	{
 		node = heap_malloc(&context->m_heap,sizeof(struct ast_node_t));
 		if (!node)
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			longjmp(parser->m_jmp,1);
 
 		node->m_type = AST_TYPE_DOUBLE;
 		node->m_arity = 0;
@@ -1587,7 +1554,7 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 
 	node = heap_malloc(&context->m_heap,sizeof(struct ast_node_t));
 	if (!node)
-		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		longjmp(parser->m_jmp,1);
 
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
@@ -1612,14 +1579,11 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 	op = lookup_prefix_op(context,node->m_str,node->m_str_len);
 	if (op && op->m_precedence <= 999 && (op->m_specifier == eFX || op->m_specifier == eFY))
 	{
-		node = atom_to_compound(context,node,ast_err);
-		if (node)
-		{
-			node->m_arity = 1;
-			node->m_params[0] = parse_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
-			if (!node->m_params[0])
-				node = NULL;
-		}
+		node = atom_to_compound(context,parser,node,ast_err);
+		node->m_arity = 1;
+		node->m_params[0] = parse_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
+		if (!node->m_params[0])
+			node = NULL;
 	}
 
 	return node;
@@ -1628,10 +1592,8 @@ static struct ast_node_t* parse_arg(struct context_t* context, struct parser_t* 
 static struct ast_node_t* parse_compound_term(struct context_t* context, struct parser_t* parser, struct ast_node_t* node, enum eTokenType* next_type, struct token_t* next, enum eASTError* ast_err)
 {
 	size_t alloc_arity = 1;
-	node = atom_to_compound(context,node,ast_err);
-	if (!node)
-		return NULL;
-
+	node = atom_to_compound(context,parser,node,ast_err);
+	
 	do
 	{
 		*next_type = token_next(context,parser,next);
@@ -1641,7 +1603,7 @@ static struct ast_node_t* parse_compound_term(struct context_t* context, struct 
 			size_t new_arity = alloc_arity * 2;
 			struct ast_node_t* new_node = heap_realloc(&context->m_heap,node,sizeof(struct ast_node_t) + (alloc_arity * sizeof(struct ast_node_t*)),sizeof(struct ast_node_t) + (new_arity * sizeof(struct ast_node_t*)));
 			if (!new_node)
-				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+				longjmp(parser->m_jmp,1);
 
 			alloc_arity = new_arity;
 			node = new_node;
@@ -1657,12 +1619,9 @@ static struct ast_node_t* parse_compound_term(struct context_t* context, struct 
 	}
 	while (*next_type == tokComma);
 
-	if (*next_type == tokNoMem)
-		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
-
 	if (*next_type != tokClose)
 		return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE,ast_err);
-	
+
 	*next_type = token_next(context,parser,next);
 	return node;
 }
@@ -1671,25 +1630,25 @@ static struct ast_node_t* parse_list_term(struct context_t* context, struct pars
 {
 	struct ast_node_t* node = NULL;
 	struct ast_node_t** tail = &node;
-	
+
 	do
 	{
 		*tail = heap_malloc(&context->m_heap,sizeof(struct ast_node_t) + (2*sizeof(struct ast_node_t*)));
 		if (!(*tail))
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			longjmp(parser->m_jmp,1);
 
 		(*tail)->m_type = AST_TYPE_COMPOUND;
 		(*tail)->m_str = (const unsigned char*)".";
 		(*tail)->m_str_len = 1;
 		(*tail)->m_arity = 2;
 		(*tail)->m_params[1] = NULL;
-		
+
 		*next_type = token_next(context,parser,next);
-		
+
 		(*tail)->m_params[0] = parse_arg(context,parser,next_type,next,ast_err);
 		if (!(*tail)->m_params[0])
 			return NULL;
-			
+
 		tail = &((*tail)->m_params[1]);
 	}
 	while (*next_type == tokComma);
@@ -1709,20 +1668,17 @@ static struct ast_node_t* parse_list_term(struct context_t* context, struct pars
 		/* Append [] */
 		*tail = heap_malloc(&context->m_heap,sizeof(struct ast_node_t));
 		if (!(*tail))
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			longjmp(parser->m_jmp,1);
 
 		(*tail)->m_type = AST_TYPE_ATOM;
 		(*tail)->m_str = (const unsigned char*)"[]";
 		(*tail)->m_str_len = 2;
 		(*tail)->m_arity = 0;
 	}
-	
-	if (*next_type == tokNoMem)
-		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	if (*next_type != tokCloseL)
 		return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_L,ast_err);
-	
+
 	return node;
 }
 
@@ -1731,7 +1687,7 @@ static struct ast_node_t* parse_name(struct context_t* context, struct parser_t*
 	struct operator_t* op;
 	struct ast_node_t* node = heap_malloc(&context->m_heap,sizeof(struct ast_node_t));
 	if (!node)
-		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		longjmp(parser->m_jmp,1);
 
 	node->m_arity = 0;
 	node->m_type = AST_TYPE_ATOM;
@@ -1756,15 +1712,12 @@ static struct ast_node_t* parse_name(struct context_t* context, struct parser_t*
 	{
 		if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
 		{
-			node = atom_to_compound(context,node,ast_err);
-			if (node)
-			{
-				node->m_params[0] = parse_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
-				if (!node->m_params[0])
-					node = NULL;
+			node = atom_to_compound(context,parser,node,ast_err);
+			node->m_params[0] = parse_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
+			if (!node->m_params[0])
+				node = NULL;
 
-				*max_prec = op->m_precedence;
-			}
+			*max_prec = op->m_precedence;
 			return node;
 		}
 
@@ -1777,13 +1730,13 @@ static struct ast_node_t* parse_name(struct context_t* context, struct parser_t*
 	return node;
 }
 
-static struct ast_node_t* parse_chars_and_codes(struct context_t* context, int chars, struct token_t* token, enum eASTError* ast_err)
+static struct ast_node_t* parse_chars_and_codes(struct context_t* context, struct parser_t* parser, int chars, struct token_t* token, enum eASTError* ast_err)
 {
 	/* TODO: Check for utf8 chars token and split into multiple lists */
 
 	struct ast_node_t* node = heap_malloc(&context->m_heap,sizeof(struct ast_node_t));
 	if (!node)
-		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+		longjmp(parser->m_jmp,1);
 
 	node->m_type = chars ? AST_TYPE_CHARS : AST_TYPE_CODES;
 	node->m_arity = 0;
@@ -1806,7 +1759,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 	case tokVar:
 		node = heap_malloc(&context->m_heap,sizeof(struct ast_node_t));
 		if (!node)
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			longjmp(parser->m_jmp,1);
 
 		node->m_type = AST_TYPE_VAR;
 		node->m_arity = UINT64_C(-1);
@@ -1831,14 +1784,14 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 			return parse_name(context,parser,max_prec,next_type,next,ast_err);
 		}
 
-		node = parse_chars_and_codes(context,context->m_module->m_flags.double_quotes,next,ast_err);
+		node = parse_chars_and_codes(context,parser,context->m_module->m_flags.double_quotes,next,ast_err);
 		break;
 
 	case tokBackQuote:
 		if (context->m_module->m_flags.back_quotes == 2 /* atom */)
 			return parse_name(context,parser,max_prec,next_type,next,ast_err);
 
-		node = parse_chars_and_codes(context,context->m_module->m_flags.back_quotes,next,ast_err);
+		node = parse_chars_and_codes(context,parser,context->m_module->m_flags.back_quotes,next,ast_err);
 		break;
 
 	case tokOpen:
@@ -1859,18 +1812,18 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 
 		node = heap_malloc(&context->m_heap,sizeof(struct ast_node_t));
 		if (!node)
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			longjmp(parser->m_jmp,1);
 
 		node->m_type = AST_TYPE_ATOM;
 		node->m_str = (const unsigned char*)"[]";
 		node->m_str_len = 2;
 		node->m_arity = 0;
 		break;
-		
+
 	case tokOpenC:
 		node = heap_malloc(&context->m_heap,sizeof(struct ast_node_t) + sizeof(struct ast_node_t*));
 		if (!node)
-			return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+			longjmp(parser->m_jmp,1);
 
 		node->m_type = AST_TYPE_COMPOUND;
 		node->m_str = (const unsigned char*)"{}";
@@ -1887,7 +1840,7 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 			return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_C,ast_err);
 		break;
 
-	case tokNeedMore: 
+	case tokNeedMore:
 		/* Shouldn't happen... */
 
 	case tokComma:
@@ -1915,9 +1868,6 @@ static struct ast_node_t* parse_term_base(struct context_t* context, struct pars
 
 	case tokInvalidEscape:
 		return syntax_error(AST_SYNTAX_ERR_INVALID_ESCAPE,ast_err);
-
-	case tokNoMem:
-		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
 
 	case tokEOF:
 		return NULL;
@@ -2041,7 +1991,7 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 		{
 			struct ast_node_t* next_node = heap_malloc(&context->m_heap,sizeof(struct ast_node_t) + ((1 + binary) * sizeof(struct ast_node_t*)));
 			if (!next_node)
-				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+				longjmp(parser->m_jmp,1);
 
 			next_node->m_type = AST_TYPE_COMPOUND;
 			next_node->m_str = name;
@@ -2068,84 +2018,88 @@ static struct ast_node_t* parse_term(struct context_t* context, struct parser_t*
 	return node;
 }
 
-static void emit_ast_node(struct context_t* context, struct ast_node_t* node)
+static union packed_t* emit_ast_node(union packed_t* stack, struct ast_node_t* node)
 {
 	size_t i;
 	switch (node->m_type)
 	{
 	case AST_TYPE_COMPOUND:
 		for (i = node->m_arity; i--;)
-			emit_ast_node(context,node->m_params[i]);
-		context->m_stack = push_compound(context->m_stack,node->m_arity,node->m_str,node->m_str_len);
+			stack = emit_ast_node(stack,node->m_params[i]);
+		stack = push_compound(stack,node->m_arity,node->m_str,node->m_str_len);
 		break;
 
 	case AST_TYPE_ATOM:
-		context->m_stack = push_string(context->m_stack,prolite_atom,node->m_str,node->m_str_len);
+		stack = push_string(stack,prolite_atom,node->m_str,node->m_str_len);
 		break;
 
 	case AST_TYPE_CHARS:
-		context->m_stack = push_string(context->m_stack,prolite_chars,node->m_str,node->m_str_len);
+		stack = push_string(stack,prolite_chars,node->m_str,node->m_str_len);
 		break;
 
 	case AST_TYPE_CODES:
-		context->m_stack = push_string(context->m_stack,prolite_charcodes,node->m_str,node->m_str_len);
+		stack = push_string(stack,prolite_charcodes,node->m_str,node->m_str_len);
 		break;
 
 	case AST_TYPE_VAR:
 	case AST_TYPE_DOUBLE:
 	case AST_TYPE_INTEGER:
 		if (node->m_type == AST_TYPE_VAR)
-			(--context->m_stack)->m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(node->m_arity);
+			(--stack)->m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(node->m_arity);
 		else if (node->m_type == AST_TYPE_DOUBLE)
-			context->m_stack = push_double(context->m_stack,node->m_dbl);
+			stack = push_double(stack,node->m_dbl);
 		else if (node->m_type == AST_TYPE_INTEGER)
-			context->m_stack = push_integer(context->m_stack,node->m_u64);
+			stack = push_integer(stack,node->m_u64);
 		break;
 	}
 
 	// TODO: Debug info
+
+	return stack;
 }
 
-static void emit_error_line_info(struct context_t* context, struct line_info_t* info)
+static union packed_t* emit_error_line_info(union packed_t* stack, struct line_info_t* info)
 {
 	if (!info)
-		(--context->m_stack)->m_u64val = PACK_ATOM_EMBED_5('f','a','l','s','e');
+		(--stack)->m_u64val = PACK_ATOM_EMBED_5('f','a','l','s','e');
 	else
 	{
 		// TODO: Line if
-		(--context->m_stack)->m_u64val = PACK_ATOM_EMBED_4('T','o','d','o');
+		(--stack)->m_u64val = PACK_ATOM_EMBED_4('T','o','d','o');
 	}
+
+	return stack;
 }
 
-static enum eParseStatus emit_syntax_error_missing(struct context_t* context, uint64_t missing_atom, struct line_info_t* info)
+static enum eParseStatus emit_syntax_error_missing(union packed_t** stack, uint64_t missing_atom, struct line_info_t* info)
 {
-	emit_error_line_info(context,info);
+	*stack = emit_error_line_info(*stack,info);
 
-	(--context->m_stack)->m_u64val = missing_atom;
-	(--context->m_stack)->m_u64val = PACK_COMPOUND_BUILTIN(missing,1);
-	(--context->m_stack)->m_u64val = PACK_COMPOUND_BUILTIN(syntax_error,1);
-	(--context->m_stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
-	
+	(--*stack)->m_u64val = missing_atom;
+	(--*stack)->m_u64val = PACK_COMPOUND_BUILTIN(missing,1);
+	(--*stack)->m_u64val = PACK_COMPOUND_BUILTIN(syntax_error,1);
+	(--*stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+
 	return PARSE_THROW;
 }
 
-static enum eParseStatus emit_simple_error(struct context_t* context, uint64_t f, uint64_t arg, struct line_info_t* info)
+static enum eParseStatus emit_simple_error(union packed_t** stack, uint64_t f, uint64_t arg, struct line_info_t* info)
 {
-	emit_error_line_info(context,info);
+	*stack = emit_error_line_info(*stack,info);
 
-	(--context->m_stack)->m_u64val = arg;
-	(--context->m_stack)->m_u64val = f;
-	(--context->m_stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
-	
+	(--*stack)->m_u64val = arg;
+	(--*stack)->m_u64val = f;
+	(--*stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+
 	return PARSE_THROW;
 }
 
-static enum eParseStatus emit_out_of_heap_error(struct context_t* context, struct line_info_t* info)
+static enum eParseStatus emit_out_of_heap_error(union packed_t** stack, struct line_info_t* info)
 {
-	return emit_simple_error(context,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'),info);
+	return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'),info);
 }
 
-static enum eParseStatus emit_ast_error(struct context_t* context, enum eASTError ast_err, struct line_info_t* info)
+static enum eParseStatus emit_ast_error(union packed_t** stack, enum eASTError ast_err, struct line_info_t* info)
 {
 	switch (ast_err)
 	{
@@ -2155,55 +2109,55 @@ static enum eParseStatus emit_ast_error(struct context_t* context, enum eASTErro
 		return PARSE_OK;
 
 	case AST_ERR_OUTOFMEMORY:
-		return emit_out_of_heap_error(context,info);
-		
+		return emit_out_of_heap_error(stack,info);
+
 	case AST_ERR_FLOAT_OVERFLOW:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(evaluation_error,1),PACK_ATOM_BUILTIN(float_overflow),info);
-		
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(evaluation_error,1),PACK_ATOM_BUILTIN(float_overflow),info);
+
 	case AST_ERR_FLOAT_UNDERFLOW:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(evaluation_error,1),PACK_ATOM_BUILTIN(underflow),info);
-		
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(evaluation_error,1),PACK_ATOM_BUILTIN(underflow),info);
+
 	case AST_ERR_MAX_INTEGER:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(max_integer),info);
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(max_integer),info);
 
 	case AST_ERR_MIN_INTEGER:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(min_integer),info);
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(min_integer),info);
 
 	case AST_ERR_MAX_ARITY:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(max_arity),info);
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(max_arity),info);
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE:
-		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1(')'),info);
+		return emit_syntax_error_missing(stack,PACK_ATOM_EMBED_1(')'),info);
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE_L:
-		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1(']'),info);
+		return emit_syntax_error_missing(stack,PACK_ATOM_EMBED_1(']'),info);
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE_C:
-		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('}'),info);
+		return emit_syntax_error_missing(stack,PACK_ATOM_EMBED_1('}'),info);
 
 	case AST_SYNTAX_ERR_MISSING_SQ:
-		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('\''),info);
+		return emit_syntax_error_missing(stack,PACK_ATOM_EMBED_1('\''),info);
 
 	case AST_SYNTAX_ERR_MISSING_DQ:
-		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('"'),info);
+		return emit_syntax_error_missing(stack,PACK_ATOM_EMBED_1('"'),info);
 
 	case AST_SYNTAX_ERR_MISSING_BQ:
-		return emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('`'),info);
+		return emit_syntax_error_missing(stack,PACK_ATOM_EMBED_1('`'),info);
 
 	case AST_SYNTAX_ERR_INVALID_ARG:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_argument),info);
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_argument),info);
 
 	case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(unexpected_token),info);
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(unexpected_token),info);
 
 	case AST_SYNTAX_ERR_INVALID_CHAR:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_character),info);
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_character),info);
 
 	case AST_SYNTAX_ERR_INVALID_ESCAPE:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_escape),info);
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_escape),info);
 
 	case AST_SYNTAX_ERR_INVALID_UTF8:
-		return emit_simple_error(context,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_utf8),info);
+		return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_utf8),info);
 	}
 }
 
@@ -2214,7 +2168,7 @@ struct var_info_t
 	size_t               m_name_len;
 };
 
-static enum eParseStatus collate_var_info(struct context_t* context, struct var_info_t** varinfo, size_t* var_count, struct ast_node_t* node)
+static enum eParseStatus collate_var_info(struct context_t* context, struct parser_t* parser, struct var_info_t** varinfo, size_t* var_count, struct ast_node_t* node)
 {
 	enum eParseStatus status = PARSE_OK;
 
@@ -2236,14 +2190,14 @@ static enum eParseStatus collate_var_info(struct context_t* context, struct var_
 		if (i == *var_count)
 		{
 			struct var_info_t* new_varinfo;
-			
+
 			// Check for variable index overflow
 			if (i+1 >= UINT64_C(1) << 47)
-				return emit_out_of_heap_error(context,NULL);
-			
+				return emit_out_of_heap_error(&context->m_stack,NULL);
+
 			new_varinfo = heap_realloc(&context->m_heap,*varinfo,sizeof(struct var_info_t) * (*var_count),sizeof(struct var_info_t) * ((*var_count)+1));
 			if (!new_varinfo)
-				return emit_out_of_heap_error(context,NULL);
+				longjmp(parser->m_jmp,1);
 
 			*varinfo = new_varinfo;
 			(*varinfo)[*var_count].m_use_count = 1;
@@ -2257,7 +2211,7 @@ static enum eParseStatus collate_var_info(struct context_t* context, struct var_
 	{
 		size_t i;
 		for (i = 0; !status && i < node->m_arity; ++i)
-			status = collate_var_info(context,varinfo,var_count,node->m_params[i]);
+			status = collate_var_info(context,parser,varinfo,var_count,node->m_params[i]);
 	}
 
 	return status;
@@ -2267,55 +2221,61 @@ enum eParseStatus read_term(struct context_t* context, struct stream_t* s)
 {
 	enum eParseStatus status = PARSE_OK;
 	size_t heap_start = heap_top(context->m_heap);
-
-	enum eASTError ast_err = AST_ERR_NONE;	
-	struct token_t next = {0};
-	enum eTokenType next_type;
-	struct ast_node_t* node;
 	struct parser_t parser = {0};
 	parser.m_s = s;
 	parser.m_line_info.m_end_line = 1;
+	if (!setjmp(parser.m_jmp))
+	{
+		enum eASTError ast_err = AST_ERR_NONE;
+		struct token_t next = {0};
+		enum eTokenType next_type;
+		struct ast_node_t* node;
 
-	next_type = token_next(context,&parser,&next);
-	node = parse_term(context,&parser,1201,&next_type,&next,&ast_err);
-	if (!node)
-	{
-		if (next_type != tokEOF)
-			status = emit_ast_error(context,ast_err,&parser.m_line_info);
+		next_type = token_next(context,&parser,&next);
+		node = parse_term(context,&parser,1201,&next_type,&next,&ast_err);
+		if (!node)
+		{
+			if (next_type != tokEOF)
+				status = emit_ast_error(&context->m_stack,ast_err,&parser.m_line_info);
+			else
+				status = PARSE_EOF;
+		}
+		else if (next_type != tokEnd)
+		{
+			status = emit_syntax_error_missing(&context->m_stack,PACK_ATOM_EMBED_1('.'),&parser.m_line_info);
+		}
 		else
-			status = PARSE_EOF;
-	}
-	else if (next_type != tokEnd)
-	{
-		status = emit_syntax_error_missing(context,PACK_ATOM_EMBED_1('.'),&parser.m_line_info);
+		{
+			struct var_info_t* varinfo = NULL;
+			size_t varcount = 0;
+			status = collate_var_info(context,&parser,&varinfo,&varcount,node);
+			if (status == PARSE_OK)
+			{
+				size_t i = varcount;
+
+				context->m_stack = emit_ast_node(context->m_stack,node);
+
+				/* Write out var count */
+				while (i--)
+				{
+					/* use count */
+					(--context->m_stack)->m_u64val = varinfo[i].m_use_count;
+
+					/* variable name */
+					context->m_stack = push_string(context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len);
+				}
+				(--context->m_stack)->m_u64val = varcount;
+			}
+		}
 	}
 	else
 	{
-		struct var_info_t* varinfo = NULL;
-		size_t varcount = 0;
-		status = collate_var_info(context,&varinfo,&varcount,node);
-		if (status == PARSE_OK)
-		{
-			size_t i = varcount;
-
-			emit_ast_node(context,node);
-		
-			/* Write out var count */
-			while (i--)
-			{
-				/* use count */
-				(--context->m_stack)->m_u64val = varinfo[i].m_use_count;
-
-				/* variable name */
-				context->m_stack = push_string(context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len);
-			}
-			(--context->m_stack)->m_u64val = varcount;
-		}
+		status = emit_out_of_heap_error(&context->m_stack,&parser.m_line_info);
 	}
 
 	/* Reset the heap */
 	heap_reset(&context->m_heap,heap_start);
-	
+
 	return status;
 }
 
