@@ -1593,7 +1593,7 @@ static struct ast_node_t* parse_compound_term(struct context_t* context, struct 
 {
 	size_t alloc_arity = 1;
 	node = atom_to_compound(context,parser,node,ast_err);
-	
+
 	do
 	{
 		*next_type = token_next(context,parser,next);
