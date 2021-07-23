@@ -213,15 +213,18 @@ static struct continuation_t* convert_to_call(struct compile_context_t* context,
 
 static struct continuation_t* wrap_cut(struct compile_context_t* context, struct continuation_t* cont)
 {
+	cont->m_set_flags &= ~FLAG_CUT;
+
 	if (cont->m_entry_point == cont->m_tail &&
 		cont->m_entry_point->m_len == 2 &&
 		cont->m_entry_point->m_ops[0].m_opcode == OP_SET_FLAGS)
 	{
-		if (cont->m_entry_point->m_ops[1].m_u64val == FLAG_CUT)
+		cont->m_entry_point->m_ops[1].m_u64val &= ~FLAG_CUT;
+		if (cont->m_entry_point->m_ops[1].m_u64val == 0)
 		{
 			cont->m_entry_point->m_ops[0].m_opcode = OP_NOP;
 			cont->m_entry_point->m_ops[1].m_opcode = OP_NOP;
-		}
+		}		
 		return cont;
 	}
 
@@ -252,7 +255,7 @@ static struct continuation_t* wrap_cut(struct compile_context_t* context, struct
 	ops->m_opcode = OP_PUSH_CUT;
 
 	c = goto_next(context,c,cont);
-	c->m_set_flags = (cont->m_set_flags & ~FLAG_CUT);
+	c->m_set_flags = cont->m_set_flags;
 
 	return c;
 }
@@ -459,47 +462,81 @@ static struct continuation_t* compile_throw(struct compile_context_t* context, s
 	return c;
 }
 
-static struct continuation_t* compile_call(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static struct continuation_t* compile_call_inner(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
-	uint16_t type = UNPACK_TYPE(g1->m_u64val);
+	uint16_t type = UNPACK_TYPE(goal->m_u64val);
 
 	struct continuation_t* c;
 	if (type == prolite_atom || type == prolite_compound)
-		c = wrap_cut(context,compile_goal(context,cont,g1));
+		c = compile_goal(context,cont,goal);
 	else if (type == prolite_var)
-		c = wrap_cut(context,compile_builtin(context,cont,builtin_call));
+		c = compile_builtin(context,cont,builtin_call);
 	else
 	{
 		// We know this throws...
 		c = new_continuation(context);
-		c->m_set_flags = FLAG_THROW;
-
 		union opcode_t* ops = append_opcodes(context,c->m_tail,2);
 		(ops++)->m_opcode = OP_THROW;
 		ops->m_pval = builtin_call;
+
+		c->m_set_flags = FLAG_THROW;
 	}
+
+	return c;
+}
+
+static struct continuation_t* compile_call(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+{
+	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+
+	struct continuation_t* c = compile_call_inner(context,cont,g1);
+	if (!(c->m_set_flags & FLAG_THROW))
+		c = wrap_cut(context,c);
 
 	return c;
 }
 
 static struct continuation_t* compile_once(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
+	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+
 	struct continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
-	c = compile_call(context,c,goal);
+	c = compile_call_inner(context,c,g1);
+
+	// Check the inner flags before the wrap
+	int always_true = (c->m_set_flags & FLAG_CUT);
+	c = wrap_cut(context,c);
 
 	if (!(c->m_set_flags & (FLAG_THROW | FLAG_HALT | FLAG_FAIL)))
 	{
-		struct continuation_t* c_end = new_continuation(context);
-		union opcode_t* ops = append_opcodes(context,c->m_tail,3);
-		(ops++)->m_opcode = OP_BRANCH;
-		(ops++)->m_u64val = FLAG_THROW | FLAG_HALT | FLAG_FAIL;
-		ops->m_pval = c_end->m_entry_point;
+		if (always_true)
+		{
+			c = goto_next(context,c,cont);
+			c->m_set_flags = cont->m_set_flags;
+		}
+		else
+		{
+			struct continuation_t* c_end = new_continuation(context);
 
-		c = goto_next(context,c,cont);
-		c = goto_next(context,c,c_end);
+			union opcode_t* ops = append_opcodes(context,c->m_tail,3);
+			(ops++)->m_opcode = OP_BRANCH;
+			(ops++)->m_u64val = FLAG_THROW | FLAG_HALT | FLAG_FAIL;
+			ops->m_pval = c_end->m_entry_point;
 
-		c->m_set_flags = (cont->m_set_flags & (FLAG_THROW | FLAG_HALT | FLAG_FAIL));
+			c = goto_next(context,c,cont);
+			c = goto_next(context,c,c_end);
+
+			c->m_set_flags = (cont->m_set_flags & (FLAG_THROW | FLAG_HALT | FLAG_FAIL));
+		}
+	}
+
+	// Check for optmized out entry_point
+	if (c->m_entry_point->m_len == 4 &&
+		c->m_entry_point->m_ops[0].m_opcode == OP_NOP &&
+		c->m_entry_point->m_ops[1].m_opcode == OP_NOP &&
+		c->m_entry_point->m_ops[2].m_opcode == OP_JMP)
+	{
+		c->m_entry_point = c->m_entry_point->m_ops[3].m_pval;
 	}
 
 	return c;
@@ -531,27 +568,48 @@ static struct continuation_t* compile_repeat(struct compile_context_t* context, 
 
 static struct continuation_t* compile_not_proveable(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
 {
-	struct continuation_t* c = new_continuation(context);
-	c = set_flags(context,c,FLAG_CUT);
-	c = compile_call(context,c,goal);
+	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
 
-	struct continuation_t* c1 = new_continuation(context);
-	struct continuation_t* c2 = new_continuation(context);
+	struct continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
+	c = compile_call_inner(context,c,g1);
 
-	union opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode = OP_BRANCH;
-	(ops++)->m_u64val = FLAG_FAIL;
-	ops->m_pval = c2->m_entry_point;
+	// Check the inner flags before the wrap
+	int always_true = (c->m_set_flags & FLAG_CUT);
+	c = wrap_cut(context,c);
 
-	c = set_flags(context,c,FLAG_FAIL);
-	c = goto_next(context,c,c1);
+	if (!(c->m_set_flags & (FLAG_THROW | FLAG_HALT)) && !always_true)
+	{
+		if (c->m_set_flags & FLAG_FAIL)
+		{
+			c = clear_flags(context,c,FLAG_FAIL);
+			c = goto_next(context,c,cont);
+		}
+		else
+		{
+			struct continuation_t* c_end = new_continuation(context);
 
-	c2 = clear_flags(context,c2,FLAG_FAIL);
-	c2 = goto_next(context,c2,cont);
-	c2 = goto_next(context,c2,c1);
+			struct continuation_t* c1 = clear_flags(context,new_continuation(context),FLAG_FAIL);
+			c1 = goto_next(context,c1,cont);
+			goto_next(context,c1,c_end);
 
-	c->m_tail = c2->m_tail;
-	c->m_set_flags = c2->m_set_flags;
+			union opcode_t* ops = append_opcodes(context,c->m_tail,3);
+			(ops++)->m_opcode = OP_BRANCH;
+			(ops++)->m_u64val = FLAG_FAIL;
+			ops->m_pval = c1->m_entry_point;
+
+			c = goto_next(context,c,c_end);
+			c->m_set_flags = (cont->m_set_flags & (FLAG_THROW | FLAG_HALT | FLAG_FAIL));
+		}
+	}
+
+	// Check for optmized out entry_point
+	if (c->m_entry_point->m_len == 4 &&
+		c->m_entry_point->m_ops[0].m_opcode == OP_NOP &&
+		c->m_entry_point->m_ops[1].m_opcode == OP_NOP &&
+		c->m_entry_point->m_ops[2].m_opcode == OP_JMP)
+	{
+		c->m_entry_point = c->m_entry_point->m_ops[3].m_pval;
+	}
 
 	return c;
 }
