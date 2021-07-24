@@ -44,7 +44,7 @@
  *  values.  See: misc/clang_aliasing.c.
  */
 
-enum tag_type_t
+typedef enum prolite_type
 {
 	prolite_double = 0,
 	prolite_int32 = 1,
@@ -64,7 +64,7 @@ enum tag_type_t
 	// unused = 0x8005,
 	// unused = 0x8006,
 	PROLITE_DEBUG_INFO = 0x8007
-};
+} prolite_type_t;
 
 #if defined(__aarch64__) || defined(__arm__)
 #define PACK_EXP_16(v)    ((UINT64_C(0xFFFF) & (v)) << 24)
@@ -105,10 +105,10 @@ enum tag_type_t
 
 #define PACK_COMPOUND_BUILTIN(f,a)     (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(a) & MAX_ARITY_BUILTIN)) << 32) | (uint32_t)(BUILTIN_ATOM_##f)))
 
-union packed_t
+typedef union packed
 {
 	double   m_dval;
 	uint64_t m_u64val;
-};
+} packed_t;
 
 #endif /* PACKED_TYPES_H */

@@ -34,37 +34,37 @@ enum OpCodes
 	OP_BRANCH
 };
 
-union opcode_t
+typedef union opcode
 {
 	enum OpCodes m_opcode;
 	double       m_dval;
 	uint64_t     m_u64val;
 	const void*  m_pval;
-};
+} opcode_t;
 
-struct cfg_block_t
+typedef struct cfg_block
 {
-	size_t          m_len;  //< in sizeof(m_ops[0])
-	union opcode_t* m_ops;
-};
+	size_t    m_len;  //< in sizeof(m_ops[0])
+	opcode_t* m_ops;
+} cfg_block_t;
 
-struct continuation_t
+typedef struct continuation
 {
-	const struct cfg_block_t* m_entry_point;
-	struct cfg_block_t*       m_tail;
+	const cfg_block_t* m_entry_point;
+	cfg_block_t*       m_tail;
 	uint8_t                   m_set_flags;
 	unsigned                  m_call_site : 1;
-};
+} continuation_t;
 
-struct compile_context_t
+typedef struct compile_context
 {
-	struct heap_t* m_heap;
+	heap_t* m_heap;
 	jmp_buf        m_jmp;
-};
+} compile_context_t;
 
-static struct cfg_block_t* new_cfg_block(struct compile_context_t* context)
+static cfg_block_t* new_cfg_block(compile_context_t* context)
 {
-	struct cfg_block_t* b = heap_malloc(&context->m_heap,sizeof(struct cfg_block_t));
+	cfg_block_t* b = heap_malloc(&context->m_heap,sizeof(cfg_block_t));
 	if (!b)
 		longjmp(context->m_jmp,1);
 
@@ -73,12 +73,12 @@ static struct cfg_block_t* new_cfg_block(struct compile_context_t* context)
 	return b;
 }
 
-static union opcode_t* append_opcodes(struct compile_context_t* context, struct cfg_block_t* blk, size_t count)
+static opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, size_t count)
 {
-	union opcode_t* ret = blk->m_ops;
+	opcode_t* ret = blk->m_ops;
 	if (count)
 	{
-		blk->m_ops = heap_realloc(&context->m_heap,blk->m_ops,blk->m_len * sizeof(union opcode_t),(blk->m_len + count) * sizeof(union opcode_t));
+		blk->m_ops = heap_realloc(&context->m_heap,blk->m_ops,blk->m_len * sizeof(opcode_t),(blk->m_len + count) * sizeof(opcode_t));
 		if (!blk->m_ops)
 			longjmp(context->m_jmp,1);
 
@@ -88,9 +88,9 @@ static union opcode_t* append_opcodes(struct compile_context_t* context, struct 
 	return ret;
 }
 
-static struct continuation_t* new_continuation(struct compile_context_t* context)
+static continuation_t* new_continuation(compile_context_t* context)
 {
-	struct continuation_t* c = heap_malloc(&context->m_heap,sizeof(struct continuation_t));
+	continuation_t* c = heap_malloc(&context->m_heap,sizeof(continuation_t));
 	if (!c)
 		longjmp(context->m_jmp,1);
 
@@ -112,7 +112,7 @@ builtin_fn_t builtin_##f = #f;
 
 #include "builtin_functions"
 
-static struct continuation_t* set_flags(struct compile_context_t* context, struct continuation_t* c, uint8_t flags)
+static continuation_t* set_flags(compile_context_t* context, continuation_t* c, uint8_t flags)
 {
 	if ((c->m_set_flags | flags) != c->m_set_flags)
 	{
@@ -125,7 +125,7 @@ static struct continuation_t* set_flags(struct compile_context_t* context, struc
 		}
 		else if (c->m_set_flags)
 		{
-			union opcode_t* ops = append_opcodes(context,c->m_tail,2);
+			opcode_t* ops = append_opcodes(context,c->m_tail,2);
 			(ops++)->m_opcode = OP_SET_FLAGS;
 			ops->m_u64val = c->m_set_flags;
 		}
@@ -133,7 +133,7 @@ static struct continuation_t* set_flags(struct compile_context_t* context, struc
 	return c;
 }
 
-static struct continuation_t* clear_flags(struct compile_context_t* context, struct continuation_t* c, uint8_t flags)
+static continuation_t* clear_flags(compile_context_t* context, continuation_t* c, uint8_t flags)
 {
 	if (c->m_tail->m_len >= 2 &&
 		c->m_tail->m_ops[c->m_tail->m_len-2].m_opcode == OP_SET_FLAGS &&
@@ -150,7 +150,7 @@ static struct continuation_t* clear_flags(struct compile_context_t* context, str
 		c->m_tail->m_ops[c->m_tail->m_len-2].m_opcode != OP_CLEAR_FLAGS ||
 		!(c->m_tail->m_ops[c->m_tail->m_len-1].m_u64val & flags))
 	{
-		union opcode_t* ops = append_opcodes(context,c->m_tail,2);
+		opcode_t* ops = append_opcodes(context,c->m_tail,2);
 		(ops++)->m_opcode = OP_CLEAR_FLAGS;
 		ops->m_u64val = flags;
 	}
@@ -160,9 +160,9 @@ static struct continuation_t* clear_flags(struct compile_context_t* context, str
 	return c;
 }
 
-static struct continuation_t* goto_next(struct compile_context_t* context, struct continuation_t* c, struct continuation_t* next)
+static continuation_t* goto_next(compile_context_t* context, continuation_t* c, continuation_t* next)
 {
-	union opcode_t* ops = append_opcodes(context,c->m_tail,2);
+	opcode_t* ops = append_opcodes(context,c->m_tail,2);
 	if (next->m_call_site)
 	{
 		while (next->m_entry_point->m_len == 3 &&
@@ -190,28 +190,28 @@ static struct continuation_t* goto_next(struct compile_context_t* context, struc
 	return c;
 }
 
-static struct continuation_t* make_call_site(struct compile_context_t* context, struct continuation_t* c)
+static continuation_t* make_call_site(compile_context_t* context, continuation_t* c)
 {
 	if (!c->m_call_site)
 	{
-		union opcode_t* ops = append_opcodes(context,c->m_tail,1);
+		opcode_t* ops = append_opcodes(context,c->m_tail,1);
 		ops->m_opcode = OP_RET;
 		c->m_call_site = 1;
 	}
 	return c;
 }
 
-static struct continuation_t* convert_to_call(struct compile_context_t* context, struct continuation_t* c)
+static continuation_t* convert_to_call(compile_context_t* context, continuation_t* c)
 {
 	c = make_call_site(context,c);
 
-	struct continuation_t* c1 = new_continuation(context);
+	continuation_t* c1 = new_continuation(context);
 	c1 = goto_next(context,c1,c);
 	c1->m_set_flags = c->m_set_flags;
 	return c1;
 }
 
-static struct continuation_t* wrap_cut(struct compile_context_t* context, struct continuation_t* cont)
+static continuation_t* wrap_cut(compile_context_t* context, continuation_t* cont)
 {
 	cont->m_set_flags &= ~FLAG_CUT;
 
@@ -240,18 +240,18 @@ static struct continuation_t* wrap_cut(struct compile_context_t* context, struct
 		}
 		else
 		{
-			union opcode_t* ops = append_opcodes(context,cont->m_tail,1);
+			opcode_t* ops = append_opcodes(context,cont->m_tail,1);
 			ops->m_opcode = OP_POP_CUT;
 		}
 	}
 	else
 	{
-		union opcode_t* ops = append_opcodes(context,cont->m_tail,1);
+		opcode_t* ops = append_opcodes(context,cont->m_tail,1);
 		ops->m_opcode = OP_POP_CUT;
 	}	
 
-	struct continuation_t* c = new_continuation(context);
-	union opcode_t* ops = append_opcodes(context,c->m_tail,1);
+	continuation_t* c = new_continuation(context);
+	opcode_t* ops = append_opcodes(context,c->m_tail,1);
 	ops->m_opcode = OP_PUSH_CUT;
 
 	c = goto_next(context,c,cont);
@@ -260,14 +260,14 @@ static struct continuation_t* wrap_cut(struct compile_context_t* context, struct
 	return c;
 }
 
-static struct continuation_t* compile_goal(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal);
+static continuation_t* compile_goal(compile_context_t* context, continuation_t* cont, const packed_t* goal);
 
-static struct continuation_t* compile_true(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_true(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
 	return cont;
 }
 
-static struct continuation_t* compile_false(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_false(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
 	if (cont->m_set_flags & FLAG_FAIL)
 		return cont;
@@ -275,115 +275,111 @@ static struct continuation_t* compile_false(struct compile_context_t* context, s
 	return set_flags(context,new_continuation(context),FLAG_FAIL);
 }
 
-static struct continuation_t* compile_cut(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_cut(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
 	return set_flags(context,cont,FLAG_CUT);
 }
 
-static struct continuation_t* compile_and(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_and(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
-	const union packed_t* g2 = get_next_arg(g1,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g2 = get_next_arg(g1,NULL);
 
 	return compile_goal(context,compile_goal(context,cont,g2),g1);
 }
 
-static struct continuation_t* compile_if_then_else(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal, const union packed_t* g_else)
+static continuation_t* compile_if_then_else(compile_context_t* context, continuation_t* c_if, continuation_t* c_then, continuation_t* c_else)
 {
-	const union packed_t* g_if = get_first_arg(goal,NULL,NULL);
-	const union packed_t* g_then = get_next_arg(g_if,NULL);
-
-	struct continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
-	c = compile_goal(context,c,g_if);
-
 	// Check the inner flags before the wrap
-	int always_true = (c->m_set_flags & FLAG_CUT);
-	c = wrap_cut(context,c);
+	int always_true = (c_if->m_set_flags & FLAG_CUT);
+	c_if = wrap_cut(context,c_if);
 
-	if (!(c->m_set_flags & (FLAG_THROW | FLAG_HALT)))
+	if (!(c_if->m_set_flags & (FLAG_THROW | FLAG_HALT)))
 	{
-		struct continuation_t* c_end = NULL;
-
-		if (c->m_set_flags == 0)
+		if (c_if->m_set_flags & FLAG_FAIL)
 		{
-			c_end = new_continuation(context);
-			union opcode_t* ops = append_opcodes(context,c->m_tail,3);
-			(ops++)->m_opcode = OP_BRANCH;
-			(ops++)->m_u64val = FLAG_THROW | FLAG_HALT;
-			ops->m_pval = c_end->m_entry_point;
-		}
-
-		if (always_true)
-		{
-			struct continuation_t* c1 = compile_goal(context,cont,g_then);
-			c = goto_next(context,c,c1);
-			c->m_set_flags = c1->m_set_flags;
-
-			if (c_end)
-				c = goto_next(context,c,c_end);
-		}
-		else if (c->m_set_flags & FLAG_FAIL)
-		{
-			if (g_else)
+			if (c_else)
 			{
-				c = clear_flags(context,c,FLAG_FAIL);
-				struct continuation_t* c1 = compile_goal(context,cont,g_else);
-				c = goto_next(context,c,c1);
-				c->m_set_flags = c1->m_set_flags;
+				c_if = clear_flags(context,c_if,FLAG_FAIL);
+				c_if = goto_next(context,c_if,c_else);
+				c_if->m_set_flags = c_else->m_set_flags;
 			}
-
-			if (c_end)
-				c = goto_next(context,c,c_end);
 		}
 		else
 		{
-			if (!c_end)
-				c_end = new_continuation(context);
+			c_if->m_set_flags = c_then->m_set_flags;
 
-			struct continuation_t* c1 = compile_goal(context,cont,g_then);
-			c1 = goto_next(context,c1,c_end);
-
-			struct continuation_t* c2 = c_end;
-			if (g_else)
+			if (always_true)
+				c_if = goto_next(context,c_if,c_then);
+			else
 			{
-				c2 = clear_flags(context,new_continuation(context),FLAG_FAIL);
-				struct continuation_t* c3 = compile_goal(context,cont,g_else);
-				c2 = goto_next(context,c2,c3);
-				c2->m_set_flags = c3->m_set_flags;
-				c2 = goto_next(context,c2,c_end);
+				continuation_t* c_end = c_end = new_continuation(context);
+
+				if (c_if->m_entry_point->m_len != 2 ||
+					c_if->m_entry_point->m_ops[0].m_opcode != OP_NOP ||
+					c_if->m_entry_point->m_ops[1].m_opcode != OP_NOP)
+				{					
+					opcode_t* ops = append_opcodes(context,c_if->m_tail,3);
+					(ops++)->m_opcode = OP_BRANCH;
+
+					if (c_else)
+						(ops++)->m_u64val = FLAG_THROW | FLAG_HALT;
+					else
+						(ops++)->m_u64val = FLAG_THROW | FLAG_HALT | FLAG_FAIL;
+					ops->m_pval = c_end->m_entry_point;
+				}
+
+				if (c_else)
+				{
+					continuation_t* c1 = clear_flags(context,new_continuation(context),FLAG_FAIL);
+					c1 = goto_next(context,c1,c_else);
+					c1 = goto_next(context,c1,c_end);
+
+					opcode_t* ops = append_opcodes(context,c_if->m_tail,3);
+					(ops++)->m_opcode = OP_BRANCH;
+					(ops++)->m_u64val = FLAG_FAIL;
+					ops->m_pval = c1->m_entry_point;
+
+					c_if = goto_next(context,c_if,c_then);
+					c_if = goto_next(context,c_if,c_end);
+
+					c_if->m_set_flags &= c_else->m_set_flags;
+				}			
 			}
-			
-			union opcode_t* ops = append_opcodes(context,c->m_tail,3);
-			(ops++)->m_opcode = OP_BRANCH;
-			(ops++)->m_u64val = FLAG_FAIL;
-			ops->m_pval = c2->m_entry_point;
-			c = goto_next(context,c,c1);
-			c->m_set_flags = (c1->m_set_flags & c2->m_set_flags);
-			c->m_tail = c_end->m_tail;
-		}
+		}		
 	}
 
 	// Check for optmized out entry_point
-	if (c->m_entry_point->m_len == 4 &&
-		c->m_entry_point->m_ops[0].m_opcode == OP_NOP &&
-		c->m_entry_point->m_ops[1].m_opcode == OP_NOP &&
-		c->m_entry_point->m_ops[2].m_opcode == OP_JMP)
+	if (c_if->m_entry_point->m_len == 4 &&
+		c_if->m_entry_point->m_ops[0].m_opcode == OP_NOP &&
+		c_if->m_entry_point->m_ops[1].m_opcode == OP_NOP &&
+		c_if->m_entry_point->m_ops[2].m_opcode == OP_JMP)
 	{
-		c->m_entry_point = c->m_entry_point->m_ops[3].m_pval;
+		c_if->m_entry_point = c_if->m_entry_point->m_ops[3].m_pval;
 	}
 
-	return c;
+	return c_if;
 }
 
-static struct continuation_t* compile_or(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_or(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
-	const union packed_t* g2 = get_next_arg(g1,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g2 = get_next_arg(g1,NULL);
 
 	if (g1->m_u64val == PACK_COMPOUND_EMBED_2(2,'-','>'))
-		return compile_if_then_else(context,cont,g1,g2);
+	{
+		const packed_t* g_if = get_first_arg(g1,NULL,NULL);
+		
+		continuation_t* c_if = set_flags(context,new_continuation(context),FLAG_CUT);
+		c_if = compile_goal(context,c_if,g_if);
 
-	struct continuation_t* c = compile_goal(context,convert_to_call(context,cont),g1);
+		continuation_t* c_then = compile_goal(context,cont,get_next_arg(g_if,NULL));
+		continuation_t* c_else = compile_goal(context,cont,g2);
+
+		return compile_if_then_else(context,c_if,c_then,c_else);
+	}		
+
+	continuation_t* c = compile_goal(context,convert_to_call(context,cont),g1);
 	if (!(c->m_set_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT)))
 	{
 		uint8_t flags = c->m_set_flags;
@@ -392,13 +388,13 @@ static struct continuation_t* compile_or(struct compile_context_t* context, stru
 		if (!(flags & FLAG_FAIL))
 			cont = convert_to_call(context,cont);
 
-		struct continuation_t* c2 = compile_goal(context,cont,g2);
+		continuation_t* c2 = compile_goal(context,cont,g2);
 
 		if (!(flags & FLAG_FAIL))
 		{
-			struct continuation_t* c_end = new_continuation(context);
+			continuation_t* c_end = new_continuation(context);
 
-			union opcode_t* ops = append_opcodes(context,c->m_tail,3);
+			opcode_t* ops = append_opcodes(context,c->m_tail,3);
 			(ops++)->m_opcode = OP_BRANCH;
 			(ops++)->m_u64val = FLAG_CUT | FLAG_THROW | FLAG_HALT;
 			ops->m_pval = c_end->m_entry_point;
@@ -414,12 +410,19 @@ static struct continuation_t* compile_or(struct compile_context_t* context, stru
 	return c;
 }
 
-static struct continuation_t* compile_if_then(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_if_then(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	return compile_if_then_else(context,cont,goal,NULL);
+	const packed_t* g_if = get_first_arg(goal,NULL,NULL);
+			
+	continuation_t* c_if = set_flags(context,new_continuation(context),FLAG_CUT);
+	c_if = compile_goal(context,c_if,g_if);
+
+	continuation_t* c_then = compile_goal(context,cont,get_next_arg(g_if,NULL));
+	
+	return compile_if_then_else(context,c_if,c_then,NULL);
 }
 
-static struct continuation_t* compile_builtin(struct compile_context_t* context, struct continuation_t* cont, builtin_fn_t fn)
+static continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn)
 {
 	// Convert cont to a call site
 	cont = make_call_site(context,cont);
@@ -431,8 +434,8 @@ static struct continuation_t* compile_builtin(struct compile_context_t* context,
 		cont->m_entry_point = cont->m_entry_point->m_ops[1].m_pval;
 	}
 
-	struct continuation_t* c = new_continuation(context);
-	union opcode_t* ops = append_opcodes(context,c->m_tail,3);
+	continuation_t* c = new_continuation(context);
+	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode = OP_BUILTIN;
 	(ops++)->m_pval = fn;
 	ops->m_pval = cont->m_entry_point;
@@ -440,33 +443,33 @@ static struct continuation_t* compile_builtin(struct compile_context_t* context,
 	return c;
 }
 
-struct continuation_t* compile_user_defined(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+continuation_t* compile_user_defined(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
 	return compile_builtin(context,cont,"user_defined");
 }
 
-struct continuation_t* compile_callN(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+continuation_t* compile_callN(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
 	return compile_builtin(context,cont,"Call/N");
 }
 
-static struct continuation_t* compile_throw(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_throw(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	struct continuation_t* c = new_continuation(context);
+	continuation_t* c = new_continuation(context);
 	c->m_set_flags = FLAG_THROW;
 
-	union opcode_t* ops = append_opcodes(context,c->m_tail,2);
+	opcode_t* ops = append_opcodes(context,c->m_tail,2);
 	(ops++)->m_opcode = OP_THROW;
 	ops->m_pval = builtin_throw;
 
 	return c;
 }
 
-static struct continuation_t* compile_call_inner(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_call_inner(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
 	uint16_t type = UNPACK_TYPE(goal->m_u64val);
 
-	struct continuation_t* c;
+	continuation_t* c;
 	if (type == prolite_atom || type == prolite_compound)
 		c = compile_goal(context,cont,goal);
 	else if (type == prolite_var)
@@ -475,7 +478,7 @@ static struct continuation_t* compile_call_inner(struct compile_context_t* conte
 	{
 		// We know this throws...
 		c = new_continuation(context);
-		union opcode_t* ops = append_opcodes(context,c->m_tail,2);
+		opcode_t* ops = append_opcodes(context,c->m_tail,2);
 		(ops++)->m_opcode = OP_THROW;
 		ops->m_pval = builtin_call;
 
@@ -485,74 +488,38 @@ static struct continuation_t* compile_call_inner(struct compile_context_t* conte
 	return c;
 }
 
-static struct continuation_t* compile_call(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_call(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 
-	struct continuation_t* c = compile_call_inner(context,cont,g1);
+	continuation_t* c = compile_call_inner(context,cont,g1);
 	if (!(c->m_set_flags & FLAG_THROW))
 		c = wrap_cut(context,c);
 
 	return c;
 }
 
-static struct continuation_t* compile_once(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_once(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 
-	struct continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
+	continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
 	c = compile_call_inner(context,c,g1);
 
-	// Check the inner flags before the wrap
-	int always_true = (c->m_set_flags & FLAG_CUT);
-	c = wrap_cut(context,c);
-
-	if (!(c->m_set_flags & (FLAG_THROW | FLAG_HALT | FLAG_FAIL)))
-	{
-		if (always_true)
-		{
-			c = goto_next(context,c,cont);
-			c->m_set_flags = cont->m_set_flags;
-		}
-		else
-		{
-			struct continuation_t* c_end = new_continuation(context);
-
-			union opcode_t* ops = append_opcodes(context,c->m_tail,3);
-			(ops++)->m_opcode = OP_BRANCH;
-			(ops++)->m_u64val = FLAG_THROW | FLAG_HALT | FLAG_FAIL;
-			ops->m_pval = c_end->m_entry_point;
-
-			c = goto_next(context,c,cont);
-			c = goto_next(context,c,c_end);
-
-			c->m_set_flags = (cont->m_set_flags & (FLAG_THROW | FLAG_HALT | FLAG_FAIL));
-		}
-	}
-
-	// Check for optmized out entry_point
-	if (c->m_entry_point->m_len == 4 &&
-		c->m_entry_point->m_ops[0].m_opcode == OP_NOP &&
-		c->m_entry_point->m_ops[1].m_opcode == OP_NOP &&
-		c->m_entry_point->m_ops[2].m_opcode == OP_JMP)
-	{
-		c->m_entry_point = c->m_entry_point->m_ops[3].m_pval;
-	}
-
-	return c;
+	return compile_if_then_else(context,c,cont,NULL);
 }
 
-static struct continuation_t* compile_repeat(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_repeat(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
 	if (cont->m_set_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT))
 		return cont;
 
-	struct continuation_t* c_end = new_continuation(context);
+	continuation_t* c_end = new_continuation(context);
 
 	if (cont->m_call_site)
 		cont = goto_next(context,new_continuation(context),cont);
 
-	union opcode_t* ops = append_opcodes(context,cont->m_tail,7);
+	opcode_t* ops = append_opcodes(context,cont->m_tail,7);
 	(ops++)->m_opcode = OP_BRANCH;
 	(ops++)->m_u64val = FLAG_CUT | FLAG_THROW | FLAG_HALT;
 	(ops++)->m_pval = c_end->m_entry_point;
@@ -566,66 +533,28 @@ static struct continuation_t* compile_repeat(struct compile_context_t* context, 
 	return cont;
 }
 
-static struct continuation_t* compile_not_proveable(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_not_proveable(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 
-	struct continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
+	continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
 	c = compile_call_inner(context,c,g1);
 
-	// Check the inner flags before the wrap
-	int always_true = (c->m_set_flags & FLAG_CUT);
-	c = wrap_cut(context,c);
-
-	if (!(c->m_set_flags & (FLAG_THROW | FLAG_HALT)) && !always_true)
-	{
-		if (c->m_set_flags & FLAG_FAIL)
-		{
-			c = clear_flags(context,c,FLAG_FAIL);
-			c = goto_next(context,c,cont);
-		}
-		else
-		{
-			struct continuation_t* c_end = new_continuation(context);
-
-			struct continuation_t* c1 = clear_flags(context,new_continuation(context),FLAG_FAIL);
-			c1 = goto_next(context,c1,cont);
-			goto_next(context,c1,c_end);
-
-			union opcode_t* ops = append_opcodes(context,c->m_tail,3);
-			(ops++)->m_opcode = OP_BRANCH;
-			(ops++)->m_u64val = FLAG_FAIL;
-			ops->m_pval = c1->m_entry_point;
-
-			c = goto_next(context,c,c_end);
-			c->m_set_flags = (cont->m_set_flags & (FLAG_THROW | FLAG_HALT | FLAG_FAIL));
-		}
-	}
-
-	// Check for optmized out entry_point
-	if (c->m_entry_point->m_len == 4 &&
-		c->m_entry_point->m_ops[0].m_opcode == OP_NOP &&
-		c->m_entry_point->m_ops[1].m_opcode == OP_NOP &&
-		c->m_entry_point->m_ops[2].m_opcode == OP_JMP)
-	{
-		c->m_entry_point = c->m_entry_point->m_ops[3].m_pval;
-	}
-
-	return c;
+	return compile_if_then_else(context,c,compile_false(context,cont,NULL),cont);
 }
 
-static struct continuation_t* compile_var(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_var(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	if (UNPACK_TYPE(g1->m_u64val) == prolite_var)
 		return compile_builtin(context,cont,builtin_var);
 
 	return compile_false(context,cont,goal);
 }
 
-static struct continuation_t* compile_atom(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_atom(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	switch (UNPACK_TYPE(g1->m_u64val))
 	{
 	case prolite_var:
@@ -639,9 +568,9 @@ static struct continuation_t* compile_atom(struct compile_context_t* context, st
 	}
 }
 
-static struct continuation_t* compile_integer(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_integer(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	switch (UNPACK_TYPE(g1->m_u64val))
 	{
 	case prolite_var:
@@ -655,9 +584,9 @@ static struct continuation_t* compile_integer(struct compile_context_t* context,
 	}
 }
 
-static struct continuation_t* compile_float(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_float(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	switch (UNPACK_TYPE(g1->m_u64val))
 	{
 	case prolite_var:
@@ -671,9 +600,9 @@ static struct continuation_t* compile_float(struct compile_context_t* context, s
 	}
 }
 
-static struct continuation_t* compile_atomic(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_atomic(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	switch (UNPACK_TYPE(g1->m_u64val))
 	{
 	case prolite_var:
@@ -687,9 +616,9 @@ static struct continuation_t* compile_atomic(struct compile_context_t* context, 
 	}
 }
 
-static struct continuation_t* compile_compound(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_compound(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	switch (UNPACK_TYPE(g1->m_u64val))
 	{
 	case prolite_var:
@@ -703,18 +632,18 @@ static struct continuation_t* compile_compound(struct compile_context_t* context
 	}
 }
 
-static struct continuation_t* compile_nonvar(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_nonvar(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	if (UNPACK_TYPE(g1->m_u64val) == prolite_var)
 		return compile_builtin(context,cont,builtin_nonvar);
 
 	return compile_true(context,cont,goal);
 }
 
-static struct continuation_t* compile_number(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_number(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	switch (UNPACK_TYPE(g1->m_u64val))
 	{
 	case prolite_var:
@@ -729,9 +658,9 @@ static struct continuation_t* compile_number(struct compile_context_t* context, 
 	}
 }
 
-static struct continuation_t* compile_callable(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_callable(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	switch (UNPACK_TYPE(g1->m_u64val))
 	{
 	case prolite_var:
@@ -746,9 +675,9 @@ static struct continuation_t* compile_callable(struct compile_context_t* context
 	}
 }
 
-static struct continuation_t* compile_ground(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_ground(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	const union packed_t* g1 = get_first_arg(goal,NULL,NULL);
+	const packed_t* g1 = get_first_arg(goal,NULL,NULL);
 	switch (UNPACK_TYPE(g1->m_u64val))
 	{
 	case prolite_var:
@@ -760,11 +689,11 @@ static struct continuation_t* compile_ground(struct compile_context_t* context, 
 	}
 }
 
-static struct continuation_t* compile_goal(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static continuation_t* compile_goal(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
 	int debug = 0;
 
-	struct continuation_t* c;
+	continuation_t* c;
 	switch (goal->m_u64val)
 	{
 #define DECLARE_BUILTIN_INTRINSIC(f,n) \
@@ -813,13 +742,13 @@ static struct continuation_t* compile_goal(struct compile_context_t* context, st
 	return c;
 }
 
-static void dumpCFG(const struct cfg_block_t* s, FILE* f);
+static void dumpCFG(const cfg_block_t* s, FILE* f);
 
-static void compile_term(struct compile_context_t* context, struct continuation_t* cont, const union packed_t* goal)
+static void compile_term(compile_context_t* context, continuation_t* cont, const packed_t* goal)
 {
-	struct continuation_t* c = compile_goal(context,cont,goal);
+	continuation_t* c = compile_goal(context,cont,goal);
 
-	union opcode_t* ops = append_opcodes(context,c->m_tail,3);
+	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode = OP_SET_FLAGS;
 	(ops++)->m_u64val = c->m_set_flags;
 	ops->m_opcode = OP_END;
@@ -829,7 +758,7 @@ static void compile_term(struct compile_context_t* context, struct continuation_
 	dumpCFG(c->m_entry_point,stdout);
 }
 
-void compile(struct context_t* context, struct stream_t* s)
+void compile(context_t* context, stream_t* s)
 {
 	// Read a term and prepare it for execution
 	enum eParseStatus result = read_term(context,s);
@@ -838,7 +767,7 @@ void compile(struct context_t* context, struct stream_t* s)
 	else
 	{
 		// Pop varinfo
-		const union packed_t* sp = context->m_stack;
+		const packed_t* sp = context->m_stack;
 
 		size_t varcount = (sp++)->m_u64val;
 		while (varcount--)
@@ -849,13 +778,13 @@ void compile(struct context_t* context, struct stream_t* s)
 		}
 
 		size_t heap_start = heap_top(context->m_heap);
-		struct compile_context_t cc = {0};
+		compile_context_t cc = {0};
 		cc.m_heap = context->m_heap;
 
 		if (!setjmp(cc.m_jmp))
 		{
-			struct continuation_t* cont = new_continuation(&cc);
-			union opcode_t* ops = append_opcodes(&cc,cont->m_tail,1);
+			continuation_t* cont = new_continuation(&cc);
+			opcode_t* ops = append_opcodes(&cc,cont->m_tail,1);
 			ops->m_opcode = OP_TRUE;
 
 			compile_term(&cc,cont,sp);
@@ -903,7 +832,7 @@ static void fmtFlags(uint64_t v, char* buf)
 	*buf = '\0';
 }
 
-static void dumpCFGBlock(const struct cfg_block_t* blk, FILE* f)
+static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 {
 	char buf[5] = {0};
 
@@ -1031,13 +960,13 @@ static void dumpCFGBlock(const struct cfg_block_t* blk, FILE* f)
 	}
 }
 
-struct cfg_vec_t
+typedef struct cfg_vec
 {
 	size_t len;
-	const struct cfg_block_t** blks;
-};
+	const cfg_block_t** blks;
+} cfg_vec_t;
 
-static int addCFG(struct cfg_vec_t* blks, const struct cfg_block_t* blk)
+static int addCFG(cfg_vec_t* blks, const cfg_block_t* blk)
 {
 	for (size_t i=0; i < blks->len; ++i)
 	{
@@ -1051,7 +980,7 @@ static int addCFG(struct cfg_vec_t* blks, const struct cfg_block_t* blk)
 	return 1;
 }
 
-static void walkCFG(struct cfg_vec_t* blks, const struct cfg_block_t* blk)
+static void walkCFG(cfg_vec_t* blks, const cfg_block_t* blk)
 {
 	if (addCFG(blks,blk))
 	{
@@ -1084,7 +1013,7 @@ static void walkCFG(struct cfg_vec_t* blks, const struct cfg_block_t* blk)
 	}
 }
 
-static void dumpCFG(const struct cfg_block_t* b, FILE* f)
+static void dumpCFG(const cfg_block_t* b, FILE* f)
 {
 	if (f)
 	{
@@ -1094,7 +1023,7 @@ static void dumpCFG(const struct cfg_block_t* b, FILE* f)
 		{
 			fprintf(f,"\tstart [shape=point];\n");
 
-			struct cfg_vec_t blks = {0};
+			cfg_vec_t blks = {0};
 			walkCFG(&blks,b);
 
 			for (size_t i=0; i < blks.len; ++i)

@@ -14,23 +14,24 @@
 #include <assert.h>
 
 /* Macro magic to declare the builtin string constants */
-#define DECLARE_BUILTIN_STRING(name) BUILTIN_ATOM_##name,
-enum builtin_atoms_t
+#define DECLARE_BUILTIN_STRING(name) ,BUILTIN_ATOM_##name
+typedef enum builtin_atom_id
 {
+	BUILTIN_ATOM_ = 0
 #include "builtin_strings"
-};
+} builtin_atom_id_t;
 
-struct string_t
+typedef struct string
 {
 	size_t               m_len;
 	const unsigned char* m_str;
 	unsigned char        m_data[5]; //< May be used for embedded strings
-};
+} string_t;
 
-struct debug_info_t
+typedef struct debug_info
 {
 	int TODO;
-};
+} debug_info_t;
 
 
 
@@ -38,48 +39,19 @@ struct debug_info_t
 
 
 
-struct predicate_t;
+struct predicate;
 
-struct clause_t
+struct clause
 {
-	struct predicate_t*   m_pred;
-	struct clause_t*      m_next;
-	struct clause_t*      m_prev;
+	struct predicate*   m_pred;
+	struct clause*      m_next;
+	struct clause*      m_prev;
 	size_t                m_var_count;
-	const union packed_t* m_head;
+	const packed_t* m_head;
 	size_t                m_entry_point;
 };
 
-struct module_t;
-
-struct predicate_t
-{
-	struct predicate_flags_t
-	{
-		unsigned dynamic : 1;
-		unsigned multifile : 1;
-		unsigned discontiguous : 1;
-		unsigned public : 1;
-
-	} m_flags;
-
-	struct module_t*      m_module;
-	const union packed_t* m_indicator;
-	struct clause_t*      m_first_clause;
-	struct clause_t*      m_last_clause;
-	struct clause_t*      m_free_clause;
-};
-
-struct predicate_table_t
-{
-	// TODO; This can be a much faster data structure
-	//struct stack_t*     m_stack;
-
-	size_t              m_count;
-	struct predicate_t* m_predicates[];
-};
-
-enum eOpSpec
+typedef enum op_spec
 {
 	eFX,
 	eFY,
@@ -88,18 +60,18 @@ enum eOpSpec
 	eYFX,
 	eXF,
 	eYF
-};
+} op_spec_t;
 
-struct operator_t
+typedef struct operator
 {
-	struct operator_t* m_prev;
-	enum eOpSpec       m_specifier;
-	unsigned int       m_precedence;
-};
+	struct operator* m_prev;
+	op_spec_t        m_specifier;
+	unsigned int     m_precedence;
+} operator_t;
 
-struct module_t
+typedef struct module
 {
-	struct module_flags_t
+	struct module_flags
 	{
 		unsigned char_conversion : 1;
 		unsigned double_quotes : 2;
@@ -109,36 +81,35 @@ struct module_t
 		unsigned colon_sets_calling_context : 1;
 	} m_flags;
 
-	struct operator_t*        m_operators;
-	struct predicate_table_t* m_predicates;
-};
+	operator_t*        m_operators;
 
-struct context_t
+} module_t;
+
+typedef struct context
 {
-	struct heap_t*        m_heap;
-	union packed_t*       m_stack;
+	heap_t*   m_heap;
+	packed_t* m_stack;
+	module_t* m_module;
+} context_t;
 
-	struct module_t*      m_module;
-};
+packed_t* push_string(packed_t* stack, prolite_type_t type, const unsigned char* str, size_t len);
+packed_t* push_compound(packed_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len);
 
-union packed_t* push_string(union packed_t* stack, enum tag_type_t type, const unsigned char* str, size_t len);
-union packed_t* push_compound(union packed_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len);
-
-static inline union packed_t* push_integer(union packed_t* stack, int32_t v)
+static inline packed_t* push_integer(packed_t* stack, int32_t v)
 {
 	(--stack)->m_u64val = PACK_TYPE(prolite_int32) | PACK_MANT_48(v);
 	return stack;
 }
 
-static inline union packed_t* push_double(union packed_t* stack, double v)
+static inline packed_t* push_double(packed_t* stack, double v)
 {
 	(--stack)->m_dval = v;
 	return stack;
 }
 
-const union packed_t* get_first_arg(const union packed_t* compound, uint64_t* arity, struct debug_info_t* debug_info);
-const union packed_t* get_next_arg(const union packed_t* p, struct debug_info_t* debug_info);
-struct string_t get_compound(const union packed_t** b, uint64_t* arity, struct debug_info_t* debug_info);
-struct string_t get_string(const union packed_t** b, struct debug_info_t* debug_info);
+const packed_t* get_first_arg(const packed_t* compound, uint64_t* arity, debug_info_t* debug_info);
+const packed_t* get_next_arg(const packed_t* p, debug_info_t* debug_info);
+string_t get_compound(const packed_t** b, uint64_t* arity, debug_info_t* debug_info);
+string_t get_string(const packed_t** b, debug_info_t* debug_info);
 
 #endif /* TYPES_H_ */

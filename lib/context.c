@@ -9,7 +9,7 @@
 
 #include <assert.h>
 
-uint32_t convert_char(struct context_t* context, uint32_t in_char)
+uint32_t convert_char(context_t* context, uint32_t in_char)
 {
 	/* TODO */
 
@@ -17,7 +17,7 @@ uint32_t convert_char(struct context_t* context, uint32_t in_char)
 }
 
 #ifdef UNUSED
-static uint32_t atom_to_code(const union packed_t* b)
+static uint32_t atom_to_code(const packed_t* b)
 {
 	uint64_t all48 = UNPACK_MANT_48(b->m_u64val);
 	unsigned int len = ((all48 >> 40) & 0x07);
@@ -90,9 +90,9 @@ static uint32_t atom_to_code(const union packed_t* b)
 }
 #endif
 
-static struct operator_t* find_op(struct context_t* context, const unsigned char* name, size_t name_len)
+static operator_t* find_op(context_t* context, const unsigned char* name, size_t name_len)
 {
-	static struct operator_t s_builtins[] =
+	static operator_t s_builtins[] =
 	{
 		/* 0 */ { NULL, eXFX, 1200 },
 		/* 1 */ { NULL, eXFY, 1100 },
@@ -260,9 +260,9 @@ static struct operator_t* find_op(struct context_t* context, const unsigned char
 	return NULL;
 }
 
-static struct operator_t* find_prefix_op(struct context_t* context, const unsigned char* name, size_t name_len)
+static operator_t* find_prefix_op(context_t* context, const unsigned char* name, size_t name_len)
 {
-	static struct operator_t s_builtins[] =
+	static operator_t s_builtins[] =
 	{
 		/* 0 */ { NULL, eFX, 1200 },
 		/* 1 */ { NULL, eFY, 900 },
@@ -317,18 +317,18 @@ static struct operator_t* find_prefix_op(struct context_t* context, const unsign
 }
 
 /* Try to find a infix/postfix op, otherwise find prefix */
-struct operator_t* lookup_op(struct context_t* context, const unsigned char* name, size_t name_len)
+operator_t* lookup_op(context_t* context, const unsigned char* name, size_t name_len)
 {
-	struct operator_t* op = find_op(context,name,name_len);
+	operator_t* op = find_op(context,name,name_len);
 	if (!op)
 		op = find_prefix_op(context,name,name_len);
 	return op;
 }
 
 /* Try to find a prefix op, otherwise find infix/suffix */
-struct operator_t* lookup_prefix_op(struct context_t* context, const unsigned char* name, size_t name_len)
+operator_t* lookup_prefix_op(context_t* context, const unsigned char* name, size_t name_len)
 {
-	struct operator_t* op = find_prefix_op(context,name,name_len);
+	operator_t* op = find_prefix_op(context,name,name_len);
 	if (!op)
 		op = find_op(context,name,name_len);
 	return op;
@@ -338,14 +338,14 @@ struct operator_t* lookup_prefix_op(struct context_t* context, const unsigned ch
 
 #include <string.h>
 
-struct module_t* module_new(struct context_t* context, const char* name)
+module_t* module_new(context_t* context, const char* name)
 {
 	// TODO: Much more here!!
 
-	struct module_t* module = heap_malloc(&context->m_heap,sizeof(struct module_t));
+	module_t* module = heap_malloc(&context->m_heap,sizeof(module_t));
 	if (module)
 	{
-		memset(module,0,sizeof(struct module_t));
+		memset(module,0,sizeof(module_t));
 		module->m_flags.char_conversion = 1;
 		module->m_flags.back_quotes = 1;
 	}
@@ -353,25 +353,25 @@ struct module_t* module_new(struct context_t* context, const char* name)
 	return module;
 }
 
-void module_delete(struct module_t* module)
+void module_delete(module_t* module)
 {
 	// TODO
 }
 
-struct context_t* context_new(void)
+context_t* context_new(void)
 {
 	const size_t stack_size = 65536;
 
 	// Create a new context
-	struct context_t* retval = NULL;
-	struct heap_t* h = heap_new(8000,&malloc,&free);
+	context_t* retval = NULL;
+	heap_t* h = heap_new(8000,&malloc,&free);
 	if (h)
 	{
-		struct context_t* c = heap_malloc(&h,sizeof(struct context_t));
+		context_t* c = heap_malloc(&h,sizeof(context_t));
 		if (c)
 		{
-			memset(c,0,sizeof(struct context_t));			
-			c->m_stack = malloc(stack_size * sizeof(union packed_t));
+			memset(c,0,sizeof(context_t));			
+			c->m_stack = malloc(stack_size * sizeof(packed_t));
 			c->m_stack += stack_size;
 			c->m_heap = h;
 			c->m_module = module_new(c,"user");
@@ -388,7 +388,7 @@ struct context_t* context_new(void)
 	return retval;
 }
 
-void context_delete(struct context_t* c)
+void context_delete(context_t* c)
 {
 	module_delete(c->m_module);
 	//stack_delete(c->m_call_stack);

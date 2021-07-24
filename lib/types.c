@@ -8,15 +8,15 @@
 #undef DECLARE_BUILTIN_STRING
 #define DECLARE_BUILTIN_STRING(s) { sizeof(#s)-1,(const unsigned char*)(#s) },
 
-const struct string_t s_builtin_strings[] =
+const string_t s_builtin_strings[] =
 {
 #include "builtin_strings"
 };
 
 static int string_compare(const void* p1, const void* p2)
 {
-	const struct string_t* s1 = p1;
-	const struct string_t* s2 = p2;
+	const string_t* s1 = p1;
+	const string_t* s2 = p2;
 
 	int r = (s1->m_len - s2->m_len);
 	if (r == 0)
@@ -28,7 +28,7 @@ static int string_compare(const void* p1, const void* p2)
 static uint32_t is_builtin_string(const unsigned char* str, size_t len)
 {
 	uint32_t ret = -1;
-	struct string_t f, *r;
+	string_t f, *r;
 	f.m_len = len;
 	f.m_str = str;
 
@@ -39,7 +39,7 @@ static uint32_t is_builtin_string(const unsigned char* str, size_t len)
 	return ret;
 }
 
-union packed_t* push_string(union packed_t* stack, enum tag_type_t type, const unsigned char* str, size_t len)
+packed_t* push_string(packed_t* stack, prolite_type_t type, const unsigned char* str, size_t len)
 {
 	uint32_t builtin;
 	switch (len)
@@ -75,7 +75,7 @@ union packed_t* push_string(union packed_t* stack, enum tag_type_t type, const u
 		}
 		else
 		{
-			stack -= ((len + sizeof(union packed_t)-1) / sizeof(union packed_t));
+			stack -= ((len + sizeof(packed_t)-1) / sizeof(packed_t));
 			memcpy(stack,str,len);
 			(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48(len);	
 		}
@@ -85,7 +85,7 @@ union packed_t* push_string(union packed_t* stack, enum tag_type_t type, const u
 	return stack;
 }
 
-union packed_t* push_compound(union packed_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len)
+packed_t* push_compound(packed_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len)
 {
 	uint32_t builtin;
 	if (arity <= MAX_ARITY_EMBED && functor_len <= 5)
@@ -130,16 +130,16 @@ union packed_t* push_compound(union packed_t* stack, uint64_t arity, const unsig
 	return stack;
 }
 
-static const union packed_t* get_debug_info(const union packed_t* p, struct debug_info_t* debug_info)
+static const packed_t* get_debug_info(const packed_t* p, debug_info_t* debug_info)
 {
 	// TODO
 
 	return p;
 }
 
-struct string_t get_string(const union packed_t** b, struct debug_info_t* debug_info)
+string_t get_string(const packed_t** b, debug_info_t* debug_info)
 {
-	struct string_t ret;
+	string_t ret;
 	uint64_t all48 = ((*b)++)->m_u64val;
 	uint16_t hi16;
 
@@ -163,7 +163,7 @@ struct string_t get_string(const union packed_t** b, struct debug_info_t* debug_
 	{
 		ret.m_len = (size_t)(all48 & MAX_ATOM_LEN);
 		ret.m_str = (const unsigned char*)b;
-		*b += ((ret.m_len + sizeof(union packed_t)-1) / sizeof(union packed_t));
+		*b += ((ret.m_len + sizeof(packed_t)-1) / sizeof(packed_t));
 	}
 
 	*b = get_debug_info(*b,debug_info);
@@ -171,9 +171,9 @@ struct string_t get_string(const union packed_t** b, struct debug_info_t* debug_
 	return ret;
 }
 
-struct string_t get_compound(const union packed_t** b, uint64_t* arity, struct debug_info_t* debug_info)
+string_t get_compound(const packed_t** b, uint64_t* arity, debug_info_t* debug_info)
 {
-	struct string_t ret;
+	string_t ret;
 	uint64_t all48 = ((*b)++)->m_u64val;
 	uint16_t hi16;
 
@@ -212,11 +212,11 @@ struct string_t get_compound(const union packed_t** b, uint64_t* arity, struct d
 	return ret;
 }
 
-const union packed_t* get_next_arg(const union packed_t* p, struct debug_info_t* debug_info)
+const packed_t* get_next_arg(const packed_t* p, debug_info_t* debug_info)
 {
 	uint64_t all48 = (p++)->m_u64val;
 	uint16_t hi16;
-	enum tag_type_t type = UNPACK_TYPE(all48);
+	prolite_type_t type = UNPACK_TYPE(all48);
 	all48 = UNPACK_MANT_48(all48);
 	hi16 = (all48 >> 32);
 
@@ -233,7 +233,7 @@ const union packed_t* get_next_arg(const union packed_t* p, struct debug_info_t*
 		if (!(hi16 & 0xC000))
 		{
 			size_t len = (size_t)(all48 & MAX_ATOM_LEN);
-			p += ((len + sizeof(union packed_t)-1) / sizeof(union packed_t));
+			p += ((len + sizeof(packed_t)-1) / sizeof(packed_t));
 		}
 		break;
 
@@ -270,7 +270,7 @@ const union packed_t* get_next_arg(const union packed_t* p, struct debug_info_t*
 	return get_debug_info(p,debug_info);
 }
 
-const union packed_t* get_first_arg(const union packed_t* compound, uint64_t* arity, struct debug_info_t* debug_info)
+const packed_t* get_first_arg(const packed_t* compound, uint64_t* arity, debug_info_t* debug_info)
 {
 	uint64_t all48 = (compound++)->m_u64val;
 	uint16_t hi16;

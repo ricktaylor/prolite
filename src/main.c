@@ -7,7 +7,7 @@
 
 #include "../lib/stream.h"
 
-void compile(struct context_t* context, struct stream_t* s);
+void compile(context_t* context, stream_t* s);
 
 #include <string.h>
 #include <assert.h>
@@ -17,17 +17,17 @@ typedef struct prolite_env
 	int opaque;
 }* prolite_env_t;
 
-struct text_stream_t
+struct text_stream
 {
-	struct stream_t m_proto;
+	stream_t m_proto;
 
 	const char** m_str;
 	const char*  m_end;
 };
 
-static int64_t text_stream_read(struct stream_t* s, void* dest, size_t len)
+static int64_t text_stream_read(stream_t* s, void* dest, size_t len)
 {
-	struct text_stream_t* ts = (struct text_stream_t*)s;
+	struct text_stream* ts = (struct text_stream*)s;
 	size_t r = (ts->m_end - *ts->m_str);
 	if (r > len)
 		r = len;
@@ -37,17 +37,17 @@ static int64_t text_stream_read(struct stream_t* s, void* dest, size_t len)
 	return r;
 }
 
-struct context_t* context_new(void);
-void context_delete(struct context_t* c);
+context_t* context_new(void);
+void context_delete(context_t* c);
 
 int main(int argc, char* argv[])
 {
 	const char* cmd = argc > 1 ? argv[1] : "true.";
 
-	struct context_t* c = context_new();
+	context_t* c = context_new();
 	if (c)
 	{
-		struct text_stream_t ts = {0};
+		struct text_stream ts = {0};
 		ts.m_proto.m_fn_read = &text_stream_read;
 		ts.m_str = &cmd;
 		ts.m_end = *ts.m_str + strlen(*ts.m_str);

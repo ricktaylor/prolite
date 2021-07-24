@@ -21,15 +21,15 @@ static inline uint32_t next_pot(size_t s)
 	return s;
 }
 
-struct heap_t* heap_new(size_t size, void*(*fn_malloc)(size_t), void(*fn_free)(void*))
+heap_t* heap_new(size_t size, void*(*fn_malloc)(size_t), void(*fn_free)(void*))
 {
-	size_t align_size = next_pot(size + sizeof(struct heap_t));
+	size_t align_size = next_pot(size + sizeof(heap_t));
 
-	struct heap_t* heap = (*fn_malloc)(align_size);
+	heap_t* heap = (*fn_malloc)(align_size);
 	if (heap)
 	{
 		heap->m_top = 0;
-		heap->m_count = (align_size / sizeof(uint64_t)) - align_div(sizeof(struct heap_t),sizeof(uint64_t));
+		heap->m_count = (align_size / sizeof(uint64_t)) - align_div(sizeof(heap_t),sizeof(uint64_t));
 		heap->m_prev = NULL;
 		heap->m_next = NULL;
 		heap->m_fn_malloc = fn_malloc;
@@ -39,11 +39,11 @@ struct heap_t* heap_new(size_t size, void*(*fn_malloc)(size_t), void(*fn_free)(v
 	return heap;
 }
 
-static struct heap_t* heap_insert_page(size_t size, struct heap_t* after)
+static heap_t* heap_insert_page(size_t size, heap_t* after)
 {
-	size_t align_size = next_pot(size + sizeof(struct heap_t));
+	size_t align_size = next_pot(size + sizeof(heap_t));
 
-	struct heap_t* heap = after->m_next;
+	heap_t* heap = after->m_next;
 	if (heap && heap->m_count >= align_size / sizeof(uint64_t))
 	{
 		heap->m_top = 0;
@@ -58,7 +58,7 @@ static struct heap_t* heap_insert_page(size_t size, struct heap_t* after)
 		if (heap)
 		{
 			heap->m_top = 0;
-			heap->m_count = (align_size / sizeof(uint64_t)) - align_div(sizeof(struct heap_t),sizeof(uint64_t));
+			heap->m_count = (align_size / sizeof(uint64_t)) - align_div(sizeof(heap_t),sizeof(uint64_t));
 			heap->m_fn_malloc = after->m_fn_malloc;
 			heap->m_fn_free = after->m_fn_free;
 			heap->m_prev = after;
@@ -75,36 +75,36 @@ static struct heap_t* heap_insert_page(size_t size, struct heap_t* after)
 	return heap;
 }
 
-void heap_delete(struct heap_t* s)
+void heap_delete(heap_t* s)
 {
 	while (s)
 	{
-		struct heap_t* p = s->m_prev;
+		heap_t* p = s->m_prev;
 		(*s->m_fn_free)(s);
 		s = p;
 	}
 }
 
-void heap_compact(struct heap_t* heap)
+void heap_compact(heap_t* heap)
 {
-	struct heap_t* next = heap->m_next;
+	heap_t* next = heap->m_next;
 	while (next)
 	{
-		struct heap_t* s = next->m_next;
+		heap_t* s = next->m_next;
 		(*next->m_fn_free)(next);
 		next = s;
 	}
 	heap->m_next = NULL;
 }
 
-void* heap_malloc(struct heap_t** heap, size_t len)
+void* heap_malloc(heap_t** heap, size_t len)
 {
 	void* ptr = NULL;
 	uint32_t align_len = align_div(len,sizeof(uint64_t));
 
 	if ((*heap)->m_top + align_len >= (*heap)->m_count)
 	{
-		struct heap_t* s = heap_insert_page(len,*heap);
+		heap_t* s = heap_insert_page(len,*heap);
 		if (!s)
 			return NULL;
 
@@ -117,7 +117,7 @@ void* heap_malloc(struct heap_t** heap, size_t len)
 	return ptr;
 }
 
-void heap_free(struct heap_t* heap, void* ptr, size_t len)
+void heap_free(heap_t* heap, void* ptr, size_t len)
 {
 	uint32_t align_len = align_div(len,sizeof(uint64_t));
 	while (heap)
@@ -134,7 +134,7 @@ void heap_free(struct heap_t* heap, void* ptr, size_t len)
 	}
 }
 
-void* heap_realloc(struct heap_t** heap, void* ptr, size_t old_len, size_t new_len)
+void* heap_realloc(heap_t** heap, void* ptr, size_t old_len, size_t new_len)
 {
 	uint32_t align_old_len = align_div(old_len,sizeof(uint64_t));
 
@@ -166,14 +166,14 @@ void* heap_realloc(struct heap_t** heap, void* ptr, size_t old_len, size_t new_l
 }
 
 #if 0
-int heap_copy(struct heap_t** dest, struct heap_t** src, size_t start)
+int heap_copy(heap_t** dest, heap_t** src, size_t start)
 {
 	/* Bulk copy without extra splitting */
 	if (start < heap_top(*src))
 	{
 		/* Rewind the start */
-		struct heap_t* n;
-		struct heap_t* s = *src;
+		heap_t* n;
+		heap_t* s = *src;
 		while (start < s->m_base)
 			s = s->m_prev;
 
