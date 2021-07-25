@@ -10,7 +10,7 @@
 
 const string_t s_builtin_strings[] =
 {
-#include "builtin_strings"
+#include "builtin_strings.h"
 };
 
 static int string_compare(const void* p1, const void* p2)
@@ -39,7 +39,7 @@ static uint32_t is_builtin_string(const unsigned char* str, size_t len)
 	return ret;
 }
 
-packed_t* push_string(packed_t* stack, prolite_type_t type, const unsigned char* str, size_t len)
+term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len)
 {
 	uint32_t builtin;
 	switch (len)
@@ -75,7 +75,7 @@ packed_t* push_string(packed_t* stack, prolite_type_t type, const unsigned char*
 		}
 		else
 		{
-			stack -= ((len + sizeof(packed_t)-1) / sizeof(packed_t));
+			stack -= ((len + sizeof(term_t)-1) / sizeof(term_t));
 			memcpy(stack,str,len);
 			(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48(len);	
 		}
@@ -85,7 +85,7 @@ packed_t* push_string(packed_t* stack, prolite_type_t type, const unsigned char*
 	return stack;
 }
 
-packed_t* push_compound(packed_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len)
+term_t* push_compound(term_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len)
 {
 	uint32_t builtin;
 	if (arity <= MAX_ARITY_EMBED && functor_len <= 5)
@@ -130,14 +130,14 @@ packed_t* push_compound(packed_t* stack, uint64_t arity, const unsigned char* fu
 	return stack;
 }
 
-static const packed_t* get_debug_info(const packed_t* p, debug_info_t* debug_info)
+static const term_t* get_debug_info(const term_t* p, debug_info_t* debug_info)
 {
 	// TODO
 
 	return p;
 }
 
-string_t get_string(const packed_t** b, debug_info_t* debug_info)
+string_t get_string(const term_t** b, debug_info_t* debug_info)
 {
 	string_t ret;
 	uint64_t all48 = ((*b)++)->m_u64val;
@@ -163,7 +163,7 @@ string_t get_string(const packed_t** b, debug_info_t* debug_info)
 	{
 		ret.m_len = (size_t)(all48 & MAX_ATOM_LEN);
 		ret.m_str = (const unsigned char*)b;
-		*b += ((ret.m_len + sizeof(packed_t)-1) / sizeof(packed_t));
+		*b += ((ret.m_len + sizeof(term_t)-1) / sizeof(term_t));
 	}
 
 	*b = get_debug_info(*b,debug_info);
@@ -171,7 +171,7 @@ string_t get_string(const packed_t** b, debug_info_t* debug_info)
 	return ret;
 }
 
-string_t get_compound(const packed_t** b, uint64_t* arity, debug_info_t* debug_info)
+string_t get_compound(const term_t** b, uint64_t* arity, debug_info_t* debug_info)
 {
 	string_t ret;
 	uint64_t all48 = ((*b)++)->m_u64val;
@@ -212,7 +212,7 @@ string_t get_compound(const packed_t** b, uint64_t* arity, debug_info_t* debug_i
 	return ret;
 }
 
-const packed_t* get_next_arg(const packed_t* p, debug_info_t* debug_info)
+const term_t* get_next_arg(const term_t* p, debug_info_t* debug_info)
 {
 	uint64_t all48 = (p++)->m_u64val;
 	uint16_t hi16;
@@ -233,7 +233,7 @@ const packed_t* get_next_arg(const packed_t* p, debug_info_t* debug_info)
 		if (!(hi16 & 0xC000))
 		{
 			size_t len = (size_t)(all48 & MAX_ATOM_LEN);
-			p += ((len + sizeof(packed_t)-1) / sizeof(packed_t));
+			p += ((len + sizeof(term_t)-1) / sizeof(term_t));
 		}
 		break;
 
@@ -270,7 +270,7 @@ const packed_t* get_next_arg(const packed_t* p, debug_info_t* debug_info)
 	return get_debug_info(p,debug_info);
 }
 
-const packed_t* get_first_arg(const packed_t* compound, uint64_t* arity, debug_info_t* debug_info)
+const term_t* get_first_arg(const term_t* compound, uint64_t* arity, debug_info_t* debug_info)
 {
 	uint64_t all48 = (compound++)->m_u64val;
 	uint16_t hi16;

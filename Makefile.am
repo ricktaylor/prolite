@@ -9,7 +9,6 @@ libprolite_la_SOURCES = \
 	lib/parser.c \
 	lib/context.c \
 	lib/compile.c
-
 				
 libprolite_la_LDFLAGS = -pthread
 

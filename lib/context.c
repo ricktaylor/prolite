@@ -17,7 +17,7 @@ uint32_t convert_char(context_t* context, uint32_t in_char)
 }
 
 #ifdef UNUSED
-static uint32_t atom_to_code(const packed_t* b)
+static uint32_t atom_to_code(const term_t* b)
 {
 	uint64_t all48 = UNPACK_MANT_48(b->m_u64val);
 	unsigned int len = ((all48 >> 40) & 0x07);
@@ -371,7 +371,7 @@ context_t* context_new(void)
 		if (c)
 		{
 			memset(c,0,sizeof(context_t));			
-			c->m_stack = malloc(stack_size * sizeof(packed_t));
+			c->m_stack = malloc(stack_size * sizeof(term_t));
 			c->m_stack += stack_size;
 			c->m_heap = h;
 			c->m_module = module_new(c,"user");

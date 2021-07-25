@@ -1,5 +1,5 @@
 /*
- * packed_types.h
+ * term_types.h
  *
  *  Created on: 13 May 2017
  *      Author: rick
@@ -40,9 +40,11 @@
  * *
  *  Some processors may alter NaN values in a floating point load+store.
  *  For instance, on X86 a FLD + FSTP may convert a signaling NaN to a
- *  quiet one.  This is catastrophic when NaN space is used in packed
+ *  quiet one.  This is catastrophic when NaN space is used in term
  *  values.  See: misc/clang_aliasing.c.
  */
+
+#include <stdint.h>
 
 typedef enum prolite_type
 {
@@ -105,10 +107,15 @@ typedef enum prolite_type
 
 #define PACK_COMPOUND_BUILTIN(f,a)     (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(a) & MAX_ARITY_BUILTIN)) << 32) | (uint32_t)(BUILTIN_ATOM_##f)))
 
-typedef union packed
+typedef union term
 {
 	double   m_dval;
 	uint64_t m_u64val;
-} packed_t;
+} term_t;
+
+static inline prolite_type_t get_term_type(const term_t* t)
+{
+	return UNPACK_TYPE(t->m_u64val);
+}
 
 #endif /* PACKED_TYPES_H */

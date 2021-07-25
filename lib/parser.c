@@ -2018,7 +2018,7 @@ static ast_node_t* parse_term(context_t* context, parser_t* parser, unsigned int
 	return node;
 }
 
-static packed_t* emit_ast_node(packed_t* stack, ast_node_t* node)
+static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 {
 	size_t i;
 	switch (node->m_type)
@@ -2058,7 +2058,7 @@ static packed_t* emit_ast_node(packed_t* stack, ast_node_t* node)
 	return stack;
 }
 
-static packed_t* emit_error_line_info(packed_t* stack, line_info_t* info)
+static term_t* emit_error_line_info(term_t* stack, line_info_t* info)
 {
 	if (!info)
 		(--stack)->m_u64val = PACK_ATOM_EMBED_5('f','a','l','s','e');
@@ -2071,7 +2071,7 @@ static packed_t* emit_error_line_info(packed_t* stack, line_info_t* info)
 	return stack;
 }
 
-static enum eParseStatus emit_syntax_error_missing(packed_t** stack, uint64_t missing_atom, line_info_t* info)
+static enum eParseStatus emit_syntax_error_missing(term_t** stack, uint64_t missing_atom, line_info_t* info)
 {
 	*stack = emit_error_line_info(*stack,info);
 
@@ -2083,7 +2083,7 @@ static enum eParseStatus emit_syntax_error_missing(packed_t** stack, uint64_t mi
 	return PARSE_THROW;
 }
 
-static enum eParseStatus emit_simple_error(packed_t** stack, uint64_t f, uint64_t arg, line_info_t* info)
+static enum eParseStatus emit_simple_error(term_t** stack, uint64_t f, uint64_t arg, line_info_t* info)
 {
 	*stack = emit_error_line_info(*stack,info);
 
@@ -2094,12 +2094,12 @@ static enum eParseStatus emit_simple_error(packed_t** stack, uint64_t f, uint64_
 	return PARSE_THROW;
 }
 
-static enum eParseStatus emit_out_of_heap_error(packed_t** stack, line_info_t* info)
+static enum eParseStatus emit_out_of_heap_error(term_t** stack, line_info_t* info)
 {
 	return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'),info);
 }
 
-static enum eParseStatus emit_ast_error(packed_t** stack, ast_error_t ast_err, line_info_t* info)
+static enum eParseStatus emit_ast_error(term_t** stack, ast_error_t ast_err, line_info_t* info)
 {
 	switch (ast_err)
 	{
@@ -2282,7 +2282,7 @@ enum eParseStatus read_term(context_t* context, stream_t* s)
 #if 0
 if (result == PARSE_EOF)
 	{
-		packed_t arg;
+		term_t arg;
 		arg.m_u64val = PACK_ATOM_BUILTIN(past_end_of_stream);
 		result = emit_error(context,&parser.m_line_info,PACK_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
 	}
