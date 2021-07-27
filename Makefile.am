@@ -8,7 +8,8 @@ libprolite_la_SOURCES = \
 	lib/types.c \
 	lib/parser.c \
 	lib/context.c \
-	lib/compile.c
+	lib/compile.c \
+	lib/dump_cfg.c
 				
 libprolite_la_LDFLAGS = -pthread
 

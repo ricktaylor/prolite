@@ -1,5 +1,5 @@
 
-#include "types.h"
+#include "compile.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -477,4 +477,163 @@ int term_precedes(const term_t* t1, const term_t* t2)
 	}
 
 	return r;
+}
+
+continuation_t* compile_var(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	if (get_term_type(g1) == prolite_var)
+		return compile_builtin(context,cont,&builtin_var,1,g1);
+
+	return compile_false(context,cont,goal);
+}
+
+continuation_t* compile_atom(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_builtin(context,cont,&builtin_atom,1,g1);
+
+	case prolite_atom:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+continuation_t* compile_integer(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_builtin(context,cont,&builtin_integer,1,g1);
+
+	case prolite_int32:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+continuation_t* compile_float(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_builtin(context,cont,&builtin_float,1,g1);
+
+	case prolite_double:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+continuation_t* compile_atomic(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_builtin(context,cont,&builtin_atomic,1,g1);
+
+	case prolite_compound:
+		return compile_false(context,cont,goal);
+
+	default:
+		return compile_true(context,cont,goal);
+	}
+}
+
+continuation_t* compile_compound(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_builtin(context,cont,&builtin_compound,1,g1);
+
+	case prolite_compound:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+continuation_t* compile_nonvar(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	if (get_term_type(g1) == prolite_var)
+		return compile_builtin(context,cont,&builtin_nonvar,1,g1);
+
+	return compile_true(context,cont,goal);
+}
+
+continuation_t* compile_number(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_builtin(context,cont,&builtin_number,1,g1);
+
+	case prolite_int32:
+	case prolite_double:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+static int compile_is_ground(compile_context_t* context, const term_t* goal)
+{
+	goal = deref_var(context,goal);
+	switch (get_term_type(goal))
+	{
+	case prolite_var:
+		return -1;
+
+	case prolite_atom:
+		return 1;
+
+	case prolite_compound:
+		{
+			uint64_t arity;
+			for (const term_t* p = get_first_arg(goal,&arity,NULL); arity--; p = get_next_arg(p,NULL))
+			{
+				int r = compile_is_ground(context,p);
+				if (r != 1)
+					return r;
+			}
+		}
+		return 1;
+
+	default:
+		return 0;
+	}
+}
+
+continuation_t* compile_ground(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = get_first_arg(goal,NULL,NULL);
+	switch (compile_is_ground(context,g1))
+	{
+	case 1:
+		return compile_true(context,cont,g1);
+
+	case 0:
+		return compile_false(context,cont,g1);
+
+	default:
+		return compile_builtin(context,cont,&builtin_ground,1,g1);
+	}
 }
