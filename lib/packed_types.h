@@ -75,7 +75,7 @@ static const uint16_t prolite_debug_info = 0x8000;
 #define PACK_TYPE(type)   PACK_EXP_16(0x7FF0 | (type))
 #define UNPACK_TYPE(v)    (UNPACK_EXP_16(v) & 0x8007)
 
-#define PACK_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (PACK_TYPE(type) | PACK_MANT_48(((UINT64_C(0x8000) | (((flags) & 0xF) << 11) | (((count) & 7) << 8) | (uint8_t)(a)) << 32) | (((uint32_t)(b) & 0xFF) << 24) | (((uint32_t)(c) & 0xFF) << 16) | (((uint32_t)(d) & 0xFF) << 8) | (uint8_t)(e)))
+#define PACK_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (PACK_TYPE(type) | PACK_MANT_48(((UINT64_C(0x8000) | (((flags) & 7) << 11) | (((count) & 7) << 8) | (uint8_t)(a)) << 32) | (((uint32_t)(b) & 0xFF) << 24) | (((uint32_t)(c) & 0xFF) << 16) | (((uint32_t)(d) & 0xFF) << 8) | (uint8_t)(e)))
 
 #define PACK_ATOM_EMBED_1(c)              PACK_TYPE_EMBED(prolite_atom,0,1,c,0,0,0,0)
 #define PACK_ATOM_EMBED_2(c1,c2)          PACK_TYPE_EMBED(prolite_atom,0,2,c1,c2,0,0,0)
@@ -83,7 +83,7 @@ static const uint16_t prolite_debug_info = 0x8000;
 #define PACK_ATOM_EMBED_4(c1,c2,c3,c4)    PACK_TYPE_EMBED(prolite_atom,0,4,c1,c2,c3,c4,0)
 #define PACK_ATOM_EMBED_5(c1,c2,c3,c4,c5) PACK_TYPE_EMBED(prolite_atom,0,5,c1,c2,c3,c4,c5)
 
-#define PACK_ATOM_BUILTIN(name)        (PACK_TYPE(prolite_atom) | PACK_MANT_48((UINT64_C(0x4000) << 32) | (uint32_t)(BUILTIN_ATOM_##name)))
+#define PACK_ATOM_BUILTIN(name)  (PACK_TYPE(prolite_atom) | PACK_MANT_48((UINT64_C(0x4000) << 32) | (uint32_t)(BUILTIN_ATOM_##name)))
 
 #define MAX_ATOM_LEN      ((UINT64_C(1) << 47) - 1)
 
@@ -93,11 +93,13 @@ static const uint16_t prolite_debug_info = 0x8000;
 #define PACK_COMPOUND_EMBED_4(a,c1,c2,c3,c4)    PACK_TYPE_EMBED(prolite_compound,a,4,c1,c2,c3,c4,0)
 #define PACK_COMPOUND_EMBED_5(a,c1,c2,c3,c4,c5) PACK_TYPE_EMBED(prolite_compound,a,5,c1,c2,c3,c4,c5)
 
-#define MAX_ARITY_EMBED   0xF
+#define MAX_ARITY_EMBED   0x7
 #define MAX_ARITY_BUILTIN 0x3FFF
 #define MAX_ARITY         ((UINT64_C(1) << 47) - 1)
 
-#define PACK_COMPOUND_BUILTIN(f,a)     (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(a) & MAX_ARITY_BUILTIN)) << 32) | (uint32_t)(BUILTIN_ATOM_##f)))
+#define PACK_COMPOUND_BUILTIN(f,a)  (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(a) & MAX_ARITY_BUILTIN)) << 32) | (uint32_t)(BUILTIN_ATOM_##f)))
+
+#define MAX_VAR_INDEX     ((UINT64_C(1) << 47) - 1)
 
 typedef union term
 {

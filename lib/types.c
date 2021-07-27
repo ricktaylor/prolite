@@ -41,7 +41,7 @@ static uint32_t is_builtin_string(const unsigned char* str, size_t len)
 	return ret;
 }
 
-term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len)
+term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external)
 {
 	uint32_t builtin;
 	switch (len)
@@ -74,6 +74,11 @@ term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str
 		if ((builtin = is_builtin_string(str,len)) != -1)
 		{
 			(--stack)->m_u64val = (PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0x4000) << 32) | builtin));
+		}
+		else if (external)
+		{
+			(--stack)->m_u64val = (uintptr_t)(str);
+			(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0xC000) << 32) | len);
 		}
 		else
 		{
@@ -125,7 +130,7 @@ term_t* push_compound(term_t* stack, uint64_t arity, const unsigned char* functo
 	}
 	else
 	{
-		stack = push_string(stack,prolite_atom,functor,functor_len);
+		stack = push_string(stack,prolite_atom,functor,functor_len,0);
 		(--stack)->m_u64val = PACK_TYPE(prolite_compound) | PACK_MANT_48(arity);
 	}
 
@@ -147,8 +152,14 @@ string_t get_string(const term_t* b, debug_info_t* debug_info)
 	all48 = UNPACK_MANT_48(all48);
 
 	uint16_t hi16 = (all48 >> 32);
-	if (hi16 & 0x8000)
+	switch (hi16 >> 14)
 	{
+	case 3:
+		ret.m_len = (size_t)(all48 & MAX_ATOM_LEN);
+		ret.m_str = (const unsigned char*)((b++)->m_u64val);
+		break;
+
+	case 2:
 		ret.m_len = (hi16 & 0x0700) >> 8;
 		ret.m_data[0] = all48 >> 32;
 		ret.m_data[1] = all48 >> 24;
@@ -156,16 +167,17 @@ string_t get_string(const term_t* b, debug_info_t* debug_info)
 		ret.m_data[3] = all48 >> 8;
 		ret.m_data[4] = all48;
 		ret.m_str = ret.m_data;
-	}
-	else if (hi16 & 0x4000)
-	{
+		break;
+	
+	case 1:
 		ret = s_builtin_strings[(uint32_t)all48];
-	}
-	else
-	{
+		break;
+	
+	case 0:
 		ret.m_len = (size_t)(all48 & MAX_ATOM_LEN);
 		ret.m_str = (const unsigned char*)b;
 		b += ((ret.m_len + sizeof(term_t)-1) / sizeof(term_t));
+		break;
 	}
 
 	if (have_debug_info && debug_info)
@@ -174,7 +186,7 @@ string_t get_string(const term_t* b, debug_info_t* debug_info)
 	return ret;
 }
 
-string_t get_compound(const term_t* b, uint64_t* arity, debug_info_t* debug_info)
+string_t get_predicate(const term_t* b, uint64_t* arity, debug_info_t* debug_info)
 {
 	string_t ret;
 	uint64_t all48 = (b++)->m_u64val;
@@ -182,8 +194,13 @@ string_t get_compound(const term_t* b, uint64_t* arity, debug_info_t* debug_info
 	all48 = UNPACK_MANT_48(all48);
 
 	uint16_t hi16 = (all48 >> 32);
-	if (hi16 & 0x8000)
+	switch (hi16 >> 14)
 	{
+	case 3:
+		assert(0);
+		break;
+
+	case 2:
 		if (arity)
 			*arity = (hi16 & 0x7800) >> 11;
 
@@ -197,9 +214,9 @@ string_t get_compound(const term_t* b, uint64_t* arity, debug_info_t* debug_info
 
 		if (have_debug_info && debug_info)
 			get_debug_info(b,debug_info);
-	}
-	else if (hi16 & 0x4000)
-	{
+		break;
+	
+	case 1:
 		if (arity)
 			*arity = hi16 & MAX_ARITY_BUILTIN;
 
@@ -207,13 +224,14 @@ string_t get_compound(const term_t* b, uint64_t* arity, debug_info_t* debug_info
 
 		if (have_debug_info && debug_info)
 			get_debug_info(b,debug_info);
-	}
-	else
-	{
+		break;
+	
+	case 0:
 		if (arity)
 			*arity = (all48 & MAX_ARITY);
 
 		ret = get_string(b,debug_info);
+		break;
 	}
 
 	return ret;
@@ -238,32 +256,42 @@ const term_t* get_next_arg(const term_t* p, debug_info_t* debug_info)
 	case prolite_atom:
 	case prolite_chars:
 	case prolite_charcodes:
-		if (!(hi16 & 0xC000))
+		switch (hi16 >> 14)
 		{
-			size_t len = (size_t)(all48 & MAX_ATOM_LEN);
-			p += ((len + sizeof(term_t)-1) / sizeof(term_t));
+		case 3:
+			++p;
+
+		case 0:
+			p += (((all48 & MAX_ATOM_LEN) + sizeof(term_t)-1) / sizeof(term_t));
+			break;
 		}
 		break;
 
 	case prolite_compound:
 		{
 			uint64_t arity;
-			if (hi16 & 0x8000)
+			switch (hi16 >> 14)
 			{
+			case 3:
+				assert(0);
+				break;
+
+			case 2:
 				arity = (hi16 & 0x7800) >> 11;
 				if (have_debug_info)
 					p = get_debug_info(p,debug_info);
-			}
-			else if (hi16 & 0x4000)
-			{
+				break;
+			
+			case 1:
 				arity = hi16 & MAX_ARITY_BUILTIN;
 				if (have_debug_info)
 					p = get_debug_info(p,debug_info);
-			}
-			else
-			{
+				break;
+			
+			case 0:
 				arity = (all48 & MAX_ARITY);
 				p = get_next_arg(p,debug_info);
+				break;
 			}
 
 			/* Skip args */
@@ -291,29 +319,34 @@ const term_t* get_first_arg(const term_t* compound, uint64_t* arity, debug_info_
 
 	all48 = UNPACK_MANT_48(all48);
 	uint16_t hi16 = (all48 >> 32);
-	if (hi16 & 0x8000)
+	switch (hi16 >> 14)
 	{
+	case 3:
+		assert(0);
+		break;
+	case 2:
 		if (arity)
 			*arity = (hi16 & 0x7800) >> 11;
 
 		if (have_debug_info)
 			compound = get_debug_info(compound,debug_info);
-	}
-	else if (hi16 & 0x4000)
-	{
+		break;
+	
+	case 1:
 		if (arity)
 			*arity = hi16 & MAX_ARITY_BUILTIN;
 
 		if (have_debug_info)
 			compound = get_debug_info(compound,debug_info);
-	}
-	else
-	{
+		break;
+	
+	case 0:
 		if (arity)
 			*arity = (all48 & MAX_ARITY);
 
 		// Functor is next
 		compound = get_next_arg(compound,debug_info);
+		break;
 	}
 
 	return compound;
@@ -321,17 +354,39 @@ const term_t* get_first_arg(const term_t* compound, uint64_t* arity, debug_info_
 
 static int atom_compare(const term_t* a1, const term_t* a2)
 {
-	// TODO
-	return 1;
+	int r = (a1->m_u64val == a2->m_u64val);
+	if (!r)
+	{
+		uint16_t t1 = (UNPACK_MANT_48(a1->m_u64val) >> 32) >> 14;
+		if (t1 == 3 || t1 == 0)
+		{
+			uint16_t t2 = (UNPACK_MANT_48(a2->m_u64val) >> 32) >> 14;
+			if (t2 == 3 || t2 == 0)
+			{
+				string_t s1 = get_string(a1,NULL);
+				string_t s2 = get_string(a2,NULL);
+
+				if (s1.m_len == s2.m_len && memcmp(s1.m_str,s2.m_str,s1.m_len) == 0)
+					r = 1;
+			}
+		}
+	}
+	return r;
 }
 
 static int atom_precedes(const term_t* a1, const term_t* a2)
 {
-	// TODO
-	return 0;
+	string_t s1 = get_string(a1,NULL);
+	string_t s2 = get_string(a2,NULL);
+
+	int r = memcmp(s1.m_str,s2.m_str,s1.m_len < s2.m_len ? s1.m_len : s2.m_len);
+	if (r == 0)
+		r = s1.m_len - s2.m_len;
+	
+	return r;
 }
 
-int compound_compare(const term_t* c1, const term_t* c2)
+int predicate_compare(const term_t* c1, const term_t* c2)
 {
 	int r = 0;
 	if (c1->m_u64val == c2->m_u64val)
@@ -345,30 +400,22 @@ int compound_compare(const term_t* c1, const term_t* c2)
 		else
 			r = 1;
 	}
-
 	return r;
 }
 
 static int compound_precedes(const term_t* c1, const term_t* c2)
 {
-	int r = 0;
+	uint64_t a1,a2;
+	string_t s1 = get_predicate(c1,&a1,NULL);
+	string_t s2 = get_predicate(c2,&a2,NULL);
 
-	// TODO - Check term_precedes
-
-	if (c1->m_u64val != c2->m_u64val)
+	int r = (a1 - a2);
+	if (r == 0)
 	{
-		
+		r = memcmp(s1.m_str,s2.m_str,s1.m_len < s2.m_len ? s1.m_len : s2.m_len);
+		if (r == 0)
+			r = s1.m_len - s2.m_len;
 	}
-	else
-	{
-		uint16_t hi16 = (UNPACK_MANT_48(c1->m_u64val) >> 32);
-		if (!(hi16 & 0xC000))
-		{
-			// Check functors
-			r = atom_precedes(c1+1,c2+1);
-		}
-	}
-
 	return r;
 }
 
@@ -400,17 +447,34 @@ static int type_precedes(prolite_type_t t)
 int term_compare(const term_t* t1, const term_t* t2)
 {
 	int r = 0;
-	prolite_type_t type = get_term_type(t1);
-	if (type == get_term_type(t2))
+	prolite_type_t type1 = get_term_type(t1);
+	prolite_type_t type2 = get_term_type(t2);
+	if (type1 != type2)
 	{
-		switch (type)
+		if (type1 == prolite_chars ||
+			type1 == prolite_charcodes ||
+			type1 == prolite_compound)
+		{
+			if (type2 == prolite_chars ||
+				type2 == prolite_charcodes ||
+				type2 == prolite_compound)
+			{
+				// Try again as compound
+				type1 = prolite_compound;
+			}
+		}
+	}
+
+	if (type1 == type2)
+	{
+		switch (type1)
 		{
 		case prolite_atom:
 			r = atom_compare(t1,t2);
 			break;
 
 		case prolite_compound:
-			if ((r = compound_compare(t1,t2)))
+			if ((r = predicate_compare(t1,t2)))
 			{
 				uint64_t arity;
 				const term_t* p1 = get_first_arg(t1,&arity,NULL);
@@ -426,24 +490,47 @@ int term_compare(const term_t* t1, const term_t* t2)
 			}
 			break;
 
-		// TODO
-
+		case prolite_double:
+			// Warning - there be dragons here with epsilon
+			r = (t1->m_dval == t2->m_dval);
+			break;
+		
+		case prolite_int32:	
+		case prolite_var:
 		default:
 			r = (t1->m_u64val == t2->m_u64val);
 			break;
 		}
 	}
-
 	return r;
 }
 
 int term_precedes(const term_t* t1, const term_t* t2)
 {
-	prolite_type_t type = get_term_type(t1);
-	int r = (type_precedes(type) - type_precedes(get_term_type(t2)));
+	prolite_type_t type1 = get_term_type(t1);
+	prolite_type_t type2 = get_term_type(t2);
+	int r = (type_precedes(type1) - type_precedes(type2));
+	if (r != 0)
+	{
+		if (type1 == prolite_chars ||
+			type1 == prolite_charcodes ||
+			type1 == prolite_compound)
+		{
+			
+			if (type2 == prolite_chars ||
+				type2 == prolite_charcodes ||
+				type2 == prolite_compound)
+			{
+				// Try again as compound
+				type1 = prolite_compound;
+				r = 0;
+			}
+		}
+	}
+
 	if (r == 0)
 	{
-		switch (type)
+		switch (type1)
 		{
 		case prolite_atom:
 			r = atom_precedes(t1,t2);
@@ -468,14 +555,22 @@ int term_precedes(const term_t* t1, const term_t* t2)
 			}
 			break;
 
-		// TODO
-
+		case prolite_double:
+			// Warning - there be dragons here with epsilon
+			// See: https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
+			r = (int)(t1->m_dval - t2->m_dval);
+			break;
+		
+		case prolite_int32:
+			r = get_integer(t1) - get_integer(t2);
+			break;
+		
+		case prolite_var:
 		default:
 			r = (t1->m_u64val - t2->m_u64val);
 			break;
 		}
 	}
-
 	return r;
 }
 
@@ -544,6 +639,8 @@ continuation_t* compile_atomic(compile_context_t* context, continuation_t* cont,
 	case prolite_var:
 		return compile_builtin(context,cont,&builtin_atomic,1,g1);
 
+	case prolite_chars:
+	case prolite_charcodes:
 	case prolite_compound:
 		return compile_false(context,cont,goal);
 
@@ -560,6 +657,8 @@ continuation_t* compile_compound(compile_context_t* context, continuation_t* con
 	case prolite_var:
 		return compile_builtin(context,cont,&builtin_compound,1,g1);
 
+	case prolite_chars:
+	case prolite_charcodes:
 	case prolite_compound:
 		return compile_true(context,cont,goal);
 
@@ -603,6 +702,8 @@ static int compile_is_ground(compile_context_t* context, const term_t* goal)
 		return -1;
 
 	case prolite_atom:
+	case prolite_chars:
+	case prolite_charcodes:
 		return 1;
 
 	case prolite_compound:

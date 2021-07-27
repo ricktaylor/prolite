@@ -40,7 +40,7 @@ static void dumpTerm(const term_t* t, FILE* f)
 	case prolite_compound:
 		{
 			uint64_t arity;
-			string_t s = get_compound(t,&arity,NULL);
+			string_t s = get_predicate(t,&arity,NULL);
 			fprintf(f,"%.*s(",(int)s.m_len,s.m_str);
 
 			t = get_first_arg(t,NULL,NULL);

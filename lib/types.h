@@ -31,7 +31,15 @@ typedef struct debug_info
 	int TODO;
 } debug_info_t;
 
-typedef enum op_spec
+typedef enum exec_flags
+{
+	FLAG_FAIL = 1,
+	FLAG_CUT = 2,
+	FLAG_THROW = 4,
+	FLAG_HALT = 8
+} exec_flags_t;
+
+typedef enum operator_specifier
 {
 	eFX,
 	eFY,
@@ -40,13 +48,13 @@ typedef enum op_spec
 	eYFX,
 	eXF,
 	eYF
-} op_spec_t;
+} operator_specifier_t;
 
 typedef struct operator
 {
-	struct operator* m_prev;
-	op_spec_t        m_specifier;
-	unsigned int     m_precedence;
+	struct operator*     m_prev;
+	operator_specifier_t m_specifier;
+	unsigned int         m_precedence;
 } operator_t;
 
 typedef struct module
@@ -72,7 +80,7 @@ typedef struct context
 	module_t* m_module;
 } context_t;
 
-term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len);
+term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external);
 term_t* push_compound(term_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len);
 
 static inline term_t* push_integer(term_t* stack, int32_t v)
@@ -105,10 +113,10 @@ static inline int32_t get_integer(const term_t* v)
 
 const term_t* get_first_arg(const term_t* compound, uint64_t* arity, debug_info_t* debug_info);
 const term_t* get_next_arg(const term_t* p, debug_info_t* debug_info);
-string_t get_compound(const term_t* b, uint64_t* arity, debug_info_t* debug_info);
+string_t get_predicate(const term_t* b, uint64_t* arity, debug_info_t* debug_info);
 string_t get_string(const term_t* b, debug_info_t* debug_info);
 
-int compound_compare(const term_t* c1, const term_t* c2);
+int predicate_compare(const term_t* c1, const term_t* c2);
 int term_compare(const term_t* t1, const term_t* t2);
 
 #endif /* TYPES_H_ */

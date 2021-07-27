@@ -33,7 +33,7 @@ static uint32_t atom_to_code(const term_t* b)
 		all48 & 0xFF
 	};
 
-	if (!((all48 >> 32) & 0x8000))
+	if (((all48 >> 32) & 0xC000) != 0x8000)
 		return -1;
 
 	if (c[0] <= 0x7f)

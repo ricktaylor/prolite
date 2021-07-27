@@ -5,14 +5,6 @@
 
 #include <setjmp.h>
 
-enum Flags
-{
-	FLAG_FAIL = 1,
-	FLAG_CUT = 2,
-	FLAG_THROW = 4,
-	FLAG_HALT = 8
-};
-
 typedef enum optype
 {
 	OP_NOP = 0,

@@ -2030,15 +2030,15 @@ static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 		break;
 
 	case AST_TYPE_ATOM:
-		stack = push_string(stack,prolite_atom,node->m_str,node->m_str_len);
+		stack = push_string(stack,prolite_atom,node->m_str,node->m_str_len,0);
 		break;
 
 	case AST_TYPE_CHARS:
-		stack = push_string(stack,prolite_chars,node->m_str,node->m_str_len);
+		stack = push_string(stack,prolite_chars,node->m_str,node->m_str_len,0);
 		break;
 
 	case AST_TYPE_CODES:
-		stack = push_string(stack,prolite_charcodes,node->m_str,node->m_str_len);
+		stack = push_string(stack,prolite_charcodes,node->m_str,node->m_str_len,0);
 		break;
 
 	case AST_TYPE_VAR:
@@ -2192,7 +2192,7 @@ static parse_status_t collate_var_info(context_t* context, parser_t* parser, var
 			var_info_t* new_varinfo;
 
 			// Check for variable index overflow
-			if (i+1 >= UINT64_C(1) << 47 || i+1 > SIZE_MAX)
+			if (i == MAX_VAR_INDEX)
 				return emit_out_of_heap_error(&context->m_stack,NULL);
 
 			new_varinfo = heap_realloc(&context->m_heap,*varinfo,sizeof(var_info_t) * (*var_count),sizeof(var_info_t) * ((*var_count)+1));
@@ -2264,7 +2264,7 @@ parse_status_t read_term(context_t* context, stream_t* s)
 					(--context->m_stack)->m_u64val = varinfo[i].m_use_count;
 
 					/* variable name */
-					context->m_stack = push_string(context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len);
+					context->m_stack = push_string(context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len,0);
 				}
 				(--context->m_stack)->m_u64val = varcount;
 			}

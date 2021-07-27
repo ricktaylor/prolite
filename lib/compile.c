@@ -10,10 +10,13 @@
 #include <stdio.h>
 
 static const char* builtin_call(void) { return "call"; }
+static const char* builtin_callN(void) { return "call_N"; }
 static const char* builtin_catch(void) { return "catch"; }
 static const char* builtin_throw(void) { return "throw"; }
 static const char* builtin_halt(void) { return "halt"; }
 static const char* builtin_user_defined(void) { return "user_defined"; }
+
+void dumpCFG(const cfg_block_t* s, FILE* f);
 
 // END TEMP
 
@@ -245,7 +248,7 @@ static void pre_substitute_goal_inner(compile_context_t* context, const term_t* 
 		}
 		else if (t1 == t2 && 
 				t1 == prolite_compound && 
-				compound_compare(g1,g2))
+				predicate_compare(g1,g2))
 		{
 			uint64_t arity;
 			const term_t* p1 = get_first_arg(g1,&arity,NULL);
@@ -511,7 +514,7 @@ static continuation_t* compile_throw_call(compile_context_t* context, builtin_fn
 	continuation_t* c = new_continuation(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,4);
 	(ops++)->m_opcode = OP_PUSH_TERM;
-	(ops++)->m_pval = deref_var(context,get_first_arg(goal,NULL,NULL));
+	(ops++)->m_pval = deref_var(context,goal);
 	(ops++)->m_opcode = OP_THROW;
 	ops->m_pval = builtin;
 	c->m_always_flags = FLAG_THROW;
@@ -520,12 +523,12 @@ static continuation_t* compile_throw_call(compile_context_t* context, builtin_fn
 
 static continuation_t* compile_throw(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	return compile_throw_call(context,&builtin_throw,goal);
+	return compile_throw_call(context,&builtin_throw,get_first_arg(goal,NULL,NULL));
 }
 
 static continuation_t* compile_halt(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	continuation_t* c = compile_throw_call(context,&builtin_halt,goal);
+	continuation_t* c = compile_throw_call(context,&builtin_halt,get_first_arg(goal,NULL,NULL));
 	
 	if (get_term_type(goal) == prolite_atom)
 		c->m_always_flags = FLAG_HALT;
@@ -539,9 +542,6 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 
 	switch (get_term_type(goal))
 	{
-	case prolite_var:
-		return -1;
-		
 	case prolite_atom:
 		return 1;
 
@@ -581,6 +581,15 @@ static continuation_t* compile_call(compile_context_t* context, continuation_t* 
 {
 	const term_t* g1 = get_first_arg(goal,NULL,NULL);
 	continuation_t* c = compile_call_inner(context,cont,g1);
+	if (!(c->m_always_flags & (FLAG_THROW | FLAG_HALT)))
+		c = wrap_cut(context,c);
+	
+	return c;
+}
+
+static continuation_t* compile_callN(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	continuation_t* c = compile_builtin(context,cont,&builtin_callN,1,goal);
 	if (!(c->m_always_flags & (FLAG_THROW | FLAG_HALT)))
 		c = wrap_cut(context,c);
 	
@@ -695,7 +704,7 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 
 	if (t1 == t2)
 	{
-		if (t1 == prolite_compound && compound_compare(g1,g2))
+		if (t1 == prolite_compound && predicate_compare(g1,g2))
 		{
 			uint64_t arity;
 			const term_t* p1 = get_first_arg(g1,&arity,NULL);
@@ -775,6 +784,13 @@ continuation_t* compile_callable(compile_context_t* context, continuation_t* con
 	}
 }
 
+static continuation_t* compile_builtin_fn(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, const term_t* goal)
+{
+	uint64_t arity;
+	goal = get_first_arg(goal,&arity,NULL);
+	return compile_builtin(context,cont,fn,arity,goal);	
+}
+
 static continuation_t* compile_goal(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
 	int debug = 0;
@@ -791,7 +807,7 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
-	case (n): { uint64_t arity; const term_t* g1 = get_first_arg(goal,&arity,NULL); c = compile_builtin(context,cont,&builtin_##f,arity,g1); } break;
+	case (n): c = compile_builtin_fn(context,cont,&builtin_##f,goal); break;
 
 #include "builtin_functions.h"
 
@@ -803,9 +819,7 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 				(goal->m_u64val & PACK_COMPOUND_BUILTIN(call,0)) == PACK_COMPOUND_BUILTIN(call,0) ||
 				goal[1].m_u64val == PACK_ATOM_EMBED_4('c','a','l','l'))
 			{
-				uint64_t arity; 
-				const term_t* g1 = get_first_arg(goal,&arity,NULL);
-				c = compile_builtin(context,cont,&builtin_call,arity,g1);
+				c = compile_callN(context,cont,goal);
 			}
 			else
 				c = compile_user_defined(context,cont,goal);
@@ -835,8 +849,6 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 
 	return c;
 }
-
-void dumpCFG(const cfg_block_t* s, FILE* f);
 
 static void compile_term(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
