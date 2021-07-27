@@ -2045,7 +2045,7 @@ static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 	case AST_TYPE_DOUBLE:
 	case AST_TYPE_INTEGER:
 		if (node->m_type == AST_TYPE_VAR)
-			(--stack)->m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(node->m_arity);
+			stack = push_var(stack,node->m_arity);
 		else if (node->m_type == AST_TYPE_DOUBLE)
 			stack = push_double(stack,node->m_dbl);
 		else if (node->m_type == AST_TYPE_INTEGER)
@@ -2071,7 +2071,7 @@ static term_t* emit_error_line_info(term_t* stack, line_info_t* info)
 	return stack;
 }
 
-static enum eParseStatus emit_syntax_error_missing(term_t** stack, uint64_t missing_atom, line_info_t* info)
+static parse_status_t emit_syntax_error_missing(term_t** stack, uint64_t missing_atom, line_info_t* info)
 {
 	*stack = emit_error_line_info(*stack,info);
 
@@ -2083,7 +2083,7 @@ static enum eParseStatus emit_syntax_error_missing(term_t** stack, uint64_t miss
 	return PARSE_THROW;
 }
 
-static enum eParseStatus emit_simple_error(term_t** stack, uint64_t f, uint64_t arg, line_info_t* info)
+static parse_status_t emit_simple_error(term_t** stack, uint64_t f, uint64_t arg, line_info_t* info)
 {
 	*stack = emit_error_line_info(*stack,info);
 
@@ -2094,12 +2094,12 @@ static enum eParseStatus emit_simple_error(term_t** stack, uint64_t f, uint64_t 
 	return PARSE_THROW;
 }
 
-static enum eParseStatus emit_out_of_heap_error(term_t** stack, line_info_t* info)
+static parse_status_t emit_out_of_heap_error(term_t** stack, line_info_t* info)
 {
 	return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'),info);
 }
 
-static enum eParseStatus emit_ast_error(term_t** stack, ast_error_t ast_err, line_info_t* info)
+static parse_status_t emit_ast_error(term_t** stack, ast_error_t ast_err, line_info_t* info)
 {
 	switch (ast_err)
 	{
@@ -2168,9 +2168,9 @@ typedef struct var_info
 	size_t               m_name_len;
 } var_info_t;
 
-static enum eParseStatus collate_var_info(context_t* context, parser_t* parser, var_info_t** varinfo, size_t* var_count, ast_node_t* node)
+static parse_status_t collate_var_info(context_t* context, parser_t* parser, var_info_t** varinfo, size_t* var_count, ast_node_t* node)
 {
-	enum eParseStatus status = PARSE_OK;
+	parse_status_t status = PARSE_OK;
 
 	if (node->m_type == AST_TYPE_VAR)
 	{
@@ -2192,7 +2192,7 @@ static enum eParseStatus collate_var_info(context_t* context, parser_t* parser, 
 			var_info_t* new_varinfo;
 
 			// Check for variable index overflow
-			if (i+1 >= UINT64_C(1) << 47)
+			if (i+1 >= UINT64_C(1) << 47 || i+1 > SIZE_MAX)
 				return emit_out_of_heap_error(&context->m_stack,NULL);
 
 			new_varinfo = heap_realloc(&context->m_heap,*varinfo,sizeof(var_info_t) * (*var_count),sizeof(var_info_t) * ((*var_count)+1));
@@ -2200,9 +2200,11 @@ static enum eParseStatus collate_var_info(context_t* context, parser_t* parser, 
 				longjmp(parser->m_jmp,1);
 
 			*varinfo = new_varinfo;
-			(*varinfo)[*var_count].m_use_count = 1;
+			new_varinfo = *varinfo + (*var_count)++;
 
-			(*var_count)++;
+			new_varinfo->m_name = node->m_str;
+			new_varinfo->m_name_len = node->m_str_len;
+			new_varinfo->m_use_count = 1;
 		}
 
 		node->m_arity = i;
@@ -2217,9 +2219,9 @@ static enum eParseStatus collate_var_info(context_t* context, parser_t* parser, 
 	return status;
 }
 
-enum eParseStatus read_term(context_t* context, stream_t* s)
+parse_status_t read_term(context_t* context, stream_t* s)
 {
-	enum eParseStatus status = PARSE_OK;
+	parse_status_t status = PARSE_OK;
 	size_t heap_start = heap_top(context->m_heap);
 	parser_t parser = {0};
 	parser.m_s = s;

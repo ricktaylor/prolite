@@ -21,13 +21,13 @@ static inline int64_t stream_read(stream_t* s, void* dest, size_t len)
 	return (s && s->m_fn_read ? (*s->m_fn_read)(s,dest,len) : -1);
 }
 
-enum eParseStatus
+typedef enum parse_status
 {
 	PARSE_OK = 0,
 	PARSE_EOF,
 	PARSE_THROW
-};
+} parse_status_t;
 
-enum eParseStatus read_term(context_t* context, stream_t* s);
+parse_status_t read_term(context_t* context, stream_t* s);
 
 #endif /* STREAM_H_INCLUDED_ */

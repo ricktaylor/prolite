@@ -1,7 +1,4 @@
-
-#if !defined(DECLARE_BUILTIN_STRING)
-#error Do not directly include this file
-#else
+#if defined(DECLARE_BUILTIN_STRING)
 
 /* These MUST be sorted by length then text */
 
@@ -26,6 +23,7 @@ DECLARE_BUILTIN_STRING(max_arity)
 DECLARE_BUILTIN_STRING(multifile)
 DECLARE_BUILTIN_STRING(procedure)
 DECLARE_BUILTIN_STRING(underflow)
+DECLARE_BUILTIN_STRING(current_op)
 DECLARE_BUILTIN_STRING(type_error)
 DECLARE_BUILTIN_STRING(max_integer)
 DECLARE_BUILTIN_STRING(min_integer)
@@ -54,5 +52,7 @@ DECLARE_BUILTIN_STRING(operator_specifier)
 DECLARE_BUILTIN_STRING(past_end_of_stream)
 DECLARE_BUILTIN_STRING(instantiation_error)
 DECLARE_BUILTIN_STRING(representation_error)
+DECLARE_BUILTIN_STRING(current_char_conversion)
+DECLARE_BUILTIN_STRING(unify_with_occurs_check)
 
 #endif

@@ -49,24 +49,16 @@
 typedef enum prolite_type
 {
 	prolite_double = 0,
-	prolite_int32 = 1,
-	prolite_atom = 2,
-	prolite_compound = 3,
-	prolite_var = 4,
+	prolite_var = 1,
+	prolite_int32 = 2,
+	prolite_atom = 3,
+	prolite_compound = 4,	
 	prolite_chars = 5,
 	prolite_charcodes = 6,
 	// unused = 7,
-
-	// Do not use range 8..0x8000
-
-	// unused = 0x8001,
-	// unused = 0x8002,
-	// unused = 0x8003,
-	// unused = 0x8004,
-	// unused = 0x8005,
-	// unused = 0x8006,
-	PROLITE_DEBUG_INFO = 0x8007
 } prolite_type_t;
+
+static const uint16_t prolite_debug_info = 0x8000;
 
 #if defined(__aarch64__) || defined(__arm__)
 #define PACK_EXP_16(v)    ((UINT64_C(0xFFFF) & (v)) << 24)
@@ -115,7 +107,7 @@ typedef union term
 
 static inline prolite_type_t get_term_type(const term_t* t)
 {
-	return UNPACK_TYPE(t->m_u64val);
+	return UNPACK_TYPE(t->m_u64val) & 0x7;
 }
 
 #endif /* PACKED_TYPES_H */

@@ -16,6 +16,7 @@
 typedef enum builtin_atom_id
 {
 #include "builtin_strings.h"
+	BUILTIN_ATOM_
 } builtin_atom_id_t;
 
 typedef struct string
@@ -29,24 +30,6 @@ typedef struct debug_info
 {
 	int TODO;
 } debug_info_t;
-
-
-
-
-
-
-
-struct predicate;
-
-struct clause
-{
-	struct predicate*   m_pred;
-	struct clause*      m_next;
-	struct clause*      m_prev;
-	size_t                m_var_count;
-	const term_t* m_head;
-	size_t                m_entry_point;
-};
 
 typedef enum op_spec
 {
@@ -78,14 +61,14 @@ typedef struct module
 		unsigned colon_sets_calling_context : 1;
 	} m_flags;
 
-	operator_t*        m_operators;
+	operator_t* m_operators;
 
 } module_t;
 
 typedef struct context
 {
 	heap_t*   m_heap;
-	term_t* m_stack;
+	term_t*   m_stack;
 	module_t* m_module;
 } context_t;
 
@@ -104,9 +87,45 @@ static inline term_t* push_double(term_t* stack, double v)
 	return stack;
 }
 
+static inline term_t* push_var(term_t* stack, uint64_t idx)
+{
+	(--stack)->m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(idx);
+	return stack;
+}
+
+static inline uint64_t get_var_index(const term_t* v)
+{
+	return UNPACK_MANT_48(v->m_u64val);
+}
+
+static inline int32_t get_integer(const term_t* v)
+{
+	return UNPACK_MANT_48(v->m_u64val);
+}
+
 const term_t* get_first_arg(const term_t* compound, uint64_t* arity, debug_info_t* debug_info);
 const term_t* get_next_arg(const term_t* p, debug_info_t* debug_info);
-string_t get_compound(const term_t** b, uint64_t* arity, debug_info_t* debug_info);
-string_t get_string(const term_t** b, debug_info_t* debug_info);
+string_t get_compound(const term_t* b, uint64_t* arity, debug_info_t* debug_info);
+string_t get_string(const term_t* b, debug_info_t* debug_info);
+
+int compound_compare(const term_t* c1, const term_t* c2);
+int term_compare(const term_t* t1, const term_t* t2);
 
 #endif /* TYPES_H_ */
+
+
+/* OLD GUFF
+
+struct predicate;
+
+struct clause
+{
+	struct predicate*   m_pred;
+	struct clause*      m_next;
+	struct clause*      m_prev;
+	size_t              m_var_count;
+	const term_t*       m_head;
+	size_t              m_entry_point;
+};
+
+*/
