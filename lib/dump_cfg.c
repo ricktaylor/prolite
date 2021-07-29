@@ -3,6 +3,7 @@
 #include "compile.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 static void fmtFlags(uint64_t v, char* buf)
 {
@@ -75,7 +76,7 @@ static size_t opInc(enum optype op, size_t i)
 	switch (op)
 	{
 	case OP_JMP:
-	case OP_CALL:
+	case OP_GOSUB:
 	case OP_THROW:
 	case OP_SET_FLAGS:
 	case OP_CLEAR_FLAGS:
@@ -87,8 +88,9 @@ static size_t opInc(enum optype op, size_t i)
 	case OP_BRANCH:
 	case OP_BUILTIN:
     case OP_UNIFY_VAR:
+	case OP_DATA:
 		i+=2;
-		break;
+		break;	
 
 	default:
 		break;
@@ -111,10 +113,12 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 
 	for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode,i))
 	{
-		if (i)
-			fprintf(f,"|");
-
-		fprintf(f,"<f%zu> ",i);
+		if (blk->m_ops[i].m_opcode != OP_END)
+		{
+			if (i)
+				fprintf(f,"|");
+			fprintf(f,"<f%zu> ",i);
+		}
 
 		switch (blk->m_ops[i].m_opcode)
 		{
@@ -122,20 +126,24 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			fprintf(f,"(NOP)");
 			break;
 
-		case OP_TRUE:
+		case OP_SUCCEEDS:
 			fprintf(f,"Success!");
 			break;
 
 		case OP_END:
-			fprintf(f,"End");
+			break;
+
+		case OP_DATA:
+			fprintf(f,"Data\\ (%zu\\ bytes)|=\\ ",blk->m_ops[i+1].m_u64val);
+			dumpTerm(blk->m_ops[i+2].m_pval,f);
 			break;
 
 		case OP_JMP:
 			fprintf(f,"Jmp");
 			break;
 
-		case OP_CALL:
-			fprintf(f,"Call");
+		case OP_GOSUB:
+			fprintf(f,"Gosub");
 			break;
 
 		case OP_RET:
@@ -143,7 +151,7 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ true,\\ Call",(*(builtin_fn_t)blk->m_ops[i+1].m_pval)(),i+1);
+			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ true,\\ Gosub",(*(builtin_fn_t)blk->m_ops[i+1].m_pval)(),i+1);
 			break;
 
 		case OP_THROW:
@@ -204,7 +212,7 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"%s\"];\n",blk,i+1,blk->m_ops[i+2].m_pval,buf);
 			break;
 
-		case OP_CALL:
+		case OP_GOSUB:
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i,blk->m_ops[i+1].m_pval);
 			break;
 
@@ -214,6 +222,10 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 
 		case OP_BUILTIN:
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i+1,blk->m_ops[i+2].m_pval);
+			break;
+
+		case OP_END:
+			fprintf(f,"\tN%p:<f%zu> -> end;\n",blk,i-2);
 			break;
 
 		default:
@@ -251,7 +263,7 @@ static void walkCFG(cfg_vec_t* blks, const cfg_block_t* blk)
 			switch (blk->m_ops[i].m_opcode)
 			{
 			case OP_JMP:
-			case OP_CALL:
+			case OP_GOSUB:
 				walkCFG(blks,blk->m_ops[i+1].m_pval);
 				break;
 
@@ -275,7 +287,8 @@ void dumpCFG(const cfg_block_t* b, FILE* f)
 
 		if (b)
 		{
-			fprintf(f,"\tstart [shape=point];\n");
+			fprintf(f,"\tstart [shape=circle,label=Start];\n");
+			fprintf(f,"\tend [shape=circle,label=End];\n");
 
 			cfg_vec_t blks = {0};
 			walkCFG(&blks,b);

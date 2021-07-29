@@ -1,15 +1,10 @@
-/debug/
-/autom4te.cache/
-/build-aux/
-/m4/
+debug/
+autom4te.cache/
+build-aux/
+m4/
 aclocal.m4
 autoheader_dummy.*
 configure
 Makefile.in
 
-/x64/
-/Win32/
-/ipch/
-prolite.suo
-prolite.sdf
-*.vcxproj.user
+.vscode/

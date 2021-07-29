@@ -9,9 +9,10 @@ typedef enum optype
 {
 	OP_NOP = 0,
 	OP_END,
-	OP_TRUE,
+	OP_SUCCEEDS,
+	OP_DATA,
 	OP_JMP,
-	OP_CALL,
+	OP_GOSUB,
 	OP_RET,
 	OP_BUILTIN,
 	OP_THROW,
@@ -44,7 +45,7 @@ typedef struct continuation
 	const cfg_block_t* m_entry_point;
 	cfg_block_t*       m_tail;
 	uint8_t            m_always_flags;
-	unsigned           m_call_site : 1;
+	unsigned           m_subroutine : 1;
 } continuation_t;
 
 typedef struct substitutions

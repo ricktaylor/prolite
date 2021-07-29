@@ -1,4 +1,3 @@
-
 #include "compile.h"
 
 #include <stdlib.h>
@@ -41,50 +40,50 @@ static uint32_t is_builtin_string(const unsigned char* str, size_t len)
 	return ret;
 }
 
-term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external)
+uint64_t* push_string(uint64_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external)
 {
 	uint32_t builtin;
 	switch (len)
 	{
 	case 5:
-		(--stack)->m_u64val = PACK_TYPE_EMBED(type,0,5,str[0],str[1],str[2],str[3],str[4]);
+		*(--stack) = PACK_TYPE_EMBED(type,0,5,str[0],str[1],str[2],str[3],str[4]);
 		break;
 
 	case 4:
-		(--stack)->m_u64val = PACK_TYPE_EMBED(type,0,4,str[0],str[1],str[2],str[3],0);
+		*(--stack) = PACK_TYPE_EMBED(type,0,4,str[0],str[1],str[2],str[3],0);
 		break;
 
 	case 3:
-		(--stack)->m_u64val = PACK_TYPE_EMBED(type,0,3,str[0],str[1],str[2],0,0);
+		*(--stack) = PACK_TYPE_EMBED(type,0,3,str[0],str[1],str[2],0,0);
 		break;
 
 	case 2:
-		(--stack)->m_u64val = PACK_TYPE_EMBED(type,0,2,str[0],str[1],0,0,0);
+		*(--stack) = PACK_TYPE_EMBED(type,0,2,str[0],str[1],0,0,0);
 		break;
 
 	case 1:
-		(--stack)->m_u64val = PACK_TYPE_EMBED(type,0,1,str[0],0,0,0,0);
+		*(--stack) = PACK_TYPE_EMBED(type,0,1,str[0],0,0,0,0);
 		break;
 
 	case 0:
-		(--stack)->m_u64val = PACK_TYPE_EMBED(type,0,0,0,0,0,0,0);
+		*(--stack) = PACK_TYPE_EMBED(type,0,0,0,0,0,0,0);
 		break;
 
 	default:
 		if ((builtin = is_builtin_string(str,len)) != -1)
 		{
-			(--stack)->m_u64val = (PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0x4000) << 32) | builtin));
+			*(--stack) = (PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0x4000) << 32) | builtin));
 		}
 		else if (external)
 		{
-			(--stack)->m_u64val = (uintptr_t)(str);
-			(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0xC000) << 32) | len);
+			*(--stack) = (uintptr_t)(str);
+			*(--stack) = PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0xC000) << 32) | len);
 		}
 		else
 		{
-			stack -= ((len + sizeof(term_t)-1) / sizeof(term_t));
+			stack -= ((len + sizeof(uint64_t)-1) / sizeof(uint64_t));
 			memcpy(stack,str,len);
-			(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48(len);
+			*(--stack) = PACK_TYPE(type) | PACK_MANT_48(len);
 		}
 		break;
 	}
@@ -92,7 +91,7 @@ term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str
 	return stack;
 }
 
-term_t* push_compound(term_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len)
+uint64_t* push_predicate(uint64_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len, int external)
 {
 	uint32_t builtin;
 	if (arity <= MAX_ARITY_EMBED && functor_len <= 5)
@@ -100,51 +99,52 @@ term_t* push_compound(term_t* stack, uint64_t arity, const unsigned char* functo
 		switch (functor_len)
 		{
 		case 5:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,5,functor[0],functor[1],functor[2],functor[3],functor[4]);
+			*(--stack) = PACK_TYPE_EMBED(prolite_compound,arity,5,functor[0],functor[1],functor[2],functor[3],functor[4]);
 			break;
 
 		case 4:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,4,functor[0],functor[1],functor[2],functor[3],0);
+			*(--stack) = PACK_TYPE_EMBED(prolite_compound,arity,4,functor[0],functor[1],functor[2],functor[3],0);
 			break;
 
 		case 3:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,3,functor[0],functor[1],functor[2],0,0);
+			*(--stack) = PACK_TYPE_EMBED(prolite_compound,arity,3,functor[0],functor[1],functor[2],0,0);
 			break;
 
 		case 2:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,2,functor[0],functor[1],0,0,0);
+			*(--stack) = PACK_TYPE_EMBED(prolite_compound,arity,2,functor[0],functor[1],0,0,0);
 			break;
 
 		case 1:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,1,functor[0],0,0,0,0);
+			*(--stack) = PACK_TYPE_EMBED(prolite_compound,arity,1,functor[0],0,0,0,0);
 			break;
 
 		default:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,0,0,0,0,0,0);
+			*(--stack) = PACK_TYPE_EMBED(prolite_compound,arity,0,0,0,0,0,0);
 			break;
 		}
 	}
 	else if (arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(functor,functor_len)) != -1)
 	{
-		(--stack)->m_u64val = (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(arity) & MAX_ARITY_BUILTIN)) << 32) | builtin));
+		*(--stack) = (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(arity) & MAX_ARITY_BUILTIN)) << 32) | builtin));
 	}
 	else
 	{
-		stack = push_string(stack,prolite_atom,functor,functor_len,0);
-		(--stack)->m_u64val = PACK_TYPE(prolite_compound) | PACK_MANT_48(arity);
+		stack = push_string(stack,prolite_atom,functor,functor_len,external);
+		*(--stack) = PACK_TYPE(prolite_compound) | PACK_MANT_48(arity);
 	}
 
 	return stack;
 }
 
-static const term_t* get_debug_info(const term_t* p, debug_info_t* debug_info)
+static const term_t* get_debug_info(const term_t* p, const debug_info_t** debug_info)
 {
-	// TODO
-
-	return p;
+	if (debug_info)
+		*debug_info = (const debug_info_t*)p->m_u64val;
+	
+	return p + 1;
 }
 
-string_t get_string(const term_t* b, debug_info_t* debug_info)
+string_t get_string(const term_t* b, const debug_info_t** debug_info)
 {
 	string_t ret;
 	uint64_t all48 = (b++)->m_u64val;
@@ -180,13 +180,13 @@ string_t get_string(const term_t* b, debug_info_t* debug_info)
 		break;
 	}
 
-	if (have_debug_info && debug_info)
+	if (have_debug_info)
 		get_debug_info(b,debug_info);
 
 	return ret;
 }
 
-string_t get_predicate(const term_t* b, uint64_t* arity, debug_info_t* debug_info)
+string_t get_predicate(const term_t* b, uint64_t* arity, const debug_info_t** debug_info)
 {
 	string_t ret;
 	uint64_t all48 = (b++)->m_u64val;
@@ -212,7 +212,7 @@ string_t get_predicate(const term_t* b, uint64_t* arity, debug_info_t* debug_inf
 		ret.m_data[4] = all48;
 		ret.m_str = ret.m_data;
 
-		if (have_debug_info && debug_info)
+		if (have_debug_info)
 			get_debug_info(b,debug_info);
 		break;
 	
@@ -222,7 +222,7 @@ string_t get_predicate(const term_t* b, uint64_t* arity, debug_info_t* debug_inf
 
 		ret = s_builtin_strings[(uint32_t)all48];
 
-		if (have_debug_info && debug_info)
+		if (have_debug_info)
 			get_debug_info(b,debug_info);
 		break;
 	
@@ -237,7 +237,7 @@ string_t get_predicate(const term_t* b, uint64_t* arity, debug_info_t* debug_inf
 	return ret;
 }
 
-const term_t* get_next_arg(const term_t* p, debug_info_t* debug_info)
+const term_t* get_next_arg(const term_t* p, const debug_info_t** debug_info)
 {
 	uint64_t all48 = (p++)->m_u64val;
 	uint16_t hi16 = UNPACK_TYPE(all48);
@@ -248,11 +248,6 @@ const term_t* get_next_arg(const term_t* p, debug_info_t* debug_info)
 
 	switch (type)
 	{
-	case prolite_double:
-	case prolite_int32:
-	case prolite_var:
-		break;
-
 	case prolite_atom:
 	case prolite_chars:
 	case prolite_charcodes:
@@ -260,11 +255,14 @@ const term_t* get_next_arg(const term_t* p, debug_info_t* debug_info)
 		{
 		case 3:
 			++p;
+			break;
 
 		case 0:
 			p += (((all48 & MAX_ATOM_LEN) + sizeof(term_t)-1) / sizeof(term_t));
 			break;
 		}
+		if (have_debug_info)
+			p = get_debug_info(p,debug_info);
 		break;
 
 	case prolite_compound:
@@ -298,19 +296,18 @@ const term_t* get_next_arg(const term_t* p, debug_info_t* debug_info)
 			while (arity--)
 				p = get_next_arg(p,NULL);
 		}
-		return p;
+		break;
 
 	default:
-		assert(0);
+		if (have_debug_info)
+			p = get_debug_info(p,debug_info);
 		break;
 	}
 
-	if (have_debug_info)
-		p = get_debug_info(p,debug_info);
 	return p;
 }
 
-const term_t* get_first_arg(const term_t* compound, uint64_t* arity, debug_info_t* debug_info)
+const term_t* get_first_arg(const term_t* compound, uint64_t* arity, const debug_info_t** debug_info)
 {
 	uint64_t all48 = (compound++)->m_u64val;
 	int have_debug_info = (UNPACK_TYPE(all48) & prolite_debug_info);
@@ -324,6 +321,7 @@ const term_t* get_first_arg(const term_t* compound, uint64_t* arity, debug_info_
 	case 3:
 		assert(0);
 		break;
+
 	case 2:
 		if (arity)
 			*arity = (hi16 & 0x7800) >> 11;
@@ -357,10 +355,10 @@ static int atom_compare(const term_t* a1, const term_t* a2)
 	int r = (a1->m_u64val == a2->m_u64val);
 	if (!r)
 	{
-		uint16_t t1 = (UNPACK_MANT_48(a1->m_u64val) >> 32) >> 14;
+		unsigned int t1 = get_term_subtype(a1);
 		if (t1 == 3 || t1 == 0)
 		{
-			uint16_t t2 = (UNPACK_MANT_48(a2->m_u64val) >> 32) >> 14;
+			unsigned int t2 = get_term_subtype(a2);
 			if (t2 == 3 || t2 == 0)
 			{
 				string_t s1 = get_string(a1,NULL);
@@ -696,45 +694,29 @@ continuation_t* compile_number(compile_context_t* context, continuation_t* cont,
 static int compile_is_ground(compile_context_t* context, const term_t* goal)
 {
 	goal = deref_var(context,goal);
-	switch (get_term_type(goal))
-	{
-	case prolite_var:
-		return -1;
-
-	case prolite_atom:
-	case prolite_chars:
-	case prolite_charcodes:
-		return 1;
-
-	case prolite_compound:
-		{
-			uint64_t arity;
-			for (const term_t* p = get_first_arg(goal,&arity,NULL); arity--; p = get_next_arg(p,NULL))
-			{
-				int r = compile_is_ground(context,p);
-				if (r != 1)
-					return r;
-			}
-		}
-		return 1;
-
-	default:
+	prolite_type_t t = get_term_type(goal);
+	if (t == prolite_var)
 		return 0;
+
+	if (t == prolite_compound)
+	{
+		uint64_t arity;
+		for (const term_t* p = get_first_arg(goal,&arity,NULL); arity--; p = get_next_arg(p,NULL))
+		{
+			if (!compile_is_ground(context,p))
+				return 0;
+		}
 	}
+	return 1;
 }
 
 continuation_t* compile_ground(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
 	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-	switch (compile_is_ground(context,g1))
-	{
-	case 1:
+	if (compile_is_ground(context,g1))
 		return compile_true(context,cont,g1);
 
-	case 0:
-		return compile_false(context,cont,g1);
-
-	default:
-		return compile_builtin(context,cont,&builtin_ground,1,g1);
-	}
+	return compile_builtin(context,cont,&builtin_ground,1,g1);
 }
+
+const char* builtin_callable(void) { return "callable"; }

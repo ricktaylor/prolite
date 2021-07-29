@@ -52,7 +52,7 @@ static continuation_t* new_continuation(compile_context_t* context)
 	if (!c)
 		longjmp(context->m_jmp,1);
 
-	c->m_call_site = 0;
+	c->m_subroutine = 0;
 	c->m_always_flags = 0;
 	c->m_tail = new_cfg_block(context);
 	c->m_entry_point = c->m_tail;
@@ -134,16 +134,16 @@ static continuation_t* clear_flags(compile_context_t* context, continuation_t* c
 static continuation_t* goto_next(compile_context_t* context, continuation_t* c, continuation_t* next)
 {
 	opcode_t* ops = append_opcodes(context,c->m_tail,2);
-	if (next->m_call_site)
+	if (next->m_subroutine)
 	{
 		while (next->m_entry_point->m_count == 3 &&
-			next->m_entry_point->m_ops[0].m_opcode == OP_CALL &&
+			next->m_entry_point->m_ops[0].m_opcode == OP_GOSUB &&
 			next->m_entry_point->m_ops[2].m_opcode == OP_RET)
 		{
 			next->m_entry_point = next->m_entry_point->m_ops[1].m_pval;
 		}
 
-		(ops++)->m_opcode = OP_CALL;
+		(ops++)->m_opcode = OP_GOSUB;
 		ops->m_pval = next->m_entry_point;
 	}
 	else
@@ -161,20 +161,20 @@ static continuation_t* goto_next(compile_context_t* context, continuation_t* c, 
 	return c;
 }
 
-static continuation_t* make_call_site(compile_context_t* context, continuation_t* c)
+static continuation_t* make_subroutine(compile_context_t* context, continuation_t* c)
 {
-	if (!c->m_call_site)
+	if (!c->m_subroutine)
 	{
 		opcode_t* ops = append_opcodes(context,c->m_tail,1);
 		ops->m_opcode = OP_RET;
-		c->m_call_site = 1;
+		c->m_subroutine = 1;
 	}
 	return c;
 }
 
-static continuation_t* convert_to_call(compile_context_t* context, continuation_t* c)
+static continuation_t* convert_to_gosub(compile_context_t* context, continuation_t* c)
 {
-	c = make_call_site(context,c);
+	c = make_subroutine(context,c);
 
 	continuation_t* c1 = new_continuation(context);
 	c1 = goto_next(context,c1,c);
@@ -425,7 +425,7 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 		return compile_if_then_else(context,c_if,c_then,c_else);
 	}
 
-	continuation_t* c = compile_goal(context,convert_to_call(context,cont),g1);
+	continuation_t* c = compile_goal(context,convert_to_gosub(context,cont),g1);
 	if (c->m_always_flags & FLAG_FAIL)
 	{
 		context->m_substs = s_orig;
@@ -436,7 +436,7 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 		c = clear_flags(context,c,FLAG_FAIL);
 
 		context->m_substs = s_orig;
-		continuation_t* c2 = compile_goal(context,convert_to_call(context,cont),g2);
+		continuation_t* c2 = compile_goal(context,convert_to_gosub(context,cont),g2);
 
 		continuation_t* c_end = new_continuation(context);	
 		opcode_t* ops = append_opcodes(context,c->m_tail,3);
@@ -465,39 +465,230 @@ static continuation_t* compile_if_then(compile_context_t* context, continuation_
 	return compile_if_then_else(context,c_if,c_then,NULL);
 }
 
-continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, uint64_t arity, const term_t* g1)
+static term_t* alloc_heap_term(compile_context_t* context, size_t count, term_t** new_term, size_t* term_count)
 {
-	// Convert cont to a call site
-	cont = make_call_site(context,cont);
+	term_t* t1 = heap_realloc(&context->m_heap,*new_term,*term_count * sizeof(term_t),(*term_count + count) * sizeof(term_t));
+	if (!t1)
+		longjmp(context->m_jmp,1);
+
+	*new_term = t1;
+	t1 += *term_count;
+	*term_count += count;
+
+	return t1;
+}
+
+static const term_t* copy_term_to_heap(compile_context_t* context, const term_t* t, size_t count, term_t** new_term, size_t* term_count)
+{
+	term_t* t1 = alloc_heap_term(context,count,new_term,term_count);
+	memcpy(t1,t,count * sizeof(term_t));
+	return t + count;
+}
+
+static const term_t* copy_term(compile_context_t* context, const term_t* t, term_t** new_term, size_t* term_count)
+{
+	int have_debug_info = has_debug_info(t);
+
+	switch (get_term_type(t))
+	{
+	case prolite_var:
+		copy_term(context,deref_var(context,t),new_term,term_count);
+		t += 1 + have_debug_info;
+		break;
+
+	case prolite_double:
+	case prolite_int32:
+		t = copy_term_to_heap(context,t,1 + have_debug_info,new_term,term_count);
+		break;
+
+	case prolite_atom:
+	case prolite_chars:
+	case prolite_charcodes:
+		switch (get_term_subtype(t))
+		{
+		case 0:
+			{
+				// Need to externalise the string data
+				term_t* t1 = alloc_heap_term(context,2,new_term,term_count);
+				(t1++)->m_u64val = (t->m_u64val | PACK_MANT_48(UINT64_C(0xC000) << 32));
+				(t1++)->m_u64val = (uint64_t)(t+1);
+				
+				t += 1 + ((t->m_u64val & MAX_ATOM_LEN) + sizeof(term_t)-1) / sizeof(term_t);
+				
+				if (have_debug_info)
+					t = copy_term_to_heap(context,t,1,new_term,term_count);
+			}
+			break;
+
+		case 1:
+		case 2:
+			t = copy_term_to_heap(context,t,1 + have_debug_info,new_term,term_count);
+			break;
+
+		case 3:
+			t = copy_term_to_heap(context,t,2 + have_debug_info,new_term,term_count);
+			break;
+		}
+		break;
+		
+	case prolite_compound:
+		{
+			uint64_t arity = 0;
+			uint64_t all48 = UNPACK_MANT_48(t->m_u64val);
+			uint16_t hi16 = (all48 >> 32);
+
+			switch (hi16 >> 14)
+			{
+			case 3:
+				assert(0);
+				break;
+
+			case 2:
+				arity = (hi16 & 0x7800) >> 11;
+				t = copy_term_to_heap(context,t,1,new_term,term_count);
+				if (have_debug_info)
+					t = copy_term_to_heap(context,t,1,new_term,term_count);
+				break;
+			
+			case 1:
+				arity = hi16 & MAX_ARITY_BUILTIN;
+				t = copy_term_to_heap(context,t,1,new_term,term_count);
+				if (have_debug_info)
+					t = copy_term_to_heap(context,t,1,new_term,term_count);
+				break;
+			
+			case 0:
+				arity = (all48 & MAX_ARITY);
+				t = copy_term_to_heap(context,t,1,new_term,term_count);
+				t = copy_term(context,t,new_term,term_count);
+				break;
+			}
+			
+			while (arity--)
+				t = copy_term(context,t,new_term,term_count);			
+		}
+		break;	
+
+	case prolite_userdata:
+		// TODO
+		assert(0);
+		break;
+	}
+
+	return t;
+}
+
+static int needs_copy(compile_context_t* context, const term_t* t)
+{
+	switch (get_term_type(t))
+	{
+	case prolite_var:
+		return (deref_var(context,t) != t);
+			
+	case prolite_atom:
+	case prolite_chars:
+	case prolite_charcodes:
+		return (get_term_subtype(t) == 0);
+		
+	case prolite_compound:
+		{
+			uint64_t arity;
+			for (const term_t* p = get_first_arg(t,&arity,NULL); arity--; p = get_next_arg(p,NULL))
+			{
+				if (needs_copy(context,p))
+					return 1;
+			}
+		}
+		break;
+
+	default:
+		break;
+	}
+	return 0;
+}
+
+static void push_copy_term(compile_context_t* context, cfg_block_t* b, const term_t* t)
+{
+	if (needs_copy(context,t))
+	{
+		term_t* new_term = NULL;
+		size_t term_count = 0;
+		copy_term(context,t,&new_term,&term_count);
+
+		if (term_count)
+		{
+			// TODO: Could de-duplicate data blocks here...
+
+			opcode_t* ops = append_opcodes(context,b,3);
+			(ops++)->m_opcode = OP_DATA;
+			(ops++)->m_u64val = term_count * sizeof(term_t);
+			ops->m_pval = new_term;
+		}
+		t = new_term;
+	}
+
+	opcode_t* ops = append_opcodes(context,b,2);
+	(ops++)->m_opcode = OP_PUSH_TERM;
+	ops->m_pval = t;
+}
+
+static continuation_t* compile_frame_start(compile_context_t* context)
+{
+	continuation_t* c = new_continuation(context);
+
+	/* TODO:
+	 * push ebp
+	 * mov	ebp, esp
+	 */
+
+	return c;
+}
+
+static void compile_frame_end(compile_context_t* context, continuation_t* c)
+{
+	/* TODO:
+	 * mov	esp, ebp
+	 * pop	ebp
+	 */
+}
+
+continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, uint64_t arity, const term_t* goal)
+{
+	cont = make_subroutine(context,cont);
 
 	while (cont->m_entry_point->m_count == 3 &&
-		cont->m_entry_point->m_ops[0].m_opcode == OP_CALL &&
+		cont->m_entry_point->m_ops[0].m_opcode == OP_GOSUB &&
 		cont->m_entry_point->m_ops[2].m_opcode == OP_RET)
 	{
 		cont->m_entry_point = cont->m_entry_point->m_ops[1].m_pval;
 	}
 
-	continuation_t* c = new_continuation(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,3 + (2*arity));
-
-	const term_t** rev = heap_malloc(&context->m_heap,arity * sizeof(term_t*));
-	if (!rev)
-		longjmp(context->m_jmp,1);
-	
-	for (size_t i = 0; i < arity; ++i)
+	continuation_t* c = compile_frame_start(context);
+	if (arity > 1)
 	{
-		rev[i] = deref_var(context,g1);
-		g1 = get_next_arg(g1,NULL);
+		// Reverse the arguments
+		const term_t** rev = heap_malloc(&context->m_heap,arity * sizeof(term_t*));
+		if (!rev)
+			longjmp(context->m_jmp,1);
+		
+		for (size_t i = 0; i < arity; ++i)
+		{
+			rev[i] = goal;
+			goal = get_next_arg(goal,NULL);
+		}
+
+		for (size_t i = arity; i--;)
+			push_copy_term(context,c->m_tail,rev[i]);
 	}
-
-	for (size_t i = arity; i--;)
-	{
-		(ops++)->m_opcode = OP_PUSH_TERM;
-		(ops++)->m_pval = rev[i];
-	}	
+	else
+		push_copy_term(context,c->m_tail,goal);
+	
+	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode = OP_BUILTIN;
 	(ops++)->m_pval = fn;
-	(ops++)->m_pval = cont->m_entry_point;
+	ops->m_pval = cont->m_entry_point;
+
+	compile_frame_end(context,c);
 
 	c->m_always_flags = cont->m_always_flags;
 
@@ -506,15 +697,17 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 
 continuation_t* compile_user_defined(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
+	// TODO - we can be more explicit here...
+
 	return compile_builtin(context,cont,&builtin_user_defined,1,goal);
 }
 
-static continuation_t* compile_throw_call(compile_context_t* context, builtin_fn_t builtin, const term_t* goal)
+static continuation_t* compile_throw_inner(compile_context_t* context, builtin_fn_t builtin, const term_t* goal)
 {
 	continuation_t* c = new_continuation(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,4);
-	(ops++)->m_opcode = OP_PUSH_TERM;
-	(ops++)->m_pval = deref_var(context,goal);
+	push_copy_term(context,c->m_tail,goal);
+
+	opcode_t* ops = append_opcodes(context,c->m_tail,2);
 	(ops++)->m_opcode = OP_THROW;
 	ops->m_pval = builtin;
 	c->m_always_flags = FLAG_THROW;
@@ -523,12 +716,12 @@ static continuation_t* compile_throw_call(compile_context_t* context, builtin_fn
 
 static continuation_t* compile_throw(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	return compile_throw_call(context,&builtin_throw,get_first_arg(goal,NULL,NULL));
+	return compile_throw_inner(context,&builtin_throw,get_first_arg(goal,NULL,NULL));
 }
 
 static continuation_t* compile_halt(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	continuation_t* c = compile_throw_call(context,&builtin_halt,get_first_arg(goal,NULL,NULL));
+	continuation_t* c = compile_throw_inner(context,&builtin_halt,get_first_arg(goal,NULL,NULL));
 	
 	if (get_term_type(goal) == prolite_atom)
 		c->m_always_flags = FLAG_HALT;
@@ -542,6 +735,9 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 
 	switch (get_term_type(goal))
 	{
+	case prolite_var:
+		return -1;
+
 	case prolite_atom:
 		return 1;
 
@@ -570,7 +766,7 @@ static continuation_t* compile_call_inner(compile_context_t* context, continuati
 		return compile_goal(context,cont,goal);
 
 	case 0:
-		return compile_throw_call(context,&builtin_call,goal);
+		return compile_throw_inner(context,&builtin_call,goal);
 
 	default:
 		return compile_builtin(context,cont,&builtin_call,1,goal);
@@ -602,7 +798,7 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 	const term_t* g2 = get_next_arg(g1,NULL);
 	const term_t* g3 = get_next_arg(g2,NULL);
 
-	continuation_t* c = compile_call_inner(context,convert_to_call(context,cont),g1);
+	continuation_t* c = compile_call_inner(context,convert_to_gosub(context,cont),g1);
 	if (!(c->m_always_flags & FLAG_HALT))
 	{
 		continuation_t* c_end = new_continuation(context);
@@ -613,7 +809,7 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 		else
 		{
 			c = wrap_cut(context,c);
-			c_resume = compile_call_inner(context,convert_to_call(context,cont),g3);
+			c_resume = compile_call_inner(context,convert_to_gosub(context,cont),g3);
 		}
 
 		if (!(c_resume->m_always_flags & (FLAG_THROW | FLAG_HALT)))
@@ -653,7 +849,7 @@ static continuation_t* compile_repeat(compile_context_t* context, continuation_t
 
 	continuation_t* c_end = new_continuation(context);
 
-	if (cont->m_call_site)
+	if (cont->m_subroutine)
 		cont = goto_next(context,new_continuation(context),cont);
 
 	opcode_t* ops = append_opcodes(context,cont->m_tail,7);
@@ -768,7 +964,9 @@ static continuation_t* compile_not_proveable(compile_context_t* context, continu
 	return compile_if_then_else(context,c,compile_false(context,cont,NULL),cont);
 }
 
-continuation_t* compile_callable(compile_context_t* context, continuation_t* cont, const term_t* goal)
+const char* builtin_callable(void);
+
+static continuation_t* compile_callable(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
 	const term_t* g1 = get_first_arg(goal,NULL,NULL);
 	switch (compile_is_callable(context,g1))
@@ -837,7 +1035,7 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 
 		default:
 			// We know this throws...
-			c = compile_throw_call(context,&builtin_call,goal);
+			c = compile_throw_inner(context,&builtin_call,goal);
 			break;
 		}
 	}
@@ -872,18 +1070,22 @@ void compile(context_t* context, stream_t* s)
 		fprintf(stderr,"Parser failure\n");
 	else
 	{
-		// Pop varinfo
-		const term_t* sp = context->m_stack;
-
-		size_t varcount = (sp++)->m_u64val;
-		for (size_t i = 0; i < varcount; ++i)
-			sp = get_next_arg(sp,NULL) + 1;
-
 		size_t heap_start = heap_top(context->m_heap);
 		compile_context_t cc = {0};
 		cc.m_heap = context->m_heap;
 		if (!setjmp(cc.m_jmp))
 		{
+			// Pop varinfo
+			size_t varcount = 0;
+			{
+				const term_t* sp = (const term_t*)context->m_stack;
+				varcount = (sp++)->m_u64val;
+				for (size_t i = 0; i < varcount; ++i)
+					sp = get_next_arg(sp,NULL) + 1;
+
+				context->m_stack = (uint64_t*)sp;
+			}
+
 			if (varcount)
 			{
 				cc.m_substs = heap_malloc(&context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * varcount));
@@ -896,9 +1098,9 @@ void compile(context_t* context, stream_t* s)
 
 			continuation_t* cont = new_continuation(&cc);
 			opcode_t* ops = append_opcodes(&cc,cont->m_tail,1);
-			ops->m_opcode = OP_TRUE;
+			ops->m_opcode = OP_SUCCEEDS;
 
-			compile_term(&cc,cont,sp);
+			compile_term(&cc,cont,(const term_t*)context->m_stack);
 		}
 		else
 		{

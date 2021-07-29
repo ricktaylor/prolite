@@ -7,6 +7,7 @@
 #include <math.h>
 #include <assert.h>
 #include <setjmp.h>
+#include <stdlib.h>
 
 #ifdef _MSC_VER
 #include <float.h>
@@ -2018,7 +2019,13 @@ static ast_node_t* parse_term(context_t* context, parser_t* parser, unsigned int
 	return node;
 }
 
-static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
+static uint64_t* emit_ast_string(uint64_t* stack, prolite_type_t type, ast_node_t* node)
+{
+	// TODO: We could de-duplicate here...
+	return push_string(stack,type,node->m_str,node->m_str_len,0);
+}
+
+static uint64_t* emit_ast_node(uint64_t* stack, ast_node_t* node)
 {
 	size_t i;
 	switch (node->m_type)
@@ -2026,19 +2033,21 @@ static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 	case AST_TYPE_COMPOUND:
 		for (i = node->m_arity; i--;)
 			stack = emit_ast_node(stack,node->m_params[i]);
-		stack = push_compound(stack,node->m_arity,node->m_str,node->m_str_len);
+
+		// TODO: We could de-duplicate here...
+		stack = push_predicate(stack,node->m_arity,node->m_str,node->m_str_len,0);
 		break;
 
 	case AST_TYPE_ATOM:
-		stack = push_string(stack,prolite_atom,node->m_str,node->m_str_len,0);
+		stack = emit_ast_string(stack,prolite_atom,node);
 		break;
 
 	case AST_TYPE_CHARS:
-		stack = push_string(stack,prolite_chars,node->m_str,node->m_str_len,0);
+		stack = emit_ast_string(stack,prolite_chars,node);
 		break;
 
 	case AST_TYPE_CODES:
-		stack = push_string(stack,prolite_charcodes,node->m_str,node->m_str_len,0);
+		stack = emit_ast_string(stack,prolite_charcodes,node);
 		break;
 
 	case AST_TYPE_VAR:
@@ -2058,48 +2067,48 @@ static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 	return stack;
 }
 
-static term_t* emit_error_line_info(term_t* stack, line_info_t* info)
+static uint64_t* emit_error_line_info(uint64_t* stack, line_info_t* info)
 {
 	if (!info)
-		(--stack)->m_u64val = PACK_ATOM_EMBED_5('f','a','l','s','e');
+		*(--stack) = PACK_ATOM_EMBED_5('f','a','l','s','e');
 	else
 	{
 		// TODO: Line if
-		(--stack)->m_u64val = PACK_ATOM_EMBED_4('T','o','d','o');
+		*(--stack) = PACK_ATOM_EMBED_4('T','o','d','o');
 	}
 
 	return stack;
 }
 
-static parse_status_t emit_syntax_error_missing(term_t** stack, uint64_t missing_atom, line_info_t* info)
+static parse_status_t emit_syntax_error_missing(uint64_t** stack, uint64_t missing_atom, line_info_t* info)
 {
 	*stack = emit_error_line_info(*stack,info);
 
-	(--*stack)->m_u64val = missing_atom;
-	(--*stack)->m_u64val = PACK_COMPOUND_BUILTIN(missing,1);
-	(--*stack)->m_u64val = PACK_COMPOUND_BUILTIN(syntax_error,1);
-	(--*stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+	*(--*stack) = missing_atom;
+	*(--*stack) = PACK_COMPOUND_BUILTIN(missing,1);
+	*(--*stack) = PACK_COMPOUND_BUILTIN(syntax_error,1);
+	*(--*stack) = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
 
 	return PARSE_THROW;
 }
 
-static parse_status_t emit_simple_error(term_t** stack, uint64_t f, uint64_t arg, line_info_t* info)
+static parse_status_t emit_simple_error(uint64_t** stack, uint64_t f, uint64_t arg, line_info_t* info)
 {
 	*stack = emit_error_line_info(*stack,info);
 
-	(--*stack)->m_u64val = arg;
-	(--*stack)->m_u64val = f;
-	(--*stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+	*(--*stack) = arg;
+	*(--*stack) = f;
+	*(--*stack) = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
 
 	return PARSE_THROW;
 }
 
-static parse_status_t emit_out_of_heap_error(term_t** stack, line_info_t* info)
+static parse_status_t emit_out_of_heap_error(uint64_t** stack, line_info_t* info)
 {
 	return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'),info);
 }
 
-static parse_status_t emit_ast_error(term_t** stack, ast_error_t ast_err, line_info_t* info)
+static parse_status_t emit_ast_error(uint64_t** stack, ast_error_t ast_err, line_info_t* info)
 {
 	switch (ast_err)
 	{
@@ -2261,12 +2270,12 @@ parse_status_t read_term(context_t* context, stream_t* s)
 				while (i--)
 				{
 					/* use count */
-					(--context->m_stack)->m_u64val = varinfo[i].m_use_count;
+					*(--context->m_stack) = varinfo[i].m_use_count;
 
 					/* variable name */
 					context->m_stack = push_string(context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len,0);
 				}
-				(--context->m_stack)->m_u64val = varcount;
+				*(--context->m_stack) = varcount;
 			}
 		}
 	}

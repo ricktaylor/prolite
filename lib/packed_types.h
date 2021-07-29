@@ -1,10 +1,3 @@
-/*
- * term_types.h
- *
- *  Created on: 13 May 2017
- *      Author: rick
- */
-
 #ifndef PACKED_TYPES_H
 #define PACKED_TYPES_H
 
@@ -44,20 +37,6 @@
  *  values.  See: misc/clang_aliasing.c.
  */
 
-#include <stdint.h>
-
-typedef enum prolite_type
-{
-	prolite_double = 0,
-	prolite_var = 1,
-	prolite_int32 = 2,
-	prolite_atom = 3,
-	prolite_compound = 4,	
-	prolite_chars = 5,
-	prolite_charcodes = 6,
-	// unused = 7,
-} prolite_type_t;
-
 static const uint16_t prolite_debug_info = 0x8000;
 
 #if defined(__aarch64__) || defined(__arm__)
@@ -85,7 +64,7 @@ static const uint16_t prolite_debug_info = 0x8000;
 
 #define PACK_ATOM_BUILTIN(name)  (PACK_TYPE(prolite_atom) | PACK_MANT_48((UINT64_C(0x4000) << 32) | (uint32_t)(BUILTIN_ATOM_##name)))
 
-#define MAX_ATOM_LEN      ((UINT64_C(1) << 47) - 1)
+#define MAX_ATOM_LEN      ((UINT64_C(1) << 46) - 1)
 
 #define PACK_COMPOUND_EMBED_1(a,c)              PACK_TYPE_EMBED(prolite_compound,a,1,c,0,0,0,0)
 #define PACK_COMPOUND_EMBED_2(a,c1,c2)          PACK_TYPE_EMBED(prolite_compound,a,2,c1,c2,0,0,0)
@@ -95,21 +74,10 @@ static const uint16_t prolite_debug_info = 0x8000;
 
 #define MAX_ARITY_EMBED   0x7
 #define MAX_ARITY_BUILTIN 0x3FFF
-#define MAX_ARITY         ((UINT64_C(1) << 47) - 1)
+#define MAX_ARITY         ((UINT64_C(1) << 46) - 1)
 
 #define PACK_COMPOUND_BUILTIN(f,a)  (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(a) & MAX_ARITY_BUILTIN)) << 32) | (uint32_t)(BUILTIN_ATOM_##f)))
 
-#define MAX_VAR_INDEX     ((UINT64_C(1) << 47) - 1)
-
-typedef union term
-{
-	double   m_dval;
-	uint64_t m_u64val;
-} term_t;
-
-static inline prolite_type_t get_term_type(const term_t* t)
-{
-	return UNPACK_TYPE(t->m_u64val) & 0x7;
-}
+#define MAX_VAR_INDEX     ((UINT64_C(1) << 46) - 1)
 
 #endif /* PACKED_TYPES_H */

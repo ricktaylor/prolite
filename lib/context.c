@@ -8,6 +8,7 @@
 #include "types.h"
 
 #include <assert.h>
+#include <stdlib.h>
 
 uint32_t convert_char(context_t* context, uint32_t in_char)
 {

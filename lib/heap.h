@@ -2,7 +2,7 @@
 #define heap_H_INCLUDED_
 
 #include <stdint.h>
-#include <stdlib.h>
+#include <stddef.h>
 
 #if defined(_MSC_VER)
 #define inline __inline
