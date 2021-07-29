@@ -77,15 +77,16 @@ static size_t opInc(enum optype op, size_t i)
 	{
 	case OP_JMP:
 	case OP_GOSUB:
-	case OP_THROW:
+	case OP_INTRINSIC:
 	case OP_SET_FLAGS:
 	case OP_CLEAR_FLAGS:
 	case OP_CLEAR_VAR:
-	case OP_PUSH_TERM:
+	case OP_PUSH_TERM_REF:
 		++i;
 		break;
 
 	case OP_BRANCH:
+	case OP_BRANCH_NOT:
 	case OP_BUILTIN:
     case OP_UNIFY_VAR:
 	case OP_DATA:
@@ -151,11 +152,11 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ true,\\ Gosub",(*(builtin_fn_t)blk->m_ops[i+1].m_pval)(),i+1);
+			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ !FTH,\\ Gosub",(*(builtin_fn_t)blk->m_ops[i+1].m_pval)(),i+1);
 			break;
 
-		case OP_THROW:
-			fprintf(f,"Throwing\\ %s",(*(builtin_fn_t)blk->m_ops[i+1].m_pval)());
+		case OP_INTRINSIC:
+			fprintf(f,"Intrinsic\\ %s",(*(builtin_fn_t)blk->m_ops[i+1].m_pval)());
 			break;
 
 		case OP_SET_FLAGS:
@@ -178,11 +179,16 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 
 		case OP_BRANCH:
 			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
-			fprintf(f,"Branch|<f%zu> ...\\ if \\%s",i+1,buf);
+			fprintf(f,"Branch \\%s",buf);
 			break;
 
-		case OP_PUSH_TERM:
-			fprintf(f,"Push\\ ");
+		case OP_BRANCH_NOT:
+			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
+			fprintf(f,"Branch !\\%s",buf);
+			break;
+
+		case OP_PUSH_TERM_REF:
+			fprintf(f,"Push\\ &");
 			dumpTerm(blk->m_ops[i+1].m_pval,f);
 			break;
 
@@ -209,11 +215,16 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 		{
 		case OP_BRANCH:
 			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"%s\"];\n",blk,i+1,blk->m_ops[i+2].m_pval,buf);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"%s\"];\n",blk,i,blk->m_ops[i+2].m_pval,buf);
+			break;
+
+		case OP_BRANCH_NOT:
+			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"!%s\"];\n",blk,i,blk->m_ops[i+2].m_pval,buf);
 			break;
 
 		case OP_GOSUB:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i,blk->m_ops[i+1].m_pval);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=\"both\",label=\"!FTH\"];\n",blk,i,blk->m_ops[i+1].m_pval);
 			break;
 
 		case OP_JMP:
@@ -268,6 +279,7 @@ static void walkCFG(cfg_vec_t* blks, const cfg_block_t* blk)
 				break;
 
 			case OP_BRANCH:
+			case OP_BRANCH_NOT:
 			case OP_BUILTIN:
             	walkCFG(blks,blk->m_ops[i+2].m_pval);
 				break;
