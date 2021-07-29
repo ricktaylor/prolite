@@ -77,7 +77,6 @@ static size_t opInc(enum optype op, size_t i)
 	{
 	case OP_JMP:
 	case OP_GOSUB:
-	case OP_INTRINSIC:
 	case OP_SET_FLAGS:
 	case OP_CLEAR_FLAGS:
 	case OP_CLEAR_VAR:
@@ -153,10 +152,6 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 
 		case OP_BUILTIN:
 			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ !FTH,\\ Gosub",(*(builtin_fn_t)blk->m_ops[i+1].m_pval)(),i+1);
-			break;
-
-		case OP_INTRINSIC:
-			fprintf(f,"Intrinsic\\ %s",(*(builtin_fn_t)blk->m_ops[i+1].m_pval)());
 			break;
 
 		case OP_SET_FLAGS:

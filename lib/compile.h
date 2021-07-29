@@ -15,7 +15,6 @@ typedef enum optype
 	OP_GOSUB,
 	OP_RET,
 	OP_BUILTIN,
-	OP_INTRINSIC,
 	OP_SET_FLAGS,
 	OP_CLEAR_FLAGS,
 	OP_PUSH_CUT,

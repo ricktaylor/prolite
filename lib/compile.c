@@ -15,7 +15,6 @@ static const char* builtin_catch(void) { return "catch"; }
 static const char* builtin_throw(void) { return "throw"; }
 static const char* builtin_halt(void) { return "halt"; }
 static const char* builtin_user_defined(void) { return "user_defined"; }
-static const char* builtin_unify(void) { return "unify"; }
 
 void dumpCFG(const cfg_block_t* s, FILE* f);
 
@@ -547,41 +546,35 @@ continuation_t* compile_user_defined(compile_context_t* context, continuation_t*
 	return compile_builtin(context,cont,&builtin_user_defined,1,goal);
 }
 
-static continuation_t* compile_throw_inner(compile_context_t* context, builtin_fn_t builtin, const term_t* goal)
-{
-	continuation_t* c = new_continuation(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,4);
-	(ops++)->m_opcode = OP_PUSH_TERM_REF;
-	(ops++)->m_pval = deref_var(context,goal);
-	(ops++)->m_opcode = OP_INTRINSIC;
-	ops->m_pval = builtin;
-	c->m_always_flags = FLAG_THROW;
-	return c;
-}
-
 static continuation_t* compile_throw(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	return compile_throw_inner(context,&builtin_throw,get_first_arg(goal,NULL,NULL));
+	goal = deref_var(context,get_first_arg(goal,NULL,NULL));
+
+	cont = set_flags(context,new_continuation(context),FLAG_THROW);
+
+	return compile_builtin(context,cont,&builtin_throw,1,goal);
 }
 
 static continuation_t* compile_halt(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	continuation_t* c = compile_throw_inner(context,&builtin_halt,get_first_arg(goal,NULL,NULL));
-	
-	if (get_term_type(goal) == prolite_atom)
-		c->m_always_flags = FLAG_HALT;
+	cont = set_flags(context,new_continuation(context),FLAG_HALT);
 
-	return c;
+	if (get_term_type(goal) != prolite_atom)
+	{
+		goal = deref_var(context,get_first_arg(goal,NULL,NULL));
+	
+		cont = compile_builtin(context,cont,&builtin_halt,1,goal);
+	}
+
+	return cont;
 }
 
 static int compile_is_callable(compile_context_t* context, const term_t* goal)
 {
-	goal = deref_var(context,goal);
-
 	switch (get_term_type(goal))
 	{
 	case prolite_var:
-		return -1;
+		return compile_is_callable(context,deref_var(context,goal));
 
 	case prolite_atom:
 		return 1;
@@ -605,17 +598,10 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 
 static continuation_t* compile_call_inner(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	switch (compile_is_callable(context,goal))
-	{
-	case 1:
+	if (compile_is_callable(context,goal))
 		return compile_goal(context,cont,goal);
 
-	case 0:
-		return compile_throw_inner(context,&builtin_call,goal);
-
-	default:
-		return compile_builtin(context,cont,&builtin_call,1,goal);
-	}	
+	return compile_builtin(context,cont,&builtin_call,1,goal);	
 }
 
 static continuation_t* compile_call(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -718,25 +704,22 @@ static continuation_t* compile_unify_var(compile_context_t* context, continuatio
 	assert(context->m_substs && idx < context->m_substs->m_count);
 
 	continuation_t* c_end = new_continuation(context);
+	opcode_t* ops = append_opcodes(context,c_end->m_tail,2);
+	(ops++)->m_opcode = OP_CLEAR_VAR;
+	ops->m_u64val = idx;
+
 	cont = goto_next(context,cont,c_end);
 
 	continuation_t* c = new_continuation(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,9);
-	(ops++)->m_opcode = OP_PUSH_TERM_REF;
+	ops = append_opcodes(context,c->m_tail,6);
+	(ops++)->m_opcode = OP_UNIFY_VAR;
+	(ops++)->m_u64val = idx;
 	(ops++)->m_pval = g2;
-	(ops++)->m_opcode = OP_PUSH_TERM_REF;
-	(ops++)->m_pval = g1;
-	(ops++)->m_opcode = OP_INTRINSIC;
-	(ops++)->m_pval = &builtin_unify;
 	(ops++)->m_opcode = OP_BRANCH;
 	(ops++)->m_u64val = FLAG_FAIL;
 	ops->m_pval = c_end->m_entry_point;
 
-	c = goto_next(context,c,cont);
-
-	c->m_always_flags |= FLAG_FAIL;
-
-	return c;
+	return goto_next(context,c,cont);
 }
 
 static continuation_t* compile_unify_inner(compile_context_t* context, continuation_t* cont, const term_t* g1, const term_t* g2)
@@ -883,15 +866,10 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 			c = compile_user_defined(context,cont,goal);
 			break;
 
-		case prolite_var:
+		default:
 			c = compile_call_inner(context,cont,deref_var(context,goal));
 			if (!(c->m_always_flags & (FLAG_THROW | FLAG_HALT)))
 				c = wrap_cut(context,c);
-			break;
-
-		default:
-			// We know this throws...
-			c = compile_throw_inner(context,&builtin_call,goal);
 			break;
 		}
 	}
