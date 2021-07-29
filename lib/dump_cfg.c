@@ -219,7 +219,7 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_GOSUB:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=\"both\",label=\"!FTH\"];\n",blk,i,blk->m_ops[i+1].m_pval);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i,blk->m_ops[i+1].m_pval);
 			break;
 
 		case OP_JMP:
@@ -227,7 +227,7 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i+1,blk->m_ops[i+2].m_pval);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both label=\"!FTH\"];\n",blk,i+1,blk->m_ops[i+2].m_pval);
 			break;
 
 		case OP_END:
@@ -242,20 +242,20 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 
 typedef struct cfg_vec
 {
-	size_t len;
+	size_t count;
 	const cfg_block_t** blks;
 } cfg_vec_t;
 
 static int addCFG(cfg_vec_t* blks, const cfg_block_t* blk)
 {
-	for (size_t i=0; i < blks->len; ++i)
+	for (size_t i=0; i < blks->count; ++i)
 	{
 		if (blk == blks->blks[i])
 			return 0;
 	}
 
-	blks->blks = realloc(blks->blks,(blks->len + 1) * sizeof(void*));
-	blks->blks[blks->len++] = blk;
+	blks->blks = realloc(blks->blks,(blks->count + 1) * sizeof(void*));
+	blks->blks[blks->count++] = blk;
 
 	return 1;
 }
@@ -300,7 +300,7 @@ void dumpCFG(const cfg_block_t* b, FILE* f)
 			cfg_vec_t blks = {0};
 			walkCFG(&blks,b);
 
-			for (size_t i=0; i < blks.len; ++i)
+			for (size_t i=0; i < blks.count; ++i)
 				dumpCFGBlock(blks.blks[i],f);
 
 			fprintf(f,"\tstart -> N%p:<f0>;\n",b);
