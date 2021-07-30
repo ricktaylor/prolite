@@ -353,7 +353,8 @@ static continuation_t* compile_if_then_else(compile_context_t* context, continua
 			else
 			{
 				continuation_t* c_end = new_continuation(context);
-
+				c_then = goto_next(context,c_then,c_end);
+				
 				if (c_if->m_entry_point->m_count != 2 ||
 					c_if->m_entry_point->m_ops[0].m_opcode != OP_NOP ||
 					c_if->m_entry_point->m_ops[1].m_opcode != OP_NOP)
@@ -370,7 +371,7 @@ static continuation_t* compile_if_then_else(compile_context_t* context, continua
 
 				if (c_else)
 				{
-					c_then = goto_next(context,c_then,c_end);
+					c_else = goto_next(context,c_else,c_end);
 
 					opcode_t* ops = append_opcodes(context,c_if->m_tail,5);
 					(ops++)->m_opcode = OP_BRANCH_NOT;
@@ -378,12 +379,12 @@ static continuation_t* compile_if_then_else(compile_context_t* context, continua
 					(ops++)->m_pval = c_then->m_entry_point;
 					(ops++)->m_opcode = OP_CLEAR_FLAGS;
 					(ops++)->m_u64val = FLAG_FAIL;
-
-					c_if = goto_next(context,c_if,c_else);
-					c_if = goto_next(context,c_if,c_end);
-
+					
+					c_if = goto_next(context,c_if,c_else);			
 					c_if->m_always_flags &= c_else->m_always_flags;
-				}			
+				}
+				else
+					c_if = goto_next(context,c_if,c_then);
 			}
 		}		
 	}
@@ -577,13 +578,23 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 		return 1;
 
 	case prolite_compound:
+		switch (goal->m_u64val)
 		{
-			uint64_t arity;
-			for (const term_t* p = get_first_arg(goal,&arity,NULL); arity--; p = get_next_arg(p,NULL))
+		case PACK_COMPOUND_EMBED_1(2,','):
+		case PACK_COMPOUND_EMBED_1(2,';'):
+		case PACK_COMPOUND_EMBED_2(2,'-','>'):
 			{
-				if (!compile_is_callable(context,deref_var(context,p)))
-					return 0;
+				uint64_t arity;
+				for (const term_t* p = get_first_arg(goal,&arity,NULL); arity--; p = get_next_arg(p,NULL))
+				{
+					if (!compile_is_callable(context,deref_var(context,p)))
+						return 0;
+				}
 			}
+			break;
+
+		default:
+			break;
 		}
 		return 1;
 
@@ -618,16 +629,13 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 	const term_t* g2 = get_next_arg(g1,NULL);
 	const term_t* g3 = get_next_arg(g2,NULL);
 
-	continuation_t* c = compile_call_inner(context,convert_to_gosub(context,cont),g1);
-	unsigned int flags = c->m_always_flags;
-	c = wrap_cut(context,c);
-
-	if (!(flags & FLAG_HALT))
+	continuation_t* c = wrap_cut(context,compile_call_inner(context,convert_to_gosub(context,cont),g1));	
+	if (!(c->m_always_flags & FLAG_HALT))
 	{
 		continuation_t* c_end = new_continuation(context);
 		
 		continuation_t* c_resume;
-		if (flags & FLAG_THROW)
+		if (c->m_always_flags & FLAG_THROW)
 			c_resume = wrap_cut(context,compile_call_inner(context,cont,g3));
 		else
 			c_resume = wrap_cut(context,compile_call_inner(context,convert_to_gosub(context,cont),g3));
@@ -635,7 +643,7 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 		continuation_t* c_catch = compile_builtin(context,c_resume,&builtin_catch,1,g2);
 		c_catch = goto_next(context,c_catch,c_end);
 
-		if (flags & FLAG_THROW)
+		if (c->m_always_flags & FLAG_THROW)
 			c_end = c_catch;
 		else
 		{
