@@ -61,16 +61,24 @@ typedef struct compile_context
 	jmp_buf          m_jmp;
 } compile_context_t;
 
-typedef const char* (*builtin_fn_t)(void);
+typedef int (*builtin_fn_t)(context_t* context);
 
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
-static inline const char* builtin_##f(void) { return #f; }
+static inline int builtin_##f(context_t* context) { return 0; }
 
 #define DECLARE_BUILTIN_HYBRID(f,n) \
-static inline const char* builtin_##f(void) { return #f; } \
+static inline int builtin_##f(context_t* context) { return 0; } \
 continuation_t* compile_##f(compile_context_t* context, continuation_t* cont, const term_t* goal);
 
 #include "builtin_functions.h"
+
+int builtin_call(context_t* context);
+int builtin_callN(context_t* context);
+int builtin_catch(context_t* context);
+int builtin_throw(context_t* context);
+int builtin_halt(context_t* context);
+int builtin_user_defined(context_t* context);
+int builtin_callable(context_t* context);
 
 const term_t* deref_var(compile_context_t* context, const term_t* goal);
 continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, uint64_t arity, const term_t* g1);

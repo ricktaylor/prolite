@@ -17,6 +17,7 @@ DECLARE_BUILTIN_INTRINSIC(halt,PACK_ATOM_EMBED_4('h','a','l','t'))
 DECLARE_BUILTIN_INTRINSIC(unify,PACK_COMPOUND_EMBED_1(2,'='))
 DECLARE_BUILTIN_INTRINSIC(not_unifiable,PACK_COMPOUND_EMBED_2(2,'\\','='))
 DECLARE_BUILTIN_INTRINSIC(callable,PACK_COMPOUND_BUILTIN(callable,1))
+DECLARE_BUILTIN_INTRINSIC(unify_with_occurs_check,PACK_COMPOUND_BUILTIN(unify_with_occurs_check,2))
 #endif
 
 #if defined(DECLARE_BUILTIN_HYBRID)
@@ -32,7 +33,6 @@ DECLARE_BUILTIN_HYBRID(ground,PACK_COMPOUND_BUILTIN(ground,1))
 #endif
 
 #if defined(DECLARE_BUILTIN_FUNCTION)
-DECLARE_BUILTIN_FUNCTION(unify_with_occurs_check,PACK_COMPOUND_BUILTIN(unify_with_occurs_check,2))
 DECLARE_BUILTIN_FUNCTION(set_prolog_flag,PACK_COMPOUND_BUILTIN(set_prolog_flag,2))
 DECLARE_BUILTIN_FUNCTION(char_conversion,PACK_COMPOUND_BUILTIN(char_conversion,2))
 DECLARE_BUILTIN_FUNCTION(current_char_conversion,PACK_COMPOUND_BUILTIN(current_char_conversion,2))

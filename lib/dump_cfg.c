@@ -5,6 +5,45 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#undef DECLARE_BUILTIN_INTRINSIC
+#define DECLARE_BUILTIN_INTRINSIC(f,n)
+
+#undef DECLARE_BUILTIN_HYBRID
+#define DECLARE_BUILTIN_HYBRID(f,n) \
+	{ &builtin_##f, #f },
+
+#undef DECLARE_BUILTIN_FUNCTION
+#define DECLARE_BUILTIN_FUNCTION(f,n) \
+	{ &builtin_##f, #f },
+
+static const char* builtinName(const builtin_fn_t fn)
+{
+	static const struct builtin_names
+	{
+		builtin_fn_t fn;
+		const char* name;
+	} bns[] =
+	{
+		#include "builtin_functions.h"
+
+		{ &builtin_call, "call" },
+		{ &builtin_callN, "call/N" },
+		{ &builtin_catch, "catch" },
+		{ &builtin_throw, "throw", },
+		{ &builtin_halt, "halt" },
+		{ &builtin_callable, "callable" },
+		{ &builtin_user_defined, "user_defined" }
+	};
+
+	for (size_t i=0; i < sizeof(bns)/sizeof(bns[0]); ++i)
+	{
+		if (fn == bns[i].fn)
+			return bns[i].name;
+	}
+
+	return "unknown";
+}
+
 static void fmtFlags(uint64_t v, char* buf)
 {
 	char* s = buf;
@@ -151,7 +190,7 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ !FTH,\\ Gosub",(*(builtin_fn_t)blk->m_ops[i+1].m_pval)(),i+1);
+			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ !FTH,\\ Gosub",builtinName(blk->m_ops[i+1].m_pval),i+1);
 			break;
 
 		case OP_SET_FLAGS:

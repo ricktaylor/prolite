@@ -9,14 +9,14 @@
 // TEMP
 #include <stdio.h>
 
-static const char* builtin_call(void) { return "call"; }
-static const char* builtin_callN(void) { return "call_N"; }
-static const char* builtin_catch(void) { return "catch"; }
-static const char* builtin_throw(void) { return "throw"; }
-static const char* builtin_halt(void) { return "halt"; }
-static const char* builtin_user_defined(void) { return "user_defined"; }
-
 void dumpCFG(const cfg_block_t* s, FILE* f);
+
+int builtin_call(context_t* context) { return 0; }
+int builtin_callN(context_t* context) { return 0; }
+int builtin_catch(context_t* context) { return 0; }
+int builtin_throw(context_t* context) { return 0; }
+int builtin_halt(context_t* context) { return 0; }
+int builtin_user_defined(context_t* context) { return 0; }
 
 // END TEMP
 
@@ -573,9 +573,6 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 {
 	switch (get_term_type(goal))
 	{
-	case prolite_var:
-		return compile_is_callable(context,deref_var(context,goal));
-
 	case prolite_atom:
 		return 1;
 
@@ -584,9 +581,8 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 			uint64_t arity;
 			for (const term_t* p = get_first_arg(goal,&arity,NULL); arity--; p = get_next_arg(p,NULL))
 			{
-				int r = compile_is_callable(context,p);
-				if (r != 1)
-					return r;
+				if (!compile_is_callable(context,deref_var(context,p)))
+					return 0;
 			}
 		}
 		return 1;
@@ -598,29 +594,22 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 
 static continuation_t* compile_call_inner(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
+	goal = deref_var(context,goal);
+
 	if (compile_is_callable(context,goal))
 		return compile_goal(context,cont,goal);
 
-	return compile_builtin(context,cont,&builtin_call,1,goal);	
+	return compile_builtin(context,cont,&builtin_call,1,goal);
 }
 
 static continuation_t* compile_call(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-	continuation_t* c = compile_call_inner(context,cont,g1);
-	if (!(c->m_always_flags & (FLAG_THROW | FLAG_HALT)))
-		c = wrap_cut(context,c);
-	
-	return c;
+	return wrap_cut(context,compile_call_inner(context,cont,get_first_arg(goal,NULL,NULL)));
 }
 
 static continuation_t* compile_callN(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	continuation_t* c = compile_builtin(context,cont,&builtin_callN,1,goal);
-	if (!(c->m_always_flags & (FLAG_THROW | FLAG_HALT)))
-		c = wrap_cut(context,c);
-	
-	return c;
+	return wrap_cut(context,compile_builtin(context,cont,&builtin_callN,1,goal));
 }
 
 static continuation_t* compile_catch(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -638,13 +627,10 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 		if (c->m_always_flags & FLAG_THROW)
 			c_resume = compile_call_inner(context,cont,g3);
 		else
-		{
-			c = wrap_cut(context,c);
 			c_resume = compile_call_inner(context,convert_to_gosub(context,cont),g3);
-		}
-
-		if (!(c_resume->m_always_flags & (FLAG_THROW | FLAG_HALT)))
-			c_resume = wrap_cut(context,c_resume);
+					
+		c = wrap_cut(context,c);
+		c_resume = wrap_cut(context,c_resume);
 		
 		continuation_t* c_catch = compile_builtin(context,c_resume,&builtin_catch,1,g2);
 		c_catch = goto_next(context,c_catch,c_end);
@@ -665,10 +651,8 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 
 static continuation_t* compile_once(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-
 	continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
-	c = compile_call_inner(context,c,g1);
+	c = compile_call_inner(context,c,get_first_arg(goal,NULL,NULL));
 
 	return compile_if_then_else(context,c,cont,NULL);
 }
@@ -697,8 +681,11 @@ static continuation_t* compile_repeat(compile_context_t* context, continuation_t
 	return cont;
 }
 
-static continuation_t* compile_unify_var(compile_context_t* context, continuation_t* cont, const term_t* g1, const term_t* g2)
+static continuation_t* compile_unify_var(compile_context_t* context, continuation_t* cont, const term_t* g1, const term_t* g2, int with_occurs_check)
 {
+	// TODO!
+	assert(!with_occurs_check);
+	
 	uint64_t idx = get_var_index(g1);
 
 	assert(context->m_substs && idx < context->m_substs->m_count);
@@ -722,20 +709,20 @@ static continuation_t* compile_unify_var(compile_context_t* context, continuatio
 	return goto_next(context,c,cont);
 }
 
-static continuation_t* compile_unify_inner(compile_context_t* context, continuation_t* cont, const term_t* g1, const term_t* g2)
+static continuation_t* compile_unify_inner(compile_context_t* context, continuation_t* cont, const term_t* g1, const term_t* g2, int with_occurs_check)
 {
 	prolite_type_t t1 = get_term_type(g1);
 	if (t1 == prolite_var)
 	{
 		if (g1->m_u64val != g2->m_u64val)
-			cont = compile_unify_var(context,cont,g1,g2);
+			cont = compile_unify_var(context,cont,g1,g2,with_occurs_check);
 		
 		return cont;
 	}
 	
 	prolite_type_t t2 = get_term_type(g2);
 	if (t2 == prolite_var)
-		return compile_unify_inner(context,cont,g2,g1);
+		return compile_unify_inner(context,cont,g2,g1,with_occurs_check);
 
 	if (t1 == t2)
 	{
@@ -761,7 +748,7 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 			continuation_t* c = cont;
 			while (arity--)
 			{
-				c = compile_unify_inner(context,c,rev[arity*2],rev[arity*2+1]);
+				c = compile_unify_inner(context,c,rev[arity*2],rev[arity*2+1],with_occurs_check);
 				if (c->m_always_flags & FLAG_FAIL)
 					break;
 			}					
@@ -779,7 +766,15 @@ static continuation_t* compile_unify(compile_context_t* context, continuation_t*
 	const term_t* g1 = get_first_arg(goal,NULL,NULL);
 	const term_t* g2 = get_next_arg(g1,NULL);
 
-	return compile_unify_inner(context,cont,deref_var(context,g1),deref_var(context,g2));
+	return compile_unify_inner(context,cont,deref_var(context,g1),deref_var(context,g2),0);
+}
+
+static continuation_t* compile_unify_with_occurs_check(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = get_first_arg(goal,NULL,NULL);
+	const term_t* g2 = get_next_arg(g1,NULL);
+
+	return compile_unify_inner(context,cont,deref_var(context,g1),deref_var(context,g2),1);
 }
 
 static continuation_t* compile_not_unifiable(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -788,26 +783,22 @@ static continuation_t* compile_not_unifiable(compile_context_t* context, continu
 	const term_t* g2 = get_next_arg(g1,NULL);
 
 	continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
-	c = compile_unify_inner(context,c,deref_var(context,g1),deref_var(context,g2));
+	c = compile_unify_inner(context,c,deref_var(context,g1),deref_var(context,g2),0);
 
 	return compile_if_then_else(context,c,compile_false(context,cont,NULL),cont);
 }
 
 static continuation_t* compile_not_proveable(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-
 	continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
-	c = compile_call_inner(context,c,g1);
+	c = compile_call_inner(context,c,get_first_arg(goal,NULL,NULL));
 
 	return compile_if_then_else(context,c,compile_false(context,cont,NULL),cont);
 }
 
-const char* builtin_callable(void);
-
 static continuation_t* compile_callable(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
 	switch (compile_is_callable(context,g1))
 	{
 	case 1:
@@ -867,9 +858,7 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 			break;
 
 		default:
-			c = compile_call_inner(context,cont,deref_var(context,goal));
-			if (!(c->m_always_flags & (FLAG_THROW | FLAG_HALT)))
-				c = wrap_cut(context,c);
+			c = wrap_cut(context,compile_call_inner(context,cont,goal));
 			break;
 		}
 	}

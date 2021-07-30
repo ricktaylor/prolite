@@ -489,7 +489,6 @@ int term_compare(const term_t* t1, const term_t* t2)
 			break;
 
 		case prolite_double:
-			// Warning - there be dragons here with epsilon
 			r = (t1->m_dval == t2->m_dval);
 			break;
 		
@@ -554,7 +553,7 @@ int term_precedes(const term_t* t1, const term_t* t2)
 			break;
 
 		case prolite_double:
-			// Warning - there be dragons here with epsilon
+			// Warning - Here be dragons with epsilon
 			// See: https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
 			r = (int)(t1->m_dval - t2->m_dval);
 			break;
@@ -719,4 +718,4 @@ continuation_t* compile_ground(compile_context_t* context, continuation_t* cont,
 	return compile_builtin(context,cont,&builtin_ground,1,g1);
 }
 
-const char* builtin_callable(void) { return "callable"; }
+int builtin_callable(context_t* context) { return 0; }
