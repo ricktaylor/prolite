@@ -619,23 +619,23 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 	const term_t* g3 = get_next_arg(g2,NULL);
 
 	continuation_t* c = compile_call_inner(context,convert_to_gosub(context,cont),g1);
-	if (!(c->m_always_flags & FLAG_HALT))
+	unsigned int flags = c->m_always_flags;
+	c = wrap_cut(context,c);
+
+	if (!(flags & FLAG_HALT))
 	{
 		continuation_t* c_end = new_continuation(context);
 		
 		continuation_t* c_resume;
-		if (c->m_always_flags & FLAG_THROW)
-			c_resume = compile_call_inner(context,cont,g3);
+		if (flags & FLAG_THROW)
+			c_resume = wrap_cut(context,compile_call_inner(context,cont,g3));
 		else
-			c_resume = compile_call_inner(context,convert_to_gosub(context,cont),g3);
-					
-		c = wrap_cut(context,c);
-		c_resume = wrap_cut(context,c_resume);
+			c_resume = wrap_cut(context,compile_call_inner(context,convert_to_gosub(context,cont),g3));
 		
 		continuation_t* c_catch = compile_builtin(context,c_resume,&builtin_catch,1,g2);
 		c_catch = goto_next(context,c_catch,c_end);
 
-		if (c->m_always_flags & FLAG_THROW)
+		if (flags & FLAG_THROW)
 			c_end = c_catch;
 		else
 		{
