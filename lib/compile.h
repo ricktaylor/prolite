@@ -5,6 +5,19 @@
 
 #include <setjmp.h>
 
+typedef enum prolite_type_flags
+{
+	type_flag_double = (1 << prolite_double),
+	type_flag_var = (1 << prolite_var),
+	type_flag_int32 = (1 << prolite_int32),
+	type_flag_atom = (1 << prolite_atom),
+	type_flag_compound = (1 << prolite_compound),
+	type_flag_chars = (1 << prolite_chars),
+	type_flag_charcodes = (1 << prolite_charcodes),
+	type_flag_userdata = (1 << prolite_userdata)
+
+} prolite_type_flags_t;
+
 typedef enum optype
 {
 	OP_NOP = 0,
@@ -22,30 +35,47 @@ typedef enum optype
 	OP_BRANCH,
 	OP_BRANCH_NOT,
 	OP_PUSH_TERM_REF,
-	OP_UNIFY_VAR,
-	OP_CLEAR_VAR
+	OP_SET_VAR,
+	OP_CLEAR_VAR,
+	OP_TYPE_TEST,
+	OP_TERM_CMP
 } optype_t;
+
+typedef enum exec_flags
+{
+	FLAG_FAIL = 1,
+	FLAG_CUT = 2,
+	FLAG_THROW = 4,
+	FLAG_HALT = 8
+} exec_flags_t;
+
+struct op_arg
+{
+	optype_t m_op;
+	uint32_t m_arg;
+};
 
 typedef union opcode
 {
-	optype_t    m_opcode;
-	double      m_dval;
-	uint64_t    m_u64val;
-	const void* m_pval;
+	struct op_arg m_opcode;
+	double        m_dval;
+	uint64_t      m_u64val;
+	const void*   m_pval;
 } opcode_t;
 
 typedef struct cfg_block
 {
+	size_t    m_inputs;
 	size_t    m_count;  //< in sizeof(m_ops[0])
 	opcode_t* m_ops;
 } cfg_block_t;
 
 typedef struct continuation
 {
-	const cfg_block_t* m_entry_point;
-	cfg_block_t*       m_tail;
-	uint8_t            m_always_flags;
-	unsigned           m_subroutine : 1;
+	cfg_block_t* m_entry_point;
+	cfg_block_t* m_tail;
+	uint8_t      m_always_flags;
+	unsigned     m_subroutine : 1;
 } continuation_t;
 
 typedef struct substitutions
@@ -66,10 +96,6 @@ typedef int (*builtin_fn_t)(context_t* context);
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
 static inline int builtin_##f(context_t* context) { return 0; }
 
-#define DECLARE_BUILTIN_HYBRID(f,n) \
-static inline int builtin_##f(context_t* context) { return 0; } \
-continuation_t* compile_##f(compile_context_t* context, continuation_t* cont, const term_t* goal);
-
 #include "builtin_functions.h"
 
 int builtin_call(context_t* context);
@@ -79,6 +105,7 @@ int builtin_throw(context_t* context);
 int builtin_halt(context_t* context);
 int builtin_user_defined(context_t* context);
 int builtin_callable(context_t* context);
+int builtin_occurs_check(context_t* context);
 
 const term_t* deref_var(compile_context_t* context, const term_t* goal);
 continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, uint64_t arity, const term_t* g1);
@@ -88,5 +115,7 @@ static inline continuation_t* compile_true(compile_context_t* context, continuat
 	return cont;
 }
 continuation_t* compile_false(compile_context_t* context, continuation_t* cont, const term_t* goal);
+
+continuation_t* compile_type_test(compile_context_t* context, continuation_t* cont, prolite_type_flags_t types, int negate, const term_t* goal);
 
 #endif // COMPILE_H_

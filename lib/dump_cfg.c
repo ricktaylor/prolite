@@ -8,10 +8,6 @@
 #undef DECLARE_BUILTIN_INTRINSIC
 #define DECLARE_BUILTIN_INTRINSIC(f,n)
 
-#undef DECLARE_BUILTIN_HYBRID
-#define DECLARE_BUILTIN_HYBRID(f,n) \
-	{ &builtin_##f, #f },
-
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
 	{ &builtin_##f, #f },
@@ -32,7 +28,8 @@ static const char* builtinName(const builtin_fn_t fn)
 		{ &builtin_throw, "throw", },
 		{ &builtin_halt, "halt" },
 		{ &builtin_callable, "callable" },
-		{ &builtin_user_defined, "user_defined" }
+		{ &builtin_user_defined, "user_defined" },
+		{ &builtin_occurs_check, "occurs_check" }
 	};
 
 	for (size_t i=0; i < sizeof(bns)/sizeof(bns[0]); ++i)
@@ -44,7 +41,7 @@ static const char* builtinName(const builtin_fn_t fn)
 	return "unknown";
 }
 
-static void fmtFlags(uint64_t v, char* buf)
+static void fmtFlags(exec_flags_t v, char* buf)
 {
 	char* s = buf;
 
@@ -59,6 +56,31 @@ static void fmtFlags(uint64_t v, char* buf)
 
 	if (v & FLAG_HALT)
 		*buf++ = 'H';
+
+	if (buf == s)
+		*buf++ = '0';
+
+	*buf = '\0';
+}
+
+static void fmtTypeFlags(prolite_type_flags_t v, char* buf)
+{
+	char* s = buf;
+
+	if (v & type_flag_double)
+		*buf++ = 'D';
+
+	if (v & type_flag_var)
+		*buf++ = 'V';
+
+	if (v & type_flag_int32)
+		*buf++ = 'I';
+
+	if (v & type_flag_atom)
+		*buf++ = 'A';
+
+	if (v & (type_flag_compound | type_flag_chars | type_flag_charcodes))
+		*buf++ = 'C';
 
 	if (buf == s)
 		*buf++ = '0';
@@ -110,23 +132,23 @@ static void dumpTerm(const term_t* t, FILE* f)
 	}
 }
 
-static size_t opInc(enum optype op, size_t i)
+static size_t opInc(optype_t op, size_t i)
 {
 	switch (op)
 	{
 	case OP_JMP:
 	case OP_GOSUB:
-	case OP_SET_FLAGS:
-	case OP_CLEAR_FLAGS:
 	case OP_CLEAR_VAR:
+	case OP_TYPE_TEST:
 	case OP_PUSH_TERM_REF:
+	case OP_BRANCH:
+	case OP_BRANCH_NOT:
 		++i;
 		break;
 
-	case OP_BRANCH:
-	case OP_BRANCH_NOT:
 	case OP_BUILTIN:
-    case OP_UNIFY_VAR:
+    case OP_SET_VAR:
+	case OP_TERM_CMP:
 	case OP_DATA:
 		i+=2;
 		break;	
@@ -140,7 +162,7 @@ static size_t opInc(enum optype op, size_t i)
 
 static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 {
-	char buf[5] = {0};
+	char buf[10] = {0};
 
 	fprintf(f,"\tnode [shape=record];\n");
 	fprintf(f,"\tN%p [label=\"{",blk);
@@ -150,16 +172,16 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 		fprintf(f,"<f0> WTF?!?!");
 	}
 
-	for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode,i))
+	for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode.m_op,i))
 	{
-		if (blk->m_ops[i].m_opcode != OP_END)
+		if (blk->m_ops[i].m_opcode.m_op != OP_END)
 		{
 			if (i)
 				fprintf(f,"|");
 			fprintf(f,"<f%zu> ",i);
 		}
 
-		switch (blk->m_ops[i].m_opcode)
+		switch (blk->m_ops[i].m_opcode.m_op)
 		{
 		case OP_NOP:
 			fprintf(f,"(NOP)");
@@ -194,12 +216,12 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_SET_FLAGS:
-			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
+			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
 			fprintf(f,"Set\\ Flags\\ %s",buf);
 			break;
 
 		case OP_CLEAR_FLAGS:
-			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
+			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
 			fprintf(f,"Clear\\ Flags\\ %s",buf);
 			break;
 
@@ -212,12 +234,12 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BRANCH:
-			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
+			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
 			fprintf(f,"Branch \\%s",buf);
 			break;
 
 		case OP_BRANCH_NOT:
-			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
+			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
 			fprintf(f,"Branch !\\%s",buf);
 			break;
 
@@ -226,8 +248,8 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			dumpTerm(blk->m_ops[i+1].m_pval,f);
 			break;
 
-		case OP_UNIFY_VAR:
-			fprintf(f,"Unify var%zu\\ =\\ ",(size_t)blk->m_ops[i+1].m_u64val);
+		case OP_SET_VAR:
+			fprintf(f,"Set var%zu\\ =\\ ",(size_t)blk->m_ops[i+1].m_u64val);
 			dumpTerm(blk->m_ops[i+2].m_pval,f);
 			break;
 
@@ -235,26 +257,38 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			fprintf(f,"Clear\\ var%zu",(size_t)blk->m_ops[i+1].m_u64val);
 			break;
 
+		case OP_TYPE_TEST:
+			fmtTypeFlags(blk->m_ops[i].m_opcode.m_arg,buf);
+			fprintf(f,"Type(var%zu)\\ ==\\ %s",(size_t)blk->m_ops[i+1].m_u64val,buf);
+			break;
+
+		case OP_TERM_CMP:
+			fprintf(f,"Test\\ ");
+			dumpTerm(blk->m_ops[i+1].m_pval,f);
+			fprintf(f,"\\ ==\\ ");
+			dumpTerm(blk->m_ops[i+2].m_pval,f);
+			break;
+
 		default:
-			fprintf(f,"WTF? %zu",(size_t)blk->m_ops[i].m_opcode);
+			fprintf(f,"WTF? %zu",(size_t)blk->m_ops[i].m_u64val);
 			break;
 		}
 	}
 
 	fprintf(f,"}\"];\n");
 
-	for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode,i))
+	for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode.m_op,i))
 	{
-		switch (blk->m_ops[i].m_opcode)
+		switch (blk->m_ops[i].m_opcode.m_op)
 		{
 		case OP_BRANCH:
-			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"%s\"];\n",blk,i,blk->m_ops[i+2].m_pval,buf);
+			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"%s\"];\n",blk,i,blk->m_ops[i+1].m_pval,buf);
 			break;
 
 		case OP_BRANCH_NOT:
-			fmtFlags(blk->m_ops[i+1].m_u64val,buf);
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"!%s\"];\n",blk,i,blk->m_ops[i+2].m_pval,buf);
+			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"!%s\"];\n",blk,i,blk->m_ops[i+1].m_pval,buf);
 			break;
 
 		case OP_GOSUB:
@@ -270,7 +304,7 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_END:
-			fprintf(f,"\tN%p:<f%zu> -> end;\n",blk,i-2);
+			fprintf(f,"\tN%p:<f%zu> -> end;\n",blk,i-1);
 			break;
 
 		default:
@@ -303,17 +337,17 @@ static void walkCFG(cfg_vec_t* blks, const cfg_block_t* blk)
 {
 	if (addCFG(blks,blk))
 	{
-		for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode,i))
+		for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode.m_op,i))
 		{
-			switch (blk->m_ops[i].m_opcode)
+			switch (blk->m_ops[i].m_opcode.m_op)
 			{
 			case OP_JMP:
 			case OP_GOSUB:
+			case OP_BRANCH:
+			case OP_BRANCH_NOT:
 				walkCFG(blks,blk->m_ops[i+1].m_pval);
 				break;
 
-			case OP_BRANCH:
-			case OP_BRANCH_NOT:
 			case OP_BUILTIN:
             	walkCFG(blks,blk->m_ops[i+2].m_pval);
 				break;

@@ -51,14 +51,6 @@ typedef struct debug_info
 	int TODO;
 } debug_info_t;
 
-typedef enum exec_flags
-{
-	FLAG_FAIL = 1,
-	FLAG_CUT = 2,
-	FLAG_THROW = 4,
-	FLAG_HALT = 8
-} exec_flags_t;
-
 typedef enum operator_specifier
 {
 	eFX,
@@ -155,20 +147,3 @@ int predicate_compare(const term_t* c1, const term_t* c2);
 int term_compare(const term_t* t1, const term_t* t2);
 
 #endif /* TYPES_H_ */
-
-
-/* OLD GUFF
-
-struct predicate;
-
-struct clause
-{
-	struct predicate*   m_pred;
-	struct clause*      m_next;
-	struct clause*      m_prev;
-	size_t              m_var_count;
-	const term_t*       m_head;
-	size_t              m_entry_point;
-};
-
-*/

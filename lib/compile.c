@@ -17,6 +17,9 @@ int builtin_catch(context_t* context) { return 0; }
 int builtin_throw(context_t* context) { return 0; }
 int builtin_halt(context_t* context) { return 0; }
 int builtin_user_defined(context_t* context) { return 0; }
+int builtin_occurs_check(context_t* context) { return 0; }
+int builtin_callable(context_t* context) { return 0; }
+int builtin_ground(context_t* context) { return 0; }
 
 // END TEMP
 
@@ -26,6 +29,7 @@ static cfg_block_t* new_cfg_block(compile_context_t* context)
 	if (!b)
 		longjmp(context->m_jmp,1);
 
+	b->m_inputs = 0;
 	b->m_count = 0;
 	b->m_ops = NULL;
 	return b;
@@ -64,7 +68,7 @@ static substitutions_t* copy_substitutions(compile_context_t* context, const sub
 {
 	if (!s)
 		return NULL;
-	
+
 	substitutions_t* s2 = heap_malloc(&context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * s->m_count));
 	if (!s2)
 		longjmp(context->m_jmp,1);
@@ -74,59 +78,55 @@ static substitutions_t* copy_substitutions(compile_context_t* context, const sub
 	return s2;
 }
 
-static continuation_t* set_flags(compile_context_t* context, continuation_t* c, uint8_t flags)
+static continuation_t* set_flags(compile_context_t* context, continuation_t* c, exec_flags_t flags)
 {
-	if (c->m_tail->m_count >= 2 &&
-		c->m_tail->m_ops[c->m_tail->m_count-2].m_opcode == OP_CLEAR_FLAGS &&
-		(c->m_tail->m_ops[c->m_tail->m_count-1].m_u64val & flags))
+	if (c->m_tail->m_count &&
+		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op == OP_CLEAR_FLAGS &&
+		(c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg & flags))
 	{
-		c->m_tail->m_ops[c->m_tail->m_count-1].m_u64val &= ~flags;
-		if (c->m_tail->m_ops[c->m_tail->m_count-1].m_u64val == 0)
+		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg &= ~flags;
+		if (c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg == 0)
 		{
-			c->m_tail->m_ops[c->m_tail->m_count-2].m_opcode = OP_NOP;
-			c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode = OP_NOP;
+			c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op = OP_NOP;
 		}
 	}
-	else if (c->m_tail->m_count >= 2 &&
-		c->m_tail->m_ops[c->m_tail->m_count-2].m_opcode == OP_SET_FLAGS)
+	else if (c->m_tail->m_count &&
+		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op == OP_SET_FLAGS)
 	{
-		c->m_tail->m_ops[c->m_tail->m_count-1].m_u64val |= flags;
+		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg |= flags;
 	}
 	else
 	{
-		opcode_t* ops = append_opcodes(context,c->m_tail,2);
-		(ops++)->m_opcode = OP_SET_FLAGS;
-		ops->m_u64val = flags;
+		opcode_t* ops = append_opcodes(context,c->m_tail,1);
+		ops->m_opcode = (struct op_arg){ .m_op = OP_SET_FLAGS, .m_arg = flags};
 	}
 
 	c->m_always_flags |= flags;
-	
+
 	return c;
 }
 
-static continuation_t* clear_flags(compile_context_t* context, continuation_t* c, uint8_t flags)
+static continuation_t* clear_flags(compile_context_t* context, continuation_t* c, exec_flags_t flags)
 {
-	if (c->m_tail->m_count >= 2 &&
-		c->m_tail->m_ops[c->m_tail->m_count-2].m_opcode == OP_SET_FLAGS &&
-		(c->m_tail->m_ops[c->m_tail->m_count-1].m_u64val & flags))
+	if (c->m_tail->m_count &&
+		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op == OP_SET_FLAGS &&
+		(c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg & flags))
 	{
-		c->m_tail->m_ops[c->m_tail->m_count-1].m_u64val &= ~flags;
-		if (c->m_tail->m_ops[c->m_tail->m_count-1].m_u64val == 0)
+		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg &= ~flags;
+		if (c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg == 0)
 		{
-			c->m_tail->m_ops[c->m_tail->m_count-2].m_opcode = OP_NOP;
-			c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode = OP_NOP;
+			c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op = OP_NOP;
 		}
 	}
-	else if (c->m_tail->m_count >= 2 &&
-		c->m_tail->m_ops[c->m_tail->m_count-2].m_opcode == OP_CLEAR_FLAGS)
+	else if (c->m_tail->m_count &&
+		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op == OP_CLEAR_FLAGS)
 	{
-		c->m_tail->m_ops[c->m_tail->m_count-1].m_u64val |= flags;
+		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg |= flags;
 	}
 	else
 	{
-		opcode_t* ops = append_opcodes(context,c->m_tail,2);
-		(ops++)->m_opcode = OP_CLEAR_FLAGS;
-		ops->m_u64val = flags;
+		opcode_t* ops = append_opcodes(context,c->m_tail,1);
+		ops->m_opcode = (struct op_arg){ .m_op = OP_CLEAR_FLAGS, .m_arg = flags};
 	}
 
 	c->m_always_flags &= ~flags;
@@ -140,27 +140,39 @@ static continuation_t* goto_next(compile_context_t* context, continuation_t* c, 
 	if (next->m_subroutine)
 	{
 		while (next->m_entry_point->m_count == 3 &&
-			next->m_entry_point->m_ops[0].m_opcode == OP_GOSUB &&
-			next->m_entry_point->m_ops[2].m_opcode == OP_RET)
+			next->m_entry_point->m_ops[0].m_opcode.m_op == OP_GOSUB &&
+			next->m_entry_point->m_ops[2].m_opcode.m_op == OP_RET)
 		{
-			next->m_entry_point = next->m_entry_point->m_ops[1].m_pval;
+			next->m_entry_point = (void*)next->m_entry_point->m_ops[1].m_pval;
 		}
 
-		(ops++)->m_opcode = OP_GOSUB;
+		(ops++)->m_opcode.m_op = OP_GOSUB;
 		ops->m_pval = next->m_entry_point;
 	}
 	else
 	{
 		while (next->m_entry_point->m_count == 2 &&
-			next->m_entry_point->m_ops[0].m_opcode == OP_JMP)
+			next->m_entry_point->m_ops[0].m_opcode.m_op == OP_JMP)
 		{
-			next->m_entry_point = next->m_entry_point->m_ops[1].m_pval;
+			next->m_entry_point = (void*)next->m_entry_point->m_ops[1].m_pval;
 		}
 
-		(ops++)->m_opcode = OP_JMP;
+		(ops++)->m_opcode.m_op = OP_JMP;
 		ops->m_pval = next->m_entry_point;
+		++next->m_entry_point->m_inputs;
 		c->m_tail = next->m_tail;
 	}
+	return c;
+}
+
+static continuation_t* add_branch(compile_context_t* context, continuation_t* c, optype_t branch, exec_flags_t flags, continuation_t* next)
+{
+	opcode_t* ops = append_opcodes(context,c->m_tail,2);
+	ops->m_opcode.m_op = branch;
+	(ops++)->m_opcode.m_arg = flags;
+	(ops++)->m_pval = next->m_entry_point;
+	++next->m_entry_point->m_inputs;
+
 	return c;
 }
 
@@ -169,7 +181,7 @@ static continuation_t* make_subroutine(compile_context_t* context, continuation_
 	if (!c->m_subroutine)
 	{
 		opcode_t* ops = append_opcodes(context,c->m_tail,1);
-		ops->m_opcode = OP_RET;
+		ops->m_opcode.m_op = OP_RET;
 		c->m_subroutine = 1;
 	}
 	return c;
@@ -194,25 +206,23 @@ static continuation_t* wrap_cut(compile_context_t* context, continuation_t* cont
 
 	// Short-circuit just a flag set (used by some builtins)
 	if (cont->m_entry_point == cont->m_tail &&
-		cont->m_entry_point->m_count == 2 &&
-		cont->m_entry_point->m_ops[0].m_opcode == OP_SET_FLAGS)
+		cont->m_entry_point->m_count == 1 &&
+		cont->m_entry_point->m_ops[0].m_opcode.m_op == OP_SET_FLAGS)
 	{
-		cont->m_entry_point->m_ops[1].m_u64val &= ~FLAG_CUT;
-		if (cont->m_entry_point->m_ops[1].m_u64val == 0)
-		{
-			cont->m_entry_point->m_ops[0].m_opcode = OP_NOP;
-			cont->m_entry_point->m_ops[1].m_opcode = OP_NOP;
-		}		
+		cont->m_entry_point->m_ops[0].m_opcode.m_op &= ~FLAG_CUT;
+		if (cont->m_entry_point->m_ops[0].m_opcode.m_op == 0)
+			cont->m_entry_point->m_ops[0].m_opcode.m_op = OP_NOP;
+		
 		return cont;
 	}
 
 	continuation_t* c = new_continuation(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,1);
-	ops->m_opcode = OP_PUSH_CUT;
+	ops->m_opcode.m_op = OP_PUSH_CUT;
 	c = goto_next(context,c,cont);
 
 	ops = append_opcodes(context,c->m_tail,1);
-	ops->m_opcode = OP_POP_CUT;
+	ops->m_opcode.m_op = OP_POP_CUT;
 	c->m_always_flags = cont->m_always_flags;
 
 	return c;
@@ -232,7 +242,7 @@ const term_t* deref_var(compile_context_t* context, const term_t* goal)
 
 static void pre_substitute_goal_inner(compile_context_t* context, const term_t* g1, const term_t* g2)
 {
-	prolite_type_t t1 = get_term_type(g1);	
+	prolite_type_t t1 = get_term_type(g1);
 	if (t1 == prolite_var)
 	{
 		if (g1->m_u64val != g2->m_u64val)
@@ -241,7 +251,7 @@ static void pre_substitute_goal_inner(compile_context_t* context, const term_t* 
 			context->m_substs->m_vals[get_var_index(g1)] = g2;
 		}
 	}
-	else 
+	else
 	{
 		prolite_type_t t2 = get_term_type(g2);
 		if (t2 == prolite_var)
@@ -249,8 +259,8 @@ static void pre_substitute_goal_inner(compile_context_t* context, const term_t* 
 			assert(context->m_substs && get_var_index(g2) < context->m_substs->m_count);
 			context->m_substs->m_vals[get_var_index(g2)] = g1;
 		}
-		else if (t1 == t2 && 
-				t1 == prolite_compound && 
+		else if (t1 == t2 &&
+				t1 == prolite_compound &&
 				predicate_compare(g1,g2))
 		{
 			uint64_t arity;
@@ -322,9 +332,8 @@ static continuation_t* compile_if_then_else(compile_context_t* context, continua
 			if (c_else)
 			{
 				c_if = clear_flags(context,c_if,FLAG_FAIL);
-				if (c_if->m_entry_point->m_count == 2 &&
-					c_if->m_entry_point->m_ops[0].m_opcode == OP_NOP &&
-					c_if->m_entry_point->m_ops[1].m_opcode == OP_NOP)
+				if (c_if->m_entry_point->m_count == 1 &&
+					c_if->m_entry_point->m_ops[0].m_opcode.m_op == OP_NOP)
 				{
 					c_if = c_else;
 				}
@@ -341,9 +350,8 @@ static continuation_t* compile_if_then_else(compile_context_t* context, continua
 
 			if (always_true)
 			{
-				if (c_if->m_entry_point->m_count == 2 &&
-					c_if->m_entry_point->m_ops[0].m_opcode == OP_NOP &&
-					c_if->m_entry_point->m_ops[1].m_opcode == OP_NOP)
+				if (c_if->m_entry_point->m_count == 1 &&
+					c_if->m_entry_point->m_ops[0].m_opcode.m_op == OP_NOP)
 				{
 					c_if = c_then;
 				}
@@ -354,39 +362,30 @@ static continuation_t* compile_if_then_else(compile_context_t* context, continua
 			{
 				continuation_t* c_end = new_continuation(context);
 				c_then = goto_next(context,c_then,c_end);
-				
-				if (c_if->m_entry_point->m_count != 2 ||
-					c_if->m_entry_point->m_ops[0].m_opcode != OP_NOP ||
-					c_if->m_entry_point->m_ops[1].m_opcode != OP_NOP)
-				{					
-					opcode_t* ops = append_opcodes(context,c_if->m_tail,3);
-					(ops++)->m_opcode = OP_BRANCH;
 
+				if (c_if->m_entry_point->m_count != 1 ||
+					c_if->m_entry_point->m_ops[0].m_opcode.m_op != OP_NOP)
+				{
 					if (c_else)
-						(ops++)->m_u64val = FLAG_THROW | FLAG_HALT;
+						add_branch(context,c_if,OP_BRANCH,FLAG_THROW | FLAG_HALT,c_end);
 					else
-						(ops++)->m_u64val = FLAG_THROW | FLAG_HALT | FLAG_FAIL;
-					ops->m_pval = c_end->m_entry_point;
+						add_branch(context,c_if,OP_BRANCH,FLAG_THROW | FLAG_HALT | FLAG_FAIL,c_end);
 				}
 
 				if (c_else)
 				{
 					c_else = goto_next(context,c_else,c_end);
 
-					opcode_t* ops = append_opcodes(context,c_if->m_tail,5);
-					(ops++)->m_opcode = OP_BRANCH_NOT;
-					(ops++)->m_u64val = FLAG_FAIL;
-					(ops++)->m_pval = c_then->m_entry_point;
-					(ops++)->m_opcode = OP_CLEAR_FLAGS;
-					(ops++)->m_u64val = FLAG_FAIL;
-					
-					c_if = goto_next(context,c_if,c_else);			
+					add_branch(context,c_if,OP_BRANCH_NOT,FLAG_FAIL,c_then);
+					clear_flags(context,c_if,FLAG_FAIL);
+
+					c_if = goto_next(context,c_if,c_else);
 					c_if->m_always_flags &= c_else->m_always_flags;
 				}
 				else
 					c_if = goto_next(context,c_if,c_then);
 			}
-		}		
+		}
 	}
 
 	return c_if;
@@ -399,7 +398,7 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 
 	substitutions_t* s_orig = context->m_substs;
 	context->m_substs = copy_substitutions(context,context->m_substs);
-	
+
 	if (g1->m_u64val == PACK_COMPOUND_EMBED_2(2,'-','>'))
 	{
 		continuation_t* c_if = set_flags(context,new_continuation(context),FLAG_CUT);
@@ -442,11 +441,9 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 		context->m_substs = s_orig;
 		continuation_t* c2 = compile_goal(context,convert_to_gosub(context,cont),g2);
 
-		continuation_t* c_end = new_continuation(context);	
-		opcode_t* ops = append_opcodes(context,c->m_tail,3);
-		(ops++)->m_opcode = OP_BRANCH;
-		(ops++)->m_u64val = FLAG_CUT | FLAG_THROW | FLAG_HALT;
-		ops->m_pval = c_end->m_entry_point;
+		continuation_t* c_end = new_continuation(context);
+
+		add_branch(context,c,OP_BRANCH,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
 		
 		c2 = goto_next(context,c2,c_end);
 		c = goto_next(context,c,c2);
@@ -461,7 +458,7 @@ static continuation_t* compile_if_then(compile_context_t* context, continuation_
 {
 	const term_t* g_if = get_first_arg(goal,NULL,NULL);
 	const term_t* g_then = get_next_arg(g_if,NULL);
-				
+
 	continuation_t* c_if = set_flags(context,new_continuation(context),FLAG_CUT);
 	c_if = compile_goal(context,c_if,g_if);
 
@@ -494,10 +491,10 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 	cont = make_subroutine(context,cont);
 
 	while (cont->m_entry_point->m_count == 3 &&
-		cont->m_entry_point->m_ops[0].m_opcode == OP_GOSUB &&
-		cont->m_entry_point->m_ops[2].m_opcode == OP_RET)
+		cont->m_entry_point->m_ops[0].m_opcode.m_op == OP_GOSUB &&
+		cont->m_entry_point->m_ops[2].m_opcode.m_op == OP_RET)
 	{
-		cont->m_entry_point = cont->m_entry_point->m_ops[1].m_pval;
+		cont->m_entry_point = (void*)cont->m_entry_point->m_ops[1].m_pval;
 	}
 
 	continuation_t* c = compile_frame_start(context);
@@ -507,7 +504,7 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 		const term_t** rev = heap_malloc(&context->m_heap,arity * sizeof(term_t*));
 		if (!rev)
 			longjmp(context->m_jmp,1);
-		
+
 		for (size_t i = 0; i < arity; ++i)
 		{
 			rev[i] = goal;
@@ -517,21 +514,22 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 		for (size_t i = arity; i--;)
 		{
 			opcode_t* ops = append_opcodes(context,c->m_tail,2);
-			(ops++)->m_opcode = OP_PUSH_TERM_REF;
+			(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
 			ops->m_pval = deref_var(context,rev[i]);
 		}
 	}
 	else
 	{
 		opcode_t* ops = append_opcodes(context,c->m_tail,2);
-		(ops++)->m_opcode = OP_PUSH_TERM_REF;
+		(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
 		ops->m_pval = deref_var(context,goal);
 	}
-	
+
 	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode = OP_BUILTIN;
+	(ops++)->m_opcode.m_op = OP_BUILTIN;
 	(ops++)->m_pval = fn;
 	ops->m_pval = cont->m_entry_point;
+	++cont->m_entry_point->m_inputs;
 
 	compile_frame_end(context,c);
 
@@ -563,7 +561,7 @@ static continuation_t* compile_halt(compile_context_t* context, continuation_t* 
 	if (get_term_type(goal) != prolite_atom)
 	{
 		goal = deref_var(context,get_first_arg(goal,NULL,NULL));
-	
+
 		cont = compile_builtin(context,cont,&builtin_halt,1,goal);
 	}
 
@@ -629,29 +627,25 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 	const term_t* g2 = get_next_arg(g1,NULL);
 	const term_t* g3 = get_next_arg(g2,NULL);
 
-	continuation_t* c = wrap_cut(context,compile_call_inner(context,convert_to_gosub(context,cont),g1));	
+	continuation_t* c = wrap_cut(context,compile_call_inner(context,convert_to_gosub(context,cont),g1));
 	if (!(c->m_always_flags & FLAG_HALT))
 	{
 		continuation_t* c_end = new_continuation(context);
-		
+
 		continuation_t* c_resume;
 		if (c->m_always_flags & FLAG_THROW)
 			c_resume = wrap_cut(context,compile_call_inner(context,cont,g3));
 		else
 			c_resume = wrap_cut(context,compile_call_inner(context,convert_to_gosub(context,cont),g3));
-		
+
 		continuation_t* c_catch = compile_builtin(context,c_resume,&builtin_catch,1,g2);
 		c_catch = goto_next(context,c_catch,c_end);
 
 		if (c->m_always_flags & FLAG_THROW)
 			c_end = c_catch;
 		else
-		{
-			opcode_t* ops = append_opcodes(context,c->m_tail,3);
-			(ops++)->m_opcode = OP_BRANCH;
-			(ops++)->m_u64val = FLAG_THROW;
-			ops->m_pval = c_catch->m_entry_point;
-		}
+			add_branch(context,c,OP_BRANCH,FLAG_THROW,c_catch);
+
 		c = goto_next(context,c,c_end);
 	}
 	return c;
@@ -675,14 +669,13 @@ static continuation_t* compile_repeat(compile_context_t* context, continuation_t
 	if (cont->m_subroutine)
 		cont = goto_next(context,new_continuation(context),cont);
 
-	opcode_t* ops = append_opcodes(context,cont->m_tail,7);
-	(ops++)->m_opcode = OP_BRANCH;
-	(ops++)->m_u64val = FLAG_CUT | FLAG_THROW | FLAG_HALT;
-	(ops++)->m_pval = c_end->m_entry_point;
-	(ops++)->m_opcode = OP_CLEAR_FLAGS;
-	(ops++)->m_u64val = FLAG_FAIL;
-	(ops++)->m_opcode = OP_JMP;
+	add_branch(context,cont,OP_BRANCH,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+	clear_flags(context,cont,FLAG_FAIL);
+	
+	opcode_t* ops = append_opcodes(context,cont->m_tail,2);
+	(ops++)->m_opcode.m_op = OP_JMP;
 	ops->m_pval = cont->m_entry_point;
+	++cont->m_entry_point->m_inputs;
 
 	cont->m_tail = c_end->m_tail;
 
@@ -691,30 +684,56 @@ static continuation_t* compile_repeat(compile_context_t* context, continuation_t
 
 static continuation_t* compile_unify_var(compile_context_t* context, continuation_t* cont, const term_t* g1, const term_t* g2, int with_occurs_check)
 {
-	// TODO!
-	assert(!with_occurs_check);
-	
 	uint64_t idx = get_var_index(g1);
-
 	assert(context->m_substs && idx < context->m_substs->m_count);
 
-	continuation_t* c_end = new_continuation(context);
-	opcode_t* ops = append_opcodes(context,c_end->m_tail,2);
-	(ops++)->m_opcode = OP_CLEAR_VAR;
-	ops->m_u64val = idx;
+	cont = make_subroutine(context,cont);
 
-	cont = goto_next(context,cont,c_end);
+	continuation_t* c_end = new_continuation(context);
+	
+	continuation_t* c_set = new_continuation(context);
+	opcode_t* ops = append_opcodes(context,c_set->m_tail,3);
+	(ops++)->m_opcode.m_op = OP_SET_VAR;
+	(ops++)->m_u64val = idx;
+	ops->m_pval = g2;
+	c_set = goto_next(context,c_set,cont);
+	ops = append_opcodes(context,c_set->m_tail,2);
+	(ops++)->m_opcode.m_op = OP_CLEAR_VAR;
+	ops->m_u64val = idx;
+	
+	if (with_occurs_check)
+	{
+		c_set = compile_builtin(context,c_set,&builtin_occurs_check,1,g1);
+
+		continuation_t* c1 = new_continuation(context);
+		ops = append_opcodes(context,c1->m_tail,2);
+		(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
+		ops->m_pval = g2;
+		c_set = goto_next(context,c1,c_set);
+	}
+
+	c_set = goto_next(context,c_set,c_end);
 
 	continuation_t* c = new_continuation(context);
-	ops = append_opcodes(context,c->m_tail,6);
-	(ops++)->m_opcode = OP_UNIFY_VAR;
-	(ops++)->m_u64val = idx;
-	(ops++)->m_pval = g2;
-	(ops++)->m_opcode = OP_BRANCH;
-	(ops++)->m_u64val = FLAG_FAIL;
-	ops->m_pval = c_end->m_entry_point;
+	ops = append_opcodes(context,c->m_tail,2);
+	(ops++)->m_opcode = (struct op_arg){ .m_op = OP_TYPE_TEST, .m_arg = type_flag_var | (1 << get_term_type(g2)) };
+	ops->m_u64val = idx;
+	add_branch(context,c,OP_BRANCH,FLAG_FAIL,c_end);
 
-	return goto_next(context,c,cont);
+	ops = append_opcodes(context,c->m_tail,2);
+	(ops++)->m_opcode = (struct op_arg){ .m_op = OP_TYPE_TEST, .m_arg = type_flag_var };
+	ops->m_u64val = idx;
+	add_branch(context,c,OP_BRANCH_NOT,FLAG_FAIL,c_set);
+	
+	ops = append_opcodes(context,c->m_tail,3);
+	(ops++)->m_opcode.m_op = OP_TERM_CMP;
+	(ops++)->m_pval = g1;
+	ops->m_pval = g2;
+
+	add_branch(context,c,OP_BRANCH,FLAG_FAIL,c_end);
+	
+	c = goto_next(context,c,cont);
+	return goto_next(context,c,c_end);	
 }
 
 static continuation_t* compile_unify_inner(compile_context_t* context, continuation_t* cont, const term_t* g1, const term_t* g2, int with_occurs_check)
@@ -722,12 +741,12 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 	prolite_type_t t1 = get_term_type(g1);
 	if (t1 == prolite_var)
 	{
-		if (g1->m_u64val != g2->m_u64val)
-			cont = compile_unify_var(context,cont,g1,g2,with_occurs_check);
-		
-		return cont;
+		if (g1->m_u64val == g2->m_u64val)
+			return cont;
+				
+		return compile_unify_var(context,cont,g1,g2,with_occurs_check);
 	}
-	
+
 	prolite_type_t t2 = get_term_type(g2);
 	if (t2 == prolite_var)
 		return compile_unify_inner(context,cont,g2,g1,with_occurs_check);
@@ -743,7 +762,7 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 			const term_t** rev = heap_malloc(&context->m_heap,arity * 2 * sizeof(term_t*));
 			if (!rev)
 				longjmp(context->m_jmp,1);
-			
+
 			for (size_t i = 0; i < arity; ++i)
 			{
 				rev[i*2] = deref_var(context,p1);
@@ -753,19 +772,18 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 				p2 = get_next_arg(p2,NULL);
 			}
 
-			continuation_t* c = cont;
 			while (arity--)
 			{
-				c = compile_unify_inner(context,c,rev[arity*2],rev[arity*2+1],with_occurs_check);
-				if (c->m_always_flags & FLAG_FAIL)
+				cont = compile_unify_inner(context,cont,rev[arity*2],rev[arity*2+1],with_occurs_check);
+				if (cont->m_always_flags & FLAG_FAIL)
 					break;
-			}					
-			return c;
+			}
+			return cont;
 		}
 		else if (term_compare(g1,g2))
 			return compile_true(context,cont,NULL);
 	}
-		
+
 	return compile_false(context,cont,NULL);
 }
 
@@ -820,11 +838,178 @@ static continuation_t* compile_callable(compile_context_t* context, continuation
 	}
 }
 
+continuation_t* compile_type_test(compile_context_t* context, continuation_t* cont, prolite_type_flags_t types, int negate, const term_t* goal)
+{
+	uint64_t idx = get_var_index(goal);
+	assert(context->m_substs && idx < context->m_substs->m_count);
+
+	continuation_t* c_end = new_continuation(context);
+	
+	continuation_t* c = new_continuation(context);
+	opcode_t* ops = append_opcodes(context,c->m_tail,2);
+	(ops++)->m_opcode = (struct op_arg){ .m_op = OP_TYPE_TEST, .m_arg = types };
+	ops->m_u64val = idx;
+
+	add_branch(context,c,negate ? OP_BRANCH : OP_BRANCH_NOT,FLAG_FAIL,cont);
+	
+	cont = goto_next(context,cont,c_end);
+	return goto_next(context,c,c_end);
+}
+
+static continuation_t* compile_var(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+
+	if (get_term_type(g1) == prolite_var)
+		return compile_type_test(context,cont,type_flag_var,0,g1);
+	else
+		return compile_false(context,cont,g1);
+}
+
+static continuation_t* compile_atom(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_type_test(context,cont,type_flag_atom,0,g1);
+		
+	case prolite_atom:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+static continuation_t* compile_integer(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_type_test(context,cont,type_flag_int32,0,g1);
+
+	case prolite_int32:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+static continuation_t* compile_float(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_type_test(context,cont,type_flag_double,0,g1);
+
+	case prolite_double:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+static continuation_t* compile_atomic(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_type_test(context,cont,type_flag_var | type_flag_chars | type_flag_charcodes | type_flag_compound,1,g1);
+		
+	case prolite_chars:
+	case prolite_charcodes:
+	case prolite_compound:
+		return compile_false(context,cont,goal);
+
+	default:
+		return compile_true(context,cont,goal);
+	}
+}
+
+static continuation_t* compile_compound(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_type_test(context,cont,type_flag_chars | type_flag_charcodes | type_flag_compound,0,g1);
+		
+	case prolite_chars:
+	case prolite_charcodes:
+	case prolite_compound:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+static continuation_t* compile_nonvar(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	if (get_term_type(g1) == prolite_var)
+		return compile_type_test(context,cont,type_flag_var,1,g1);
+
+	return compile_true(context,cont,goal);
+}
+
+static continuation_t* compile_number(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	switch (get_term_type(g1))
+	{
+	case prolite_var:
+		return compile_type_test(context,cont,type_flag_int32 | type_flag_double,0,g1);
+
+	case prolite_int32:
+	case prolite_double:
+		return compile_true(context,cont,goal);
+
+	default:
+		return compile_false(context,cont,goal);
+	}
+}
+
+static int compile_is_ground(compile_context_t* context, const term_t* goal)
+{
+	goal = deref_var(context,goal);
+	prolite_type_t t = get_term_type(goal);
+	if (t == prolite_var)
+		return 0;
+
+	if (t == prolite_compound)
+	{
+		uint64_t arity;
+		for (const term_t* p = get_first_arg(goal,&arity,NULL); arity--; p = get_next_arg(p,NULL))
+		{
+			if (!compile_is_ground(context,p))
+				return 0;
+		}
+	}
+	return 1;
+}
+
+static continuation_t* compile_ground(compile_context_t* context, continuation_t* cont, const term_t* goal)
+{
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	
+	if (compile_is_ground(context,g1))
+		return compile_true(context,cont,g1);
+
+	return compile_builtin(context,cont,&builtin_ground,1,g1);
+}
+
 static continuation_t* compile_builtin_fn(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, const term_t* goal)
 {
 	uint64_t arity;
 	goal = get_first_arg(goal,&arity,NULL);
-	return compile_builtin(context,cont,fn,arity,goal);	
+	return compile_builtin(context,cont,fn,arity,goal);
 }
 
 static continuation_t* compile_goal(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -835,10 +1020,6 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 	switch (goal->m_u64val)
 	{
 #define DECLARE_BUILTIN_INTRINSIC(f,n) \
-	case (n): c = compile_##f(context,cont,goal); break;
-
-#undef DECLARE_BUILTIN_HYBRID
-#define DECLARE_BUILTIN_HYBRID(f,n) \
 	case (n): c = compile_##f(context,cont,goal); break;
 
 #undef DECLARE_BUILTIN_FUNCTION
@@ -882,11 +1063,12 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 static void compile_term(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
 	continuation_t* c = compile_goal(context,cont,goal);
+	++c->m_entry_point->m_inputs;
 
-	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode = OP_SET_FLAGS;
-	(ops++)->m_u64val = c->m_always_flags;
-	ops->m_opcode = OP_END;
+	opcode_t* ops = append_opcodes(context,c->m_tail,2);
+	ops->m_opcode.m_op = OP_SET_FLAGS;
+	(ops++)->m_opcode.m_arg = c->m_always_flags;
+	ops->m_opcode.m_op = OP_END;
 
 	// TODO: Link!!
 
@@ -929,7 +1111,7 @@ void compile(context_t* context, stream_t* s)
 
 			continuation_t* cont = new_continuation(&cc);
 			opcode_t* ops = append_opcodes(&cc,cont->m_tail,1);
-			ops->m_opcode = OP_SUCCEEDS;
+			ops->m_opcode.m_op = OP_SUCCEEDS;
 
 			compile_term(&cc,cont,(const term_t*)context->m_stack);
 		}
