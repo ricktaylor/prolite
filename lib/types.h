@@ -27,8 +27,9 @@ typedef enum prolite_type
 
 typedef union term
 {
-	double   m_dval;
-	uint64_t m_u64val;
+	double      m_dval;
+	uint64_t    m_u64val;
+	const void* m_pval;
 } term_t;
 
 /* Macro magic to declare the builtin string constants */
@@ -88,32 +89,32 @@ typedef struct module
 typedef struct context
 {
 	heap_t*   m_heap;
-	uint64_t* m_stack;
+	term_t*   m_stack;
 	module_t* m_module;
 } context_t;
 
-uint64_t* push_string(uint64_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external);
-uint64_t* push_predicate(uint64_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len, int external);
+term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external);
+term_t* push_predicate(term_t* stack, size_t arity, const unsigned char* functor, size_t functor_len, int external);
 
-static inline uint64_t* push_integer(uint64_t* stack, int32_t v)
+static inline term_t* push_integer(term_t* stack, int32_t v)
 {
-	*(--stack) = PACK_TYPE(prolite_int32) | PACK_MANT_48(v);
+	(--stack)->m_u64val = PACK_TYPE(prolite_int32) | PACK_MANT_48(v);
 	return stack;
 }
 
-static inline uint64_t* push_double(uint64_t* stack, double v)
+static inline term_t* push_double(term_t* stack, double v)
 {
-	*(--stack) = v;
+	(--stack)->m_dval = v;
 	return stack;
 }
 
-static inline uint64_t* push_var(uint64_t* stack, uint64_t idx)
+static inline term_t* push_var(term_t* stack, size_t idx)
 {
-	*(--stack) = PACK_TYPE(prolite_var) | PACK_MANT_48(idx);
+	(--stack)->m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(idx);
 	return stack;
 }
 
-static inline uint64_t get_var_index(const term_t* v)
+static inline size_t get_var_index(const term_t* v)
 {
 	return UNPACK_MANT_48(v->m_u64val);
 }
@@ -138,12 +139,29 @@ static inline int has_debug_info(const term_t* t)
 	return !!(UNPACK_TYPE(t->m_u64val) & prolite_debug_info);
 }
 
-const term_t* get_first_arg(const term_t* compound, uint64_t* arity, const debug_info_t** debug_info);
+const term_t* get_first_arg(const term_t* compound, size_t* arity, const debug_info_t** debug_info);
 const term_t* get_next_arg(const term_t* p, const debug_info_t** debug_info);
-string_t get_predicate(const term_t* b, uint64_t* arity, const debug_info_t** debug_info);
+string_t get_predicate(const term_t* b, size_t* arity, const debug_info_t** debug_info);
 string_t get_string(const term_t* b, const debug_info_t** debug_info);
 
 int predicate_compare(const term_t* c1, const term_t* c2);
 int term_compare(const term_t* t1, const term_t* t2);
 
 #endif /* TYPES_H_ */
+
+
+/* OLD GUFF
+
+struct predicate;
+
+struct clause
+{
+	struct predicate*   m_pred;
+	struct clause*      m_next;
+	struct clause*      m_prev;
+	size_t              m_var_count;
+	const term_t*       m_head;
+	size_t              m_entry_point;
+};
+
+*/

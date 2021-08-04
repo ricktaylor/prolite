@@ -46,9 +46,9 @@ static const term_t* copy_term(compile_context_t* context, const term_t* t, term
 				// Need to externalise the string data
 				term_t* t1 = alloc_heap_term(context,2,new_term,term_count);
 				(t1++)->m_u64val = (t->m_u64val | PACK_MANT_48(UINT64_C(0xC000) << 32));
-				(t1++)->m_u64val = (uint64_t)(t+1);
+				(t1++)->m_pval = (t+1);
 				
-				t += 1 + ((t->m_u64val & MAX_ATOM_LEN) + sizeof(term_t)-1) / sizeof(term_t);
+				t += 1 + len_to_cells(t->m_u64val & MAX_ATOM_LEN),sizeof(term_t));
 				
 				if (have_debug_info)
 					t = copy_term_to_heap(context,t,1,new_term,term_count);
@@ -68,7 +68,7 @@ static const term_t* copy_term(compile_context_t* context, const term_t* t, term
 		
 	case prolite_compound:
 		{
-			uint64_t arity = 0;
+			size_t arity = 0;
 			uint64_t all48 = UNPACK_MANT_48(t->m_u64val);
 			uint16_t hi16 = (all48 >> 32);
 
@@ -127,7 +127,7 @@ static int needs_copy(compile_context_t* context, const term_t* t)
 		
 	case prolite_compound:
 		{
-			uint64_t arity;
+			size_t arity;
 			for (const term_t* p = get_first_arg(t,&arity,NULL); arity--; p = get_next_arg(p,NULL))
 			{
 				if (needs_copy(context,p))

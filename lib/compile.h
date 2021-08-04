@@ -23,7 +23,6 @@ typedef enum optype
 	OP_NOP = 0,
 	OP_END,
 	OP_SUCCEEDS,
-	OP_DATA,
 	OP_JMP,
 	OP_GOSUB,
 	OP_RET,
@@ -37,8 +36,7 @@ typedef enum optype
 	OP_PUSH_TERM_REF,
 	OP_SET_VAR,
 	OP_CLEAR_VAR,
-	OP_TYPE_TEST,
-	OP_TERM_CMP
+	OP_TYPE_TEST
 } optype_t;
 
 typedef enum exec_flags
@@ -58,14 +56,11 @@ struct op_arg
 typedef union opcode
 {
 	struct op_arg m_opcode;
-	double        m_dval;
-	uint64_t      m_u64val;
-	const void*   m_pval;
+	term_t        m_term;
 } opcode_t;
 
 typedef struct cfg_block
 {
-	size_t    m_inputs;
 	size_t    m_count;  //< in sizeof(m_ops[0])
 	opcode_t* m_ops;
 } cfg_block_t;
@@ -106,9 +101,10 @@ int builtin_halt(context_t* context);
 int builtin_user_defined(context_t* context);
 int builtin_callable(context_t* context);
 int builtin_occurs_check(context_t* context);
+int builtin_term_compare(context_t* context);
 
 const term_t* deref_var(compile_context_t* context, const term_t* goal);
-continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, uint64_t arity, const term_t* g1);
+continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, size_t arity, const term_t* g1);
 
 static inline continuation_t* compile_true(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
@@ -117,5 +113,26 @@ static inline continuation_t* compile_true(compile_context_t* context, continuat
 continuation_t* compile_false(compile_context_t* context, continuation_t* cont, const term_t* goal);
 
 continuation_t* compile_type_test(compile_context_t* context, continuation_t* cont, prolite_type_flags_t types, int negate, const term_t* goal);
+
+typedef struct cfg_block_info
+{
+	intptr_t           m_offset;
+	const cfg_block_t* m_blk;
+} cfg_block_info_t;
+
+typedef struct cfg_vec
+{
+	size_t            m_count;
+	size_t            m_total;
+	cfg_block_info_t* m_blks;
+} cfg_vec_t;
+
+size_t inc_ip(optype_t op);
+
+#include <stdio.h>
+
+void dumpCFG(const cfg_vec_t* blks, FILE* f);
+void dumpTrace(const opcode_t* code, size_t count, FILE* f);
+
 
 #endif // COMPILE_H_

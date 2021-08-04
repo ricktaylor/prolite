@@ -94,8 +94,8 @@ typedef struct ast_node
 	union
 	{
 		const unsigned char* m_str;
-		double               m_dbl;
-		uint64_t             m_u64;
+		double               m_dval;
+		uint64_t             m_u64val;
 	};
 	size_t           m_str_len;
 	size_t           m_arity;
@@ -1466,9 +1466,9 @@ static ast_node_t* parse_number(context_t* context, parser_t* parser, ast_node_t
 
 		node->m_type = AST_TYPE_DOUBLE;
 		if (isnan(dval))
-			node->m_u64 = PACK_EXP_16(0x7FF8);
+			node->m_u64val = PACK_EXP_16(0x7FF8);
 		else
-			node->m_dbl = dval;
+			node->m_dval = dval;
 	}
 	else if (*next_type == tokCharCode)
 	{
@@ -1488,7 +1488,7 @@ static ast_node_t* parse_number(context_t* context, parser_t* parser, ast_node_t
 		}
 
 		node->m_type = AST_TYPE_INTEGER;
-		node->m_u64 = v;
+		node->m_u64val = v;
 	}
 	else
 	{
@@ -1518,7 +1518,7 @@ static ast_node_t* parse_number(context_t* context, parser_t* parser, ast_node_t
 		}
 
 		node->m_type = AST_TYPE_INTEGER;
-		node->m_u64 = v;
+		node->m_u64val = v;
 	}
 
 	*next_type = token_next(context,parser,next);
@@ -1531,12 +1531,12 @@ static ast_node_t* parse_negative(context_t* context, parser_t* parser, ast_node
 	if (node)
 	{
 		if (node->m_type == AST_TYPE_DOUBLE)
-			node->m_dbl = -node->m_dbl;
+			node->m_dval = -node->m_dval;
 		else
 		{
-			int32_t v = node->m_u64;
+			int32_t v = node->m_u64val;
 			if (v > 0)
-				node->m_u64 = (uint32_t)(-v);
+				node->m_u64val = (uint32_t)(-v);
 		}
 	}
 	return node;
@@ -2019,13 +2019,13 @@ static ast_node_t* parse_term(context_t* context, parser_t* parser, unsigned int
 	return node;
 }
 
-static uint64_t* emit_ast_string(uint64_t* stack, prolite_type_t type, ast_node_t* node)
+static term_t* emit_ast_string(term_t* stack, prolite_type_t type, ast_node_t* node)
 {
 	// TODO: We could de-duplicate here...
 	return push_string(stack,type,node->m_str,node->m_str_len,0);
 }
 
-static uint64_t* emit_ast_node(uint64_t* stack, ast_node_t* node)
+static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 {
 	size_t i;
 	switch (node->m_type)
@@ -2056,9 +2056,9 @@ static uint64_t* emit_ast_node(uint64_t* stack, ast_node_t* node)
 		if (node->m_type == AST_TYPE_VAR)
 			stack = push_var(stack,node->m_arity);
 		else if (node->m_type == AST_TYPE_DOUBLE)
-			stack = push_double(stack,node->m_dbl);
+			stack = push_double(stack,node->m_dval);
 		else if (node->m_type == AST_TYPE_INTEGER)
-			stack = push_integer(stack,node->m_u64);
+			stack = push_integer(stack,node->m_u64val);
 		break;
 	}
 
@@ -2067,48 +2067,48 @@ static uint64_t* emit_ast_node(uint64_t* stack, ast_node_t* node)
 	return stack;
 }
 
-static uint64_t* emit_error_line_info(uint64_t* stack, line_info_t* info)
+static term_t* emit_error_line_info(term_t* stack, line_info_t* info)
 {
 	if (!info)
-		*(--stack) = PACK_ATOM_EMBED_5('f','a','l','s','e');
+		(--stack)->m_u64val = PACK_ATOM_EMBED_5('f','a','l','s','e');
 	else
 	{
 		// TODO: Line if
-		*(--stack) = PACK_ATOM_EMBED_4('T','o','d','o');
+		(--stack)->m_u64val = PACK_ATOM_EMBED_4('T','o','d','o');
 	}
 
 	return stack;
 }
 
-static parse_status_t emit_syntax_error_missing(uint64_t** stack, uint64_t missing_atom, line_info_t* info)
+static parse_status_t emit_syntax_error_missing(term_t** stack, uint64_t missing_atom, line_info_t* info)
 {
 	*stack = emit_error_line_info(*stack,info);
 
-	*(--*stack) = missing_atom;
-	*(--*stack) = PACK_COMPOUND_BUILTIN(missing,1);
-	*(--*stack) = PACK_COMPOUND_BUILTIN(syntax_error,1);
-	*(--*stack) = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+	(--*stack)->m_u64val = missing_atom;
+	(--*stack)->m_u64val = PACK_COMPOUND_BUILTIN(missing,1);
+	(--*stack)->m_u64val = PACK_COMPOUND_BUILTIN(syntax_error,1);
+	(--*stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
 
 	return PARSE_THROW;
 }
 
-static parse_status_t emit_simple_error(uint64_t** stack, uint64_t f, uint64_t arg, line_info_t* info)
+static parse_status_t emit_simple_error(term_t** stack, uint64_t f, uint64_t arg, line_info_t* info)
 {
 	*stack = emit_error_line_info(*stack,info);
 
-	*(--*stack) = arg;
-	*(--*stack) = f;
-	*(--*stack) = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+	(--*stack)->m_u64val = arg;
+	(--*stack)->m_u64val = f;
+	(--*stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
 
 	return PARSE_THROW;
 }
 
-static parse_status_t emit_out_of_heap_error(uint64_t** stack, line_info_t* info)
+static parse_status_t emit_out_of_heap_error(term_t** stack, line_info_t* info)
 {
 	return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'),info);
 }
 
-static parse_status_t emit_ast_error(uint64_t** stack, ast_error_t ast_err, line_info_t* info)
+static parse_status_t emit_ast_error(term_t** stack, ast_error_t ast_err, line_info_t* info)
 {
 	switch (ast_err)
 	{
@@ -2270,12 +2270,12 @@ parse_status_t read_term(context_t* context, stream_t* s)
 				while (i--)
 				{
 					/* use count */
-					*(--context->m_stack) = varinfo[i].m_use_count;
+					(--context->m_stack)->m_u64val = varinfo[i].m_use_count;
 
 					/* variable name */
 					context->m_stack = push_string(context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len,0);
 				}
-				*(--context->m_stack) = varcount;
+				(--context->m_stack)->m_u64val = varcount;
 			}
 		}
 	}

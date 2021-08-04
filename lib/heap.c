@@ -4,11 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline size_t align_div(size_t x, size_t y)
-{
-	return (x + (y-1)) / y;
-}
-
 static inline uint32_t next_pot(size_t s)
 {
 	--s;
@@ -29,7 +24,7 @@ heap_t* heap_new(size_t size, void*(*fn_malloc)(size_t), void(*fn_free)(void*))
 	if (heap)
 	{
 		heap->m_top = 0;
-		heap->m_count = (align_size / sizeof(uint64_t)) - align_div(sizeof(heap_t),sizeof(uint64_t));
+		heap->m_count = (align_size / sizeof(uint64_t)) - len_to_cells(sizeof(heap_t),sizeof(uint64_t));
 		heap->m_prev = NULL;
 		heap->m_next = NULL;
 		heap->m_fn_malloc = fn_malloc;
@@ -58,7 +53,7 @@ static heap_t* heap_insert_page(size_t size, heap_t* after)
 		if (heap)
 		{
 			heap->m_top = 0;
-			heap->m_count = (align_size / sizeof(uint64_t)) - align_div(sizeof(heap_t),sizeof(uint64_t));
+			heap->m_count = (align_size / sizeof(uint64_t)) - len_to_cells(sizeof(heap_t),sizeof(uint64_t));
 			heap->m_fn_malloc = after->m_fn_malloc;
 			heap->m_fn_free = after->m_fn_free;
 			heap->m_prev = after;
@@ -100,7 +95,7 @@ void heap_compact(heap_t* heap)
 void* heap_malloc(heap_t** heap, size_t len)
 {
 	void* ptr = NULL;
-	uint32_t align_len = align_div(len,sizeof(uint64_t));
+	uint32_t align_len = len_to_cells(len,sizeof(uint64_t));
 
 	if ((*heap)->m_top + align_len >= (*heap)->m_count)
 	{
@@ -119,7 +114,7 @@ void* heap_malloc(heap_t** heap, size_t len)
 
 void heap_free(heap_t* heap, void* ptr, size_t len)
 {
-	uint32_t align_len = align_div(len,sizeof(uint64_t));
+	uint32_t align_len = len_to_cells(len,sizeof(uint64_t));
 	while (heap)
 	{
 		if (ptr >= (void*)&heap->m_data[0] && ptr < (void*)&heap->m_data[heap->m_top])
@@ -136,11 +131,11 @@ void heap_free(heap_t* heap, void* ptr, size_t len)
 
 void* heap_realloc(heap_t** heap, void* ptr, size_t old_len, size_t new_len)
 {
-	uint32_t align_old_len = align_div(old_len,sizeof(uint64_t));
+	uint32_t align_old_len = len_to_cells(old_len,sizeof(uint64_t));
 
 	if ((*heap)->m_top >= align_old_len && ptr == &(*heap)->m_data[(*heap)->m_top - align_old_len])
 	{
-		uint32_t align_new_len = align_div(new_len,sizeof(uint64_t));
+		uint32_t align_new_len = len_to_cells(new_len,sizeof(uint64_t));
 		if ((*heap)->m_top + (align_new_len - align_old_len) <= (*heap)->m_count)
 		{
 			(*heap)->m_top += (align_new_len - align_old_len);

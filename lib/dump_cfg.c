@@ -2,8 +2,8 @@
 
 #include "compile.h"
 
-#include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #undef DECLARE_BUILTIN_INTRINSIC
 #define DECLARE_BUILTIN_INTRINSIC(f,n)
@@ -29,7 +29,8 @@ static const char* builtinName(const builtin_fn_t fn)
 		{ &builtin_halt, "halt" },
 		{ &builtin_callable, "callable" },
 		{ &builtin_user_defined, "user_defined" },
-		{ &builtin_occurs_check, "occurs_check" }
+		{ &builtin_occurs_check, "occurs_check" },
+		{ &builtin_term_compare, "term_compare" }
 	};
 
 	for (size_t i=0; i < sizeof(bns)/sizeof(bns[0]); ++i)
@@ -101,7 +102,7 @@ static void dumpTerm(const term_t* t, FILE* f)
 
 	case prolite_compound:
 		{
-			uint64_t arity;
+			size_t arity;
 			string_t s = get_predicate(t,&arity,NULL);
 			fprintf(f,"%.*s(",(int)s.m_len,s.m_str);
 
@@ -132,34 +133,6 @@ static void dumpTerm(const term_t* t, FILE* f)
 	}
 }
 
-static size_t opInc(optype_t op, size_t i)
-{
-	switch (op)
-	{
-	case OP_JMP:
-	case OP_GOSUB:
-	case OP_CLEAR_VAR:
-	case OP_TYPE_TEST:
-	case OP_PUSH_TERM_REF:
-	case OP_BRANCH:
-	case OP_BRANCH_NOT:
-		++i;
-		break;
-
-	case OP_BUILTIN:
-    case OP_SET_VAR:
-	case OP_TERM_CMP:
-	case OP_DATA:
-		i+=2;
-		break;	
-
-	default:
-		break;
-	}
-
-	return i+1;
-}
-
 static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 {
 	char buf[10] = {0};
@@ -172,15 +145,12 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 		fprintf(f,"<f0> WTF?!?!");
 	}
 
-	for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode.m_op,i))
+	for (size_t i=0;i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
-		if (blk->m_ops[i].m_opcode.m_op != OP_END)
-		{
-			if (i)
-				fprintf(f,"|");
-			fprintf(f,"<f%zu> ",i);
-		}
-
+		if (i)
+			fprintf(f,"|");
+		fprintf(f,"<f%zu> ",i);
+		
 		switch (blk->m_ops[i].m_opcode.m_op)
 		{
 		case OP_NOP:
@@ -192,11 +162,7 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_END:
-			break;
-
-		case OP_DATA:
-			fprintf(f,"Data\\ (%zu\\ bytes)|=\\ ",blk->m_ops[i+1].m_u64val);
-			dumpTerm(blk->m_ops[i+2].m_pval,f);
+			fprintf(f,"End");
 			break;
 
 		case OP_JMP:
@@ -212,7 +178,7 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ !FTH,\\ Gosub",builtinName(blk->m_ops[i+1].m_pval),i+1);
+			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ !FTH,\\ Gosub",builtinName(blk->m_ops[i+1].m_term.m_pval),i+1);
 			break;
 
 		case OP_SET_FLAGS:
@@ -245,66 +211,59 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 
 		case OP_PUSH_TERM_REF:
 			fprintf(f,"Push\\ &");
-			dumpTerm(blk->m_ops[i+1].m_pval,f);
+			dumpTerm(blk->m_ops[i+1].m_term.m_pval,f);
 			break;
 
 		case OP_SET_VAR:
-			fprintf(f,"Set var%zu\\ =\\ ",(size_t)blk->m_ops[i+1].m_u64val);
-			dumpTerm(blk->m_ops[i+2].m_pval,f);
+			fprintf(f,"Set var%zu\\ =\\ ",(size_t)blk->m_ops[i+1].m_term.m_u64val);
+			dumpTerm(blk->m_ops[i+2].m_term.m_pval,f);
 			break;
 
 		case OP_CLEAR_VAR:
-			fprintf(f,"Clear\\ var%zu",(size_t)blk->m_ops[i+1].m_u64val);
+			fprintf(f,"Clear\\ var%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val);
 			break;
 
 		case OP_TYPE_TEST:
 			fmtTypeFlags(blk->m_ops[i].m_opcode.m_arg,buf);
-			fprintf(f,"Type(var%zu)\\ ==\\ %s",(size_t)blk->m_ops[i+1].m_u64val,buf);
-			break;
-
-		case OP_TERM_CMP:
-			fprintf(f,"Test\\ ");
-			dumpTerm(blk->m_ops[i+1].m_pval,f);
-			fprintf(f,"\\ ==\\ ");
-			dumpTerm(blk->m_ops[i+2].m_pval,f);
+			fprintf(f,"Type(var%zu)\\ ==\\ %s",(size_t)blk->m_ops[i+1].m_term.m_u64val,buf);
 			break;
 
 		default:
-			fprintf(f,"WTF? %zu",(size_t)blk->m_ops[i].m_u64val);
+			fprintf(f,"WTF? %zu",(size_t)blk->m_ops[i].m_term.m_u64val);
 			break;
 		}
 	}
 
 	fprintf(f,"}\"];\n");
 
-	for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode.m_op,i))
+	for (size_t i=0;i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
 		switch (blk->m_ops[i].m_opcode.m_op)
 		{
 		case OP_BRANCH:
 			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"%s\"];\n",blk,i,blk->m_ops[i+1].m_pval,buf);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"%s\"];\n",blk,i,blk->m_ops[i+1].m_term.m_pval,buf);
 			break;
 
 		case OP_BRANCH_NOT:
 			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"!%s\"];\n",blk,i,blk->m_ops[i+1].m_pval,buf);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"!%s\"];\n",blk,i,blk->m_ops[i+1].m_term.m_pval,buf);
 			break;
 
 		case OP_GOSUB:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i,blk->m_ops[i+1].m_pval);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i,blk->m_ops[i+1].m_term.m_pval);
 			break;
 
 		case OP_JMP:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0>;\n",blk,i,blk->m_ops[i+1].m_pval);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0>;\n",blk,i,blk->m_ops[i+1].m_term.m_pval);
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both label=\"!FTH\"];\n",blk,i+1,blk->m_ops[i+2].m_pval);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both label=\"!FTH\"];\n",blk,i+1,blk->m_ops[i+2].m_term.m_pval);
 			break;
 
 		case OP_END:
-			fprintf(f,"\tN%p:<f%zu> -> end;\n",blk,i-1);
+			fprintf(f,"\tN%p:<f%zu> -> end;\n",blk,i);
 			break;
 
 		default:
@@ -313,72 +272,111 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 	}
 }
 
-typedef struct cfg_vec
+void dumpCFG(const cfg_vec_t* blks, FILE* f)
 {
-	size_t count;
-	const cfg_block_t** blks;
-} cfg_vec_t;
+	fprintf(f,"digraph cfg {\n\tstart [shape=circle,label=Start];\n\tend [shape=circle,label=End];\n");
 
-static int addCFG(cfg_vec_t* blks, const cfg_block_t* blk)
-{
-	for (size_t i=0; i < blks->count; ++i)
-	{
-		if (blk == blks->blks[i])
-			return 0;
-	}
+	for (size_t i=0; i < blks->m_count; ++i)
+		dumpCFGBlock(blks->m_blks[i].m_blk,f);
 
-	blks->blks = realloc(blks->blks,(blks->count + 1) * sizeof(void*));
-	blks->blks[blks->count++] = blk;
-
-	return 1;
+	fprintf(f,"\tstart -> N%p:<f0>;\n}",blks->m_blks[0].m_blk);
 }
 
-static void walkCFG(cfg_vec_t* blks, const cfg_block_t* blk)
+void dumpTrace(const opcode_t* code, size_t count, FILE* f)
 {
-	if (addCFG(blks,blk))
-	{
-		for (size_t i=0;i < blk->m_count; i = opInc(blk->m_ops[i].m_opcode.m_op,i))
+	char buf[10] = {0};
+
+	int spaces = 0;
+	for (size_t c = count; c; c /= 10)
+		++spaces;
+	
+	const opcode_t* start = code;
+	for (const opcode_t* end = code + count; code < end; code += inc_ip(code->m_opcode.m_op))
+	{		
+		fprintf(f,"%*zu: ",spaces,code - start);
+
+		switch (code->m_opcode.m_op)
 		{
-			switch (blk->m_ops[i].m_opcode.m_op)
-			{
-			case OP_JMP:
-			case OP_GOSUB:
-			case OP_BRANCH:
-			case OP_BRANCH_NOT:
-				walkCFG(blks,blk->m_ops[i+1].m_pval);
-				break;
+		case OP_NOP:
+			fprintf(f,"NOP;\n");
+			break;
 
-			case OP_BUILTIN:
-            	walkCFG(blks,blk->m_ops[i+2].m_pval);
-				break;
+		case OP_SUCCEEDS:
+			fprintf(f,"success;\n");
+			break;
 
-			default:
-				break;
-			}
+		case OP_END:
+			fprintf(f,"end;\n");
+			break;
+
+		case OP_JMP:
+			fprintf(f,"goto %+d (%zu);\n",(int)code[1].m_term.m_u64val,(size_t)((code + 1 - start) + (int64_t)code[1].m_term.m_u64val));
+			break;
+
+		case OP_GOSUB:
+			fprintf(f,"gosub %+d (%zu);\n",(int)code[1].m_term.m_u64val,(size_t)((code + 1 - start) + (int64_t)code[1].m_term.m_u64val));
+			break;
+
+		case OP_RET:
+			fprintf(f,"return;\n");
+			break;
+
+		case OP_BUILTIN:
+			fprintf(f,"call %s, if (!FTH) gosub %+d (%zu);\n",builtinName(code[1].m_term.m_pval),(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
+			break;
+
+		case OP_SET_FLAGS:
+			fmtFlags(code->m_opcode.m_arg,buf);
+			fprintf(f,"flags |= %s;\n",buf);
+			break;
+
+		case OP_CLEAR_FLAGS:
+			fmtFlags(code->m_opcode.m_arg,buf);
+			fprintf(f,"flags &= ~(%s);\n",buf);
+			break;
+
+		case OP_PUSH_CUT:
+			fprintf(f,"push cut;\n");
+			break;
+
+		case OP_POP_CUT:
+			fprintf(f,"pop cut;\n");
+			break;
+
+		case OP_BRANCH:
+			fmtFlags(code->m_opcode.m_arg,buf);
+			fprintf(f,"if (flags & %s) goto %+d (%zu);\n",buf,(int)code[1].m_term.m_u64val,(size_t)((code + 1 - start) + (int64_t)code[1].m_term.m_u64val));
+			break;
+
+		case OP_BRANCH_NOT:
+			fmtFlags(code->m_opcode.m_arg,buf);
+			fprintf(f,"if (!(flags & %s)) goto %+d (%zu);\n",buf,(int)code[1].m_term.m_u64val,(size_t)((code + 1 - start) + (int64_t)code[1].m_term.m_u64val));
+			break;
+
+		case OP_PUSH_TERM_REF:
+			fprintf(f,"push &");
+			dumpTerm(code[1].m_term.m_pval,f);
+			fprintf(f,";\n");
+			break;
+
+		case OP_SET_VAR:
+			fprintf(f,"var%zu = ",(size_t)code[1].m_term.m_u64val);
+			dumpTerm(code[2].m_term.m_pval,f);
+			fprintf(f,";\n");
+			break;
+
+		case OP_CLEAR_VAR:
+			fprintf(f,"var%zu = NULL;\n",(size_t)code[1].m_term.m_u64val);
+			break;
+
+		case OP_TYPE_TEST:
+			fmtTypeFlags(code->m_opcode.m_arg,buf);
+			fprintf(f,"if (typeof(var%zu) & %s) flags &= F;\n",(size_t)code[1].m_term.m_u64val,buf);
+			break;
+
+		default:
+			fprintf(f,"WTF? %zu;\n",(size_t)code->m_term.m_u64val);
+			break;
 		}
-	}
-}
-
-void dumpCFG(const cfg_block_t* b, FILE* f)
-{
-	if (f)
-	{
-		fprintf(f,"digraph cfg {\n");
-
-		if (b)
-		{
-			fprintf(f,"\tstart [shape=circle,label=Start];\n");
-			fprintf(f,"\tend [shape=circle,label=End];\n");
-
-			cfg_vec_t blks = {0};
-			walkCFG(&blks,b);
-
-			for (size_t i=0; i < blks.count; ++i)
-				dumpCFGBlock(blks.blks[i],f);
-
-			fprintf(f,"\tstart -> N%p:<f0>;\n",b);
-		}
-
-		fprintf(f,"}");
 	}
 }

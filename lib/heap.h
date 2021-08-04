@@ -24,6 +24,11 @@ typedef struct heap
 heap_t* heap_new(size_t size, void*(*fn_malloc)(size_t), void(*fn_free)(void*));
 void heap_delete(heap_t* s);
 
+static inline size_t len_to_cells(size_t len, size_t cell_size)
+{
+	return (len + (cell_size-1)) / cell_size;
+}
+
 static inline size_t heap_top(const heap_t* heap)
 {
 	return (!heap ? 0 : (heap->m_base + heap->m_top));
