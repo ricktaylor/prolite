@@ -2,6 +2,7 @@
 
 #include "compile.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 
@@ -272,18 +273,24 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 	}
 }
 
-void dumpCFG(const cfg_vec_t* blks, FILE* f)
+void dumpCFG(const cfg_vec_t* blks, const char* filename)
 {
+	FILE* f = fopen(filename,"w");
+
 	fprintf(f,"digraph cfg {\n\tstart [shape=circle,label=Start];\n\tend [shape=circle,label=End];\n");
 
 	for (size_t i=0; i < blks->m_count; ++i)
 		dumpCFGBlock(blks->m_blks[i].m_blk,f);
 
 	fprintf(f,"\tstart -> N%p:<f0>;\n}",blks->m_blks[0].m_blk);
+
+	fclose(f);
 }
 
-void dumpTrace(const opcode_t* code, size_t count, FILE* f)
+void dumpTrace(const opcode_t* code, size_t count, const char* filename)
 {
+	FILE* f = fopen(filename,"w");
+
 	char buf[10] = {0};
 
 	int spaces = 0;
@@ -379,4 +386,6 @@ void dumpTrace(const opcode_t* code, size_t count, FILE* f)
 			break;
 		}
 	}
+
+	fclose(f);
 }

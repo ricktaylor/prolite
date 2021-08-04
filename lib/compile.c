@@ -1202,16 +1202,20 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 	return (end - start);
 }
 
-static void compile_term(compile_context_t* context, continuation_t* cont, const term_t* goal)
+static void compile_term(compile_context_t* context, const term_t* goal)
 {
-	continuation_t* c = compile_goal(context,cont,goal);
+	continuation_t* c = new_continuation(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,1);
+	ops->m_opcode.m_op = OP_SUCCEEDS;
+
+	c = compile_goal(context,c,goal);
+	ops = append_opcodes(context,c->m_tail,1);
 	ops->m_opcode.m_op = OP_END;
 
 	cfg_vec_t blks = {0};
 	link_cfgs(context,&blks,c->m_entry_point);
 
-	//dumpCFG(&blks,stdout);
+	dumpCFG(&blks,"./cfg.dot");
 
 	if (blks.m_total)
 	{
@@ -1221,7 +1225,7 @@ static void compile_term(compile_context_t* context, continuation_t* cont, const
 
 		size_t count = emit_ops(code,&blks);
 
-		dumpTrace(code,count,stdout);
+		dumpTrace(code,count,"./pcode.txt");
 
 		// TODO: free(code);
 	}
@@ -1231,9 +1235,7 @@ void compile(context_t* context, stream_t* s)
 {
 	// Read a term and prepare it for execution
 	parse_status_t result = read_term(context,s);
-	if (result != PARSE_OK)
-		fprintf(stderr,"Parser failure\n");
-	else
+	if (result == PARSE_OK)
 	{
 		size_t heap_start = heap_top(context->m_heap);
 		compile_context_t cc = {0};
@@ -1261,19 +1263,10 @@ void compile(context_t* context, stream_t* s)
 				memset(cc.m_substs->m_vals,0,varcount * sizeof(term_t*));
 			}
 
-			continuation_t* cont = new_continuation(&cc);
-			opcode_t* ops = append_opcodes(&cc,cont->m_tail,1);
-			ops->m_opcode.m_op = OP_SUCCEEDS;
-
-			compile_term(&cc,cont,(const term_t*)context->m_stack);
+			compile_term(&cc,(const term_t*)context->m_stack);
 		}
-		else
-		{
-			/* Out of memory! */
-			heap_reset(&context->m_heap,heap_start);
-		}
-
-		/* Bulk free all CFG blocks */
+		
+		/* Bulk free all heap allocs */
 		heap_reset(&context->m_heap,heap_start);
 	}
 
