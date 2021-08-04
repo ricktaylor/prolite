@@ -1117,6 +1117,24 @@ static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			break;
 
 		case OP_JMP:
+			next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval);
+			link_cfgs(context,blks,next);
+			break;
+
+		default:
+			break;
+		}
+
+		if (next)
+			move_cfg(blks,blk,next);
+	}
+
+	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
+	{
+		const cfg_block_t* next = NULL;
+
+		switch (blk->m_ops[i].m_opcode.m_op)
+		{
 		case OP_GOSUB:
 		case OP_BRANCH:
 		case OP_BRANCH_NOT:
