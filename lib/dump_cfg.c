@@ -263,10 +263,6 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both label=\"!FTH\"];\n",blk,i+1,blk->m_ops[i+2].m_term.m_pval);
 			break;
 
-		case OP_END:
-			fprintf(f,"\tN%p:<f%zu> -> end;\n",blk,i);
-			break;
-
 		default:
 			break;
 		}
@@ -277,7 +273,7 @@ void dumpCFG(const cfg_vec_t* blks, const char* filename)
 {
 	FILE* f = fopen(filename,"w");
 
-	fprintf(f,"digraph cfg {\n\tstart [shape=circle,label=Start];\n\tend [shape=circle,label=End];\n");
+	fprintf(f,"digraph cfg {\n\tstart [shape=point];\n");
 
 	for (size_t i=0; i < blks->m_count; ++i)
 		dumpCFGBlock(blks->m_blks[i].m_blk,f);

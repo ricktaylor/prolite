@@ -1066,6 +1066,31 @@ size_t inc_ip(optype_t op)
 	return ip;
 }
 
+static void move_cfg(cfg_vec_t* blks, const cfg_block_t* blk, const cfg_block_t* next)
+{
+	// Try to place into some kind of sort order...
+	size_t index = -1;
+	size_t next_index = -1;
+	for (size_t j = 0; j < blks->m_count; ++j)
+	{
+		if (blks->m_blks[j].m_blk == next)
+			next_index = j;
+
+		if (blks->m_blks[j].m_blk == blk)
+			index = j;
+
+		if (next_index != -1 && index != -1)
+			break;
+	}
+
+	if (next_index < index)
+	{
+		cfg_block_info_t t = blks->m_blks[index];
+		memmove(&blks->m_blks[next_index+1],&blks->m_blks[next_index],(index - next_index) * sizeof(cfg_block_info_t));
+		blks->m_blks[next_index] = t;
+	}
+}
+
 static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_block_t* blk)
 {
 	for (size_t i=0; i < blks->m_count; ++i)
@@ -1092,9 +1117,9 @@ static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			break;
 
 		case OP_JMP:
+		case OP_GOSUB:
 		case OP_BRANCH:
 		case OP_BRANCH_NOT:
-		case OP_GOSUB:
 			next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval);
 			link_cfgs(context,blks,next);
 			break;
@@ -1103,35 +1128,13 @@ static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval);
 			link_cfgs(context,blks,next);
 			break;
-		
+
 		default:
 			break;
 		}
 
 		if (next)
-		{
-			// Try to place into some kind of sort order...
-			size_t index = -1;
-			size_t next_index = -1;
-			for (size_t j = 0; j < blks->m_count; ++j)
-			{
-				if (blks->m_blks[j].m_blk == next)
-					next_index = j;
-
-				if (blks->m_blks[j].m_blk == blk)
-					index = j;
-
-				if (next_index != -1 && index != -1)
-					break;
-			}
-
-			if (next_index < index)
-			{
-				cfg_block_info_t t = blks->m_blks[index];
-				memmove(&blks->m_blks[next_index+1],&blks->m_blks[next_index],(index - next_index) * sizeof(cfg_block_info_t));
-				blks->m_blks[next_index] = t;
-			}
-		}
+			move_cfg(blks,blk,next);
 	}
 }
 
@@ -1147,19 +1150,42 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 		{
 			size_t len = inc_ip(blk->m_ops[i].m_opcode.m_op);
 
-			if (blk->m_ops[i].m_opcode.m_op == OP_NOP)
-				code -= len;
-			else if (blk->m_ops[i].m_opcode.m_op == OP_JMP)
+			switch (blk->m_ops[i].m_opcode.m_op)
 			{
-				if (j == blks->m_count-1 || blk->m_ops[i+1].m_term.m_pval != blks->m_blks[j+1].m_blk)
-					memcpy(code,blk->m_ops + i,len * sizeof(*code));
+			case OP_NOP:
+				break;
+
+			case OP_RET:
+				if (blk->m_count == 1)
+				{
+					// See if there is a replacement we can reuse
+					for (const opcode_t* c = start; start < code; c += inc_ip(code->m_opcode.m_op))
+					{
+						if (c->m_opcode.m_op == OP_RET)
+						{
+							blks->m_blks[j].m_offset = (c - start);
+							break;
+						}
+					}
+				}
 				else
-					code -= len;
-			}
-			else
+					*code++ = blk->m_ops[i];
+				break;
+
+			case OP_JMP:
+				if (j == blks->m_count-1 || blk->m_ops[i+1].m_term.m_pval != blks->m_blks[j+1].m_blk)
+				{
+					memcpy(code,blk->m_ops + i,len * sizeof(*code));
+					code += len;
+				}
+				break;
+
+			default:
 				memcpy(code,blk->m_ops + i,len * sizeof(*code));
+				code += len;
+				break;
+			}
 			
-			code += len;
 			i += len;
 		}
 	}
