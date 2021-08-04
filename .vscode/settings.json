@@ -1,8 +1,0 @@
-{
-    "files.associations": {
-        "*.inc": "cpp",
-        "types.h": "c",
-        "prolite.h": "c",
-        "stream.h": "c"
-    }
-}
