@@ -81,7 +81,7 @@ term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str
 		}
 		else
 		{
-			stack -= len_to_cells(len,sizeof(term_t));
+			stack -= bytes_to_cells(len,sizeof(term_t));
 			memcpy(stack,str,len);
 			(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48(len);
 		}
@@ -176,7 +176,7 @@ string_t get_string(const term_t* b, const debug_info_t** debug_info)
 	case 0:
 		ret.m_len = (size_t)(all48 & MAX_ATOM_LEN);
 		ret.m_str = b->m_pval;
-		b += len_to_cells(ret.m_len,sizeof(term_t));
+		b += bytes_to_cells(ret.m_len,sizeof(term_t));
 		break;
 	}
 
@@ -258,7 +258,7 @@ const term_t* get_next_arg(const term_t* p, const debug_info_t** debug_info)
 			break;
 
 		case 0:
-			p += len_to_cells(all48 & MAX_ATOM_LEN,sizeof(term_t));
+			p += bytes_to_cells(all48 & MAX_ATOM_LEN,sizeof(term_t));
 			break;
 		}
 		if (have_debug_info)

@@ -48,7 +48,7 @@ static const term_t* copy_term(compile_context_t* context, const term_t* t, term
 				(t1++)->m_u64val = (t->m_u64val | PACK_MANT_48(UINT64_C(0xC000) << 32));
 				(t1++)->m_pval = (t+1);
 				
-				t += 1 + len_to_cells(t->m_u64val & MAX_ATOM_LEN),sizeof(term_t));
+				t += 1 + bytes_to_cells(t->m_u64val & MAX_ATOM_LEN),sizeof(term_t));
 				
 				if (have_debug_info)
 					t = copy_term_to_heap(context,t,1,new_term,term_count);

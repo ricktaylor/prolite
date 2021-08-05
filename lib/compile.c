@@ -1099,7 +1099,7 @@ static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			return;
 	}
 
-	blks->m_blks = heap_realloc(&context->m_heap,blks->m_blks,blks->m_count * sizeof(cfg_block_info_t*),(blks->m_count + 1) * sizeof(cfg_block_info_t*));
+	blks->m_blks = heap_realloc(&context->m_heap,blks->m_blks,blks->m_count * sizeof(cfg_block_info_t),(blks->m_count + 1) * sizeof(cfg_block_info_t));
 	if (!blks->m_blks)
 		longjmp(context->m_jmp,1);
 
@@ -1119,14 +1119,12 @@ static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 		case OP_JMP:
 			next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval);
 			link_cfgs(context,blks,next);
+			move_cfg(blks,blk,next);
 			break;
 
 		default:
 			break;
-		}
-
-		if (next)
-			move_cfg(blks,blk,next);
+		}	
 	}
 
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
@@ -1246,35 +1244,6 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 	return (end - start);
 }
 
-static void compile_term(compile_context_t* context, const term_t* goal)
-{
-	continuation_t* c = new_continuation(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,1);
-	ops->m_opcode.m_op = OP_SUCCEEDS;
-
-	c = compile_goal(context,c,goal);
-	ops = append_opcodes(context,c->m_tail,1);
-	ops->m_opcode.m_op = OP_END;
-
-	cfg_vec_t blks = {0};
-	link_cfgs(context,&blks,c->m_entry_point);
-
-	dumpCFG(&blks,"./cfg.dot");
-
-	if (blks.m_total)
-	{
-		opcode_t* code = (*context->m_heap->m_fn_malloc)(blks.m_total * sizeof(opcode_t));
-		if (!code)
-			longjmp(context->m_jmp,1);
-
-		size_t count = emit_ops(code,&blks);
-
-		dumpTrace(code,count,"./pcode.txt");
-
-		// TODO: free(code);
-	}
-}
-
 void compile(context_t* context, stream_t* s)
 {
 	// Read a term and prepare it for execution
@@ -1289,7 +1258,7 @@ void compile(context_t* context, stream_t* s)
 			// Pop varinfo
 			size_t varcount = 0;
 			{
-				const term_t* sp = (const term_t*)context->m_stack;
+				const term_t* sp = context->m_stack;
 				varcount = (sp++)->m_u64val;
 				for (size_t i = 0; i < varcount; ++i)
 					sp = get_next_arg(sp,NULL) + 1;
@@ -1299,7 +1268,7 @@ void compile(context_t* context, stream_t* s)
 
 			if (varcount)
 			{
-				cc.m_substs = heap_malloc(&context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * varcount));
+				cc.m_substs = heap_malloc(&cc.m_heap,sizeof(substitutions_t) + (sizeof(term_t) * varcount));
 				if (!cc.m_substs)
 					longjmp(cc.m_jmp,1);
 
@@ -1307,11 +1276,38 @@ void compile(context_t* context, stream_t* s)
 				memset(cc.m_substs->m_vals,0,varcount * sizeof(term_t*));
 			}
 
-			compile_term(&cc,(const term_t*)context->m_stack);
+			continuation_t* c = new_continuation(&cc);
+			opcode_t* ops = append_opcodes(&cc,c->m_tail,1);
+			ops->m_opcode.m_op = OP_SUCCEEDS;
+
+			c = compile_goal(&cc,c,context->m_stack);
+			ops = append_opcodes(&cc,c->m_tail,1);
+			ops->m_opcode.m_op = OP_END;
+			
+			cfg_vec_t blks = {0};
+			link_cfgs(&cc,&blks,c->m_entry_point);
+
+			dumpCFG(&blks,"./cfg.dot");
+
+			if (blks.m_total)
+			{
+				opcode_t* code = heap_malloc(&cc.m_heap,blks.m_total * sizeof(opcode_t));
+				if (!code)
+					longjmp(cc.m_jmp,1);
+
+				blks.m_total = emit_ops(code,&blks);
+
+				dumpTrace(code,blks.m_total,"./pcode.txt");
+
+				// Put pcode on the stack... JIT later...
+				context->m_stack -= bytes_to_cells(blks.m_total * sizeof(opcode_t),sizeof(term_t));
+				memcpy(context->m_stack,code,blks.m_total * sizeof(opcode_t));
+			}			
+			(--context->m_stack)->m_u64val = blks.m_total;
 		}
 		
 		/* Bulk free all heap allocs */
-		heap_reset(&context->m_heap,heap_start);
+		heap_reset(&cc.m_heap,heap_start);
 	}
 
 	/* We have just made heavy use of the heap */

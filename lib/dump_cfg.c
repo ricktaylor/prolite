@@ -325,7 +325,7 @@ void dumpTrace(const opcode_t* code, size_t count, const char* filename)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"call %s, if (!FTH) gosub %+d (%zu);\n",builtinName(code[1].m_term.m_pval),(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
+			fprintf(f,"extern %s() { if (!FTH) gosub %+d (%zu); }\n",builtinName(code[1].m_term.m_pval),(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
 			break;
 
 		case OP_SET_FLAGS:
