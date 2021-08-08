@@ -4,7 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline uint32_t next_pot(size_t s)
+static const size_t c_page_size = 0x10000;
+
+static inline size_t next_pot(size_t s)
 {
 	--s;
 	s |= s >> 1;
@@ -12,48 +14,12 @@ static inline uint32_t next_pot(size_t s)
 	s |= s >> 4;
 	s |= s >> 8;
 	s |= s >> 16;
+
+	if (sizeof(size_t) > 4)
+		s |= s >> 32;
+
 	++s;
 	return s;
-}
-
-static struct heap_page* heap_insert_page(void*(*fn_malloc)(size_t), size_t size, struct heap_page* after)
-{
-	size_t align_size = next_pot(size + sizeof(struct heap_page));
-	if (align_size < 65536)
-		align_size = 65536;
-
-	struct heap_page* page = after ? after->m_next : NULL;
-	if (page && page->m_count >= align_size / sizeof(uint64_t))
-	{
-		page->m_top = 0;
-		page->m_base = after->m_base + after->m_top;
-	}
-	else
-	{
-		//while (align_size <= after->m_count * sizeof(uint64_t))
-		//	align_size *= 2;
-
-		page = (*fn_malloc)(align_size);
-		if (page)
-		{
-			page->m_top = 0;
-			page->m_count = (align_size / sizeof(uint64_t)) - bytes_to_cells(sizeof(heap_t),sizeof(uint64_t));
-			page->m_prev = after;
-			page->m_next = NULL;
-			page->m_base = 0;
-			if (page->m_prev)
-			{
-				if (page->m_prev->m_next)
-				{
-					page->m_next = page->m_prev->m_next;
-					page->m_next->m_prev = page;
-				}
-				page->m_prev->m_next = page;
-				page->m_base = page->m_prev->m_base + page->m_prev->m_top;
-			}			
-		}
-	}
-	return page;
 }
 
 void heap_delete(heap_t* heap)
@@ -121,15 +87,31 @@ void* heap_malloc(heap_t* heap, size_t len)
 	void* ptr = NULL;
 	if (heap && len)
 	{
-		uint32_t align_len = bytes_to_cells(len,sizeof(uint64_t));
-
+		size_t align_len = bytes_to_cells(len,sizeof(uint64_t));
+		while (heap->m_page && heap->m_page->m_top + align_len >= heap->m_page->m_count && heap->m_page->m_next)
+			heap->m_page = heap->m_page->m_next;
+		
 		if (!heap->m_page || heap->m_page->m_top + align_len >= heap->m_page->m_count)
 		{
-			struct heap_page* page = heap_insert_page(heap->m_fn_malloc,len,heap->m_page);
-			if (!page)
-				return NULL;
+			size_t alloc_size = next_pot(align_len * sizeof(uint64_t) + sizeof(struct heap_page));
+			if (alloc_size < c_page_size)
+				alloc_size = c_page_size;
 
-			heap->m_page = page;
+			struct heap_page* new_page = (*heap->m_fn_malloc)(alloc_size);
+			if (!new_page)
+				return NULL;
+			
+			new_page->m_top = 0;
+			new_page->m_count = (alloc_size / sizeof(uint64_t)) - bytes_to_cells(sizeof(struct heap_page),sizeof(uint64_t));
+			new_page->m_prev = heap->m_page;
+			new_page->m_next = NULL;
+			new_page->m_base = 0;
+			if (heap->m_page)
+			{
+				heap->m_page->m_next = new_page;
+				new_page->m_base = heap->m_page->m_base + heap->m_page->m_top;
+			}
+			heap->m_page = new_page;
 		}
 
 		/* No rounding, just pointer bump */
@@ -143,7 +125,7 @@ void heap_free(heap_t* heap, void* ptr, size_t len)
 {
 	if (heap && ptr && len)
 	{
-		uint32_t align_len = bytes_to_cells(len,sizeof(uint64_t));
+		size_t align_len = bytes_to_cells(len,sizeof(uint64_t));
 		for (struct heap_page* page = heap->m_page; page; )
 		{
 			if (ptr >= (void*)page->m_data && ptr < (void*)(page->m_data + page->m_top))
@@ -173,10 +155,10 @@ void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len)
 			return NULL;
 		}
 
-		uint32_t align_old_len = bytes_to_cells(old_len,sizeof(uint64_t));
+		size_t align_old_len = bytes_to_cells(old_len,sizeof(uint64_t));
 		if (heap->m_page && heap->m_page->m_top >= align_old_len && ptr == heap->m_page->m_data + heap->m_page->m_top - align_old_len)
 		{
-			uint32_t align_new_len = bytes_to_cells(new_len,sizeof(uint64_t));
+			size_t align_new_len = bytes_to_cells(new_len,sizeof(uint64_t));
 			if (heap->m_page->m_top + (align_new_len - align_old_len) <= heap->m_page->m_count)
 			{
 				heap->m_page->m_top += (align_new_len - align_old_len);
