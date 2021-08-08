@@ -30,7 +30,7 @@ typedef struct heap
 	void            (*m_fn_free)(void*);
 } heap_t;
 
-void heap_delete(heap_t* s);
+void heap_destroy(heap_t* s);
 
 static inline size_t bytes_to_cells(size_t len, size_t cell_size)
 {
@@ -41,8 +41,6 @@ static inline size_t heap_top(const heap_t* heap)
 {
 	return ((!heap || !heap->m_page) ? 0 : (heap->m_page->m_base + heap->m_page->m_top));
 }
-
-const void* heap_at(const heap_t* heap, size_t pos);
 
 void heap_reset(heap_t* heap, size_t pos);
 

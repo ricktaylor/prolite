@@ -57,7 +57,7 @@ int main(int argc, char* argv[])
 		context_delete(c);
 	}
 
-	heap_delete(&h);
+	heap_destroy(&h);
 
 	return 0;
 }

@@ -22,63 +22,45 @@ static inline size_t next_pot(size_t s)
 	return s;
 }
 
-void heap_delete(heap_t* heap)
+void heap_destroy(heap_t* heap)
 {
 	if (heap)
 	{
-		for (struct heap_page* page = heap->m_page; page;)
+		heap_compact(heap);
+		
+		while (heap->m_page)
 		{
-			struct heap_page* p = page->m_prev;
-			(*heap->m_fn_free)(page);
-			page = p;
+			struct heap_page* p = heap->m_page->m_prev;
+			(*heap->m_fn_free)(heap->m_page);
+			heap->m_page = p;
 		}
 	}
-}
-
-const void* heap_at(const heap_t* heap, size_t pos)
-{
-	struct heap_page* page = (heap ? heap->m_page : NULL);
-
-	while (page && page->m_base + page->m_top < pos)
-		page = page->m_next;
-
-	while (page && page->m_base > pos)
-		page = page->m_prev;
-
-	return &page->m_data[pos - page->m_base];
 }
 
 void heap_reset(heap_t* heap, size_t pos)
 {
-	if (pos >= heap_top(heap))
-		return;
-
-	struct heap_page* page = heap->m_page;
-	for (pos = page->m_base + page->m_top - pos; pos;)
+	if (heap && heap->m_page)
 	{
-		if (pos <= page->m_top)
+		while (pos < heap->m_page->m_base)
 		{
-			page->m_top -= pos;
-			break;
+			heap->m_page->m_top = 0;
+			heap->m_page = heap->m_page->m_prev;
 		}
 
-		pos -= page->m_top;
-		page = page->m_prev;
+		heap->m_page->m_top = pos;
 	}
-	heap->m_page = page;
 }
 
 void heap_compact(heap_t* heap)
 {
 	if (heap && heap->m_page)
 	{
-		for (struct heap_page* next = heap->m_page->m_next; next;)
+		while (heap->m_page->m_next)
 		{
-			struct heap_page* n = next->m_next;
-			(*heap->m_fn_free)(next);
-			next = n;
+			struct heap_page* n = heap->m_page->m_next->m_next;
+			(*heap->m_fn_free)(heap->m_page->m_next);
+			heap->m_page->m_next = n;
 		}
-		heap->m_page->m_next = NULL;
 	}
 }
 
@@ -89,7 +71,10 @@ void* heap_malloc(heap_t* heap, size_t len)
 	{
 		size_t align_len = bytes_to_cells(len,sizeof(uint64_t));
 		while (heap->m_page && heap->m_page->m_top + align_len >= heap->m_page->m_count && heap->m_page->m_next)
+		{
+			heap->m_page->m_next->m_base = heap->m_page->m_base + heap->m_page->m_top;
 			heap->m_page = heap->m_page->m_next;
+		}
 		
 		if (!heap->m_page || heap->m_page->m_top + align_len >= heap->m_page->m_count)
 		{
@@ -123,22 +108,12 @@ void* heap_malloc(heap_t* heap, size_t len)
 
 void heap_free(heap_t* heap, void* ptr, size_t len)
 {
-	if (heap && ptr && len)
+	if (heap && heap->m_page && ptr && len)
 	{
 		size_t align_len = bytes_to_cells(len,sizeof(uint64_t));
-		for (struct heap_page* page = heap->m_page; page; )
-		{
-			if (ptr >= (void*)page->m_data && ptr < (void*)(page->m_data + page->m_top))
-			{
-				if (page->m_top >= align_len && ptr == page->m_data + page->m_top - align_len)
-					page->m_top -= align_len;
-
-				heap->m_page = page;
-				break;
-			}
-
-			page = page->m_prev;
-		}
+		
+		if (heap->m_page->m_top >= align_len && ptr == heap->m_page->m_data + (heap->m_page->m_top - align_len))
+			heap->m_page->m_top -= align_len;
 	}
 }
 
@@ -156,7 +131,7 @@ void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len)
 		}
 
 		size_t align_old_len = bytes_to_cells(old_len,sizeof(uint64_t));
-		if (heap->m_page && heap->m_page->m_top >= align_old_len && ptr == heap->m_page->m_data + heap->m_page->m_top - align_old_len)
+		if (heap->m_page && heap->m_page->m_top >= align_old_len && ptr == heap->m_page->m_data + (heap->m_page->m_top - align_old_len))
 		{
 			size_t align_new_len = bytes_to_cells(new_len,sizeof(uint64_t));
 			if (heap->m_page->m_top + (align_new_len - align_old_len) <= heap->m_page->m_count)
