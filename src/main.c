@@ -11,6 +11,7 @@ void compile(context_t* context, stream_t* s);
 
 #include <string.h>
 #include <assert.h>
+#include <stdlib.h>
 
 typedef struct prolite_env
 {
@@ -37,14 +38,12 @@ static int64_t text_stream_read(stream_t* s, void* dest, size_t len)
 	return r;
 }
 
-context_t* context_new(void);
-void context_delete(context_t* c);
-
 int main(int argc, char* argv[])
 {
 	const char* cmd = argc > 1 ? argv[1] : "true.";
 
-	context_t* c = context_new();
+	heap_t h = { .m_fn_malloc = &malloc, .m_fn_free = &free };
+	context_t* c = context_new(&h);
 	if (c)
 	{
 		struct text_stream ts = {0};
@@ -57,6 +56,8 @@ int main(int argc, char* argv[])
 		
 		context_delete(c);
 	}
+
+	heap_delete(&h);
 
 	return 0;
 }

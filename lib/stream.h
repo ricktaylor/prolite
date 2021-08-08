@@ -2,7 +2,7 @@
 #ifndef STREAM_H_INCLUDED_
 #define STREAM_H_INCLUDED_
 
-#include "types.h"
+#include "context.h"
 
 typedef struct stream
 {

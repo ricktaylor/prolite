@@ -1,6 +1,6 @@
 
-#include "compile.h"
 #include "stream.h"
+#include "compile.h"
 
 #include <string.h>
 #include <stdarg.h>
@@ -8,22 +8,21 @@
 
 // TEMP
 
-int builtin_call(context_t* context) { return 0; }
-int builtin_callN(context_t* context) { return 0; }
-int builtin_catch(context_t* context) { return 0; }
-int builtin_throw(context_t* context) { return 0; }
-int builtin_halt(context_t* context) { return 0; }
-int builtin_user_defined(context_t* context) { return 0; }
-int builtin_occurs_check(context_t* context) { return 0; }
-int builtin_callable(context_t* context) { return 0; }
-int builtin_ground(context_t* context) { return 0; }
-int builtin_term_compare(context_t* context) { return 0; }
+void builtin_call(context_t* context) {  }
+void builtin_callN(context_t* context) {  }
+void builtin_catch(context_t* context) {  }
+void builtin_throw(context_t* context) {  }
+void builtin_halt(context_t* context) {  }
+void builtin_occurs_check(context_t* context) {  }
+void builtin_callable(context_t* context) {  }
+void builtin_ground(context_t* context) {  }
+void builtin_term_compare(context_t* context) {  }
 
 // END TEMP
 
 static cfg_block_t* new_cfg_block(compile_context_t* context)
 {
-	cfg_block_t* b = heap_malloc(&context->m_heap,sizeof(cfg_block_t));
+	cfg_block_t* b = heap_malloc(context->m_heap,sizeof(cfg_block_t));
 	if (!b)
 		longjmp(context->m_jmp,1);
 
@@ -37,7 +36,7 @@ static opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, si
 	opcode_t* ret = blk->m_ops;
 	if (count)
 	{
-		blk->m_ops = heap_realloc(&context->m_heap,blk->m_ops,blk->m_count * sizeof(opcode_t),(blk->m_count + count) * sizeof(opcode_t));
+		blk->m_ops = heap_realloc(context->m_heap,blk->m_ops,blk->m_count * sizeof(opcode_t),(blk->m_count + count) * sizeof(opcode_t));
 		if (!blk->m_ops)
 			longjmp(context->m_jmp,1);
 
@@ -49,7 +48,7 @@ static opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, si
 
 static continuation_t* new_continuation(compile_context_t* context)
 {
-	continuation_t* c = heap_malloc(&context->m_heap,sizeof(continuation_t));
+	continuation_t* c = heap_malloc(context->m_heap,sizeof(continuation_t));
 	if (!c)
 		longjmp(context->m_jmp,1);
 
@@ -66,7 +65,7 @@ static substitutions_t* copy_substitutions(compile_context_t* context, const sub
 	if (!s)
 		return NULL;
 
-	substitutions_t* s2 = heap_malloc(&context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * s->m_count));
+	substitutions_t* s2 = heap_malloc(context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * s->m_count));
 	if (!s2)
 		longjmp(context->m_jmp,1);
 
@@ -472,7 +471,7 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 	if (arity > 1)
 	{
 		// Reverse the arguments
-		const term_t** rev = heap_malloc(&context->m_heap,arity * sizeof(term_t*));
+		const term_t** rev = heap_malloc(context->m_heap,arity * sizeof(term_t*));
 		if (!rev)
 			longjmp(context->m_jmp,1);
 
@@ -506,10 +505,8 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 	return c;
 }
 
-continuation_t* compile_user_defined(compile_context_t* context, continuation_t* cont, const term_t* goal)
+static continuation_t* compile_user_defined(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	// TODO - we can be more explicit here...
-
 	return compile_builtin(context,cont,&builtin_user_defined,1,goal);
 }
 
@@ -730,7 +727,7 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 			const term_t* p1 = get_first_arg(g1,&arity,NULL);
 			const term_t* p2 = get_first_arg(g2,NULL,NULL);
 
-			const term_t** rev = heap_malloc(&context->m_heap,arity * 2 * sizeof(term_t*));
+			const term_t** rev = heap_malloc(context->m_heap,arity * 2 * sizeof(term_t*));
 			if (!rev)
 				longjmp(context->m_jmp,1);
 
@@ -1099,7 +1096,7 @@ static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			return;
 	}
 
-	blks->m_blks = heap_realloc(&context->m_heap,blks->m_blks,blks->m_count * sizeof(cfg_block_info_t),(blks->m_count + 1) * sizeof(cfg_block_info_t));
+	blks->m_blks = heap_realloc(context->m_heap,blks->m_blks,blks->m_count * sizeof(cfg_block_info_t),(blks->m_count + 1) * sizeof(cfg_block_info_t));
 	if (!blks->m_blks)
 		longjmp(context->m_jmp,1);
 
@@ -1268,7 +1265,7 @@ void compile(context_t* context, stream_t* s)
 
 			if (varcount)
 			{
-				cc.m_substs = heap_malloc(&cc.m_heap,sizeof(substitutions_t) + (sizeof(term_t) * varcount));
+				cc.m_substs = heap_malloc(cc.m_heap,sizeof(substitutions_t) + (sizeof(term_t) * varcount));
 				if (!cc.m_substs)
 					longjmp(cc.m_jmp,1);
 
@@ -1291,7 +1288,7 @@ void compile(context_t* context, stream_t* s)
 
 			if (blks.m_total)
 			{
-				opcode_t* code = heap_malloc(&cc.m_heap,blks.m_total * sizeof(opcode_t));
+				opcode_t* code = heap_malloc(cc.m_heap,blks.m_total * sizeof(opcode_t));
 				if (!code)
 					longjmp(cc.m_jmp,1);
 
@@ -1307,7 +1304,7 @@ void compile(context_t* context, stream_t* s)
 		}
 		
 		/* Bulk free all heap allocs */
-		heap_reset(&cc.m_heap,heap_start);
+		heap_reset(cc.m_heap,heap_start);
 	}
 
 	/* We have just made heavy use of the heap */

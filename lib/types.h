@@ -8,7 +8,7 @@
 #ifndef TYPES_H_
 #define TYPES_H_
 
-#include "heap.h"
+#include <stddef.h>
 
 typedef enum prolite_type
 {
@@ -52,47 +52,6 @@ typedef struct debug_info
 	int TODO;
 } debug_info_t;
 
-typedef enum operator_specifier
-{
-	eFX,
-	eFY,
-	eXFX,
-	eXFY,
-	eYFX,
-	eXF,
-	eYF
-} operator_specifier_t;
-
-typedef struct operator
-{
-	struct operator*     m_prev;
-	operator_specifier_t m_specifier;
-	unsigned int         m_precedence;
-} operator_t;
-
-typedef struct module
-{
-	struct module_flags
-	{
-		unsigned char_conversion : 1;
-		unsigned double_quotes : 2;
-		unsigned back_quotes : 2;
-		unsigned debug : 1;
-		unsigned unknown : 2;
-		unsigned colon_sets_calling_context : 1;
-	} m_flags;
-
-	operator_t* m_operators;
-
-} module_t;
-
-typedef struct context
-{
-	heap_t*   m_heap;
-	term_t*   m_stack;
-	module_t* m_module;
-} context_t;
-
 term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external);
 term_t* push_predicate(term_t* stack, size_t arity, const unsigned char* functor, size_t functor_len, int external);
 
@@ -126,7 +85,7 @@ static inline int32_t get_integer(const term_t* v)
 
 static inline prolite_type_t get_term_type(const term_t* t)
 {
-	return UNPACK_TYPE(t->m_u64val) & 0x7;
+	return (prolite_type_t)(UNPACK_TYPE(t->m_u64val) & 0x7);
 }
 
 static inline unsigned int get_term_subtype(const term_t* t)
@@ -148,20 +107,3 @@ int predicate_compare(const term_t* c1, const term_t* c2);
 int term_compare(const term_t* t1, const term_t* t2);
 
 #endif /* TYPES_H_ */
-
-
-/* OLD GUFF
-
-struct predicate;
-
-struct clause
-{
-	struct predicate*   m_pred;
-	struct clause*      m_next;
-	struct clause*      m_prev;
-	size_t              m_var_count;
-	const term_t*       m_head;
-	size_t              m_entry_point;
-};
-
-*/

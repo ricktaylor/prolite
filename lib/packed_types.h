@@ -1,6 +1,8 @@
 #ifndef PACKED_TYPES_H
 #define PACKED_TYPES_H
 
+#include <stdint.h>
+
 // Explanation lifted straight out of duktape/duk_dblunion.h
 /*
  *

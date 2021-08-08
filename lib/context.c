@@ -5,9 +5,10 @@
  *      Author: rick
  */
 
-#include "types.h"
+#include "context.h"
 
 #include <assert.h>
+#include <string.h>
 #include <stdlib.h>
 
 uint32_t convert_char(context_t* context, uint32_t in_char)
@@ -337,13 +338,11 @@ operator_t* lookup_prefix_op(context_t* context, const unsigned char* name, size
 
 // TODO: Move these around later...
 
-#include <string.h>
-
 module_t* module_new(context_t* context, const char* name)
 {
 	// TODO: Much more here!!
 
-	module_t* module = heap_malloc(&context->m_heap,sizeof(module_t));
+	module_t* module = heap_malloc(context->m_heap,sizeof(module_t));
 	if (module)
 	{
 		memset(module,0,sizeof(module_t));
@@ -359,39 +358,26 @@ void module_delete(module_t* module)
 	// TODO
 }
 
-context_t* context_new(void)
+context_t* context_new(heap_t* heap)
 {
 	const size_t stack_size = 65536;
 
-	// Create a new context
-	context_t* retval = NULL;
-	heap_t* h = heap_new(8000,&malloc,&free);
-	if (h)
+	context_t* c = heap_malloc(heap,sizeof(context_t));
+	if (c)
 	{
-		context_t* c = heap_malloc(&h,sizeof(context_t));
-		if (c)
-		{
-			memset(c,0,sizeof(context_t));			
-			c->m_stack = malloc(stack_size * sizeof(term_t));
-			c->m_stack += stack_size;
-			c->m_heap = h;
-			c->m_module = module_new(c,"user");
-			if (c->m_module)
-			{
-				retval = c;
-			}
-		}
-
-		if (!retval)
-			heap_delete(h);
+		memset(c,0,sizeof(context_t));			
+		c->m_stack = malloc(stack_size * sizeof(term_t));
+		c->m_stack += stack_size;
+		c->m_heap = heap;
+		c->m_module = module_new(c,"user");
 	}
 
-	return retval;
+	return c;
 }
 
 void context_delete(context_t* c)
 {
 	module_delete(c->m_module);
 	//stack_delete(c->m_call_stack);
-	heap_delete(c->m_heap);
+	
 }

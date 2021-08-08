@@ -1,7 +1,7 @@
 #ifndef COMPILE_H_
 #define COMPILE_H_
 
-#include "types.h"
+#include "builtins.h"
 
 #include <setjmp.h>
 
@@ -38,14 +38,6 @@ typedef enum optype
 	OP_CLEAR_VAR,
 	OP_TYPE_TEST
 } optype_t;
-
-typedef enum exec_flags
-{
-	FLAG_FAIL = 1,
-	FLAG_CUT = 2,
-	FLAG_THROW = 4,
-	FLAG_HALT = 8
-} exec_flags_t;
 
 struct op_arg
 {
@@ -86,23 +78,6 @@ typedef struct compile_context
 	jmp_buf          m_jmp;
 } compile_context_t;
 
-typedef int (*builtin_fn_t)(context_t* context);
-
-#define DECLARE_BUILTIN_FUNCTION(f,n) \
-static inline int builtin_##f(context_t* context) { return 0; }
-
-#include "builtin_functions.h"
-
-int builtin_call(context_t* context);
-int builtin_callN(context_t* context);
-int builtin_catch(context_t* context);
-int builtin_throw(context_t* context);
-int builtin_halt(context_t* context);
-int builtin_user_defined(context_t* context);
-int builtin_callable(context_t* context);
-int builtin_occurs_check(context_t* context);
-int builtin_term_compare(context_t* context);
-
 const term_t* deref_var(compile_context_t* context, const term_t* goal);
 continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, size_t arity, const term_t* g1);
 
@@ -131,6 +106,5 @@ size_t inc_ip(optype_t op);
 
 void dumpCFG(const cfg_vec_t* blks, const char* filename);
 void dumpTrace(const opcode_t* code, size_t count, const char* filename);
-
 
 #endif // COMPILE_H_

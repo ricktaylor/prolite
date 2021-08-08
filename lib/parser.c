@@ -138,7 +138,7 @@ static void token_append_char(context_t* context, parser_t* parser, token_t* tok
 	if (token->m_alloc == token->m_len)
 	{
 		size_t new_size = (token->m_alloc == 0 ? 16 : token->m_alloc * 2);
-		unsigned char* new_str = heap_realloc(&context->m_heap,token->m_str,token->m_alloc,new_size);
+		unsigned char* new_str = heap_realloc(context->m_heap,token->m_str,token->m_alloc,new_size);
 		if (!new_str)
 			longjmp(parser->m_jmp,1);
 
@@ -1431,7 +1431,7 @@ static ast_node_t* syntax_error(ast_error_t error, ast_error_t* ast_err)
 
 static ast_node_t* atom_to_compound(context_t* context, parser_t* parser, ast_node_t* node, ast_error_t* ast_err)
 {
-	ast_node_t* new_node = heap_realloc(&context->m_heap,node,sizeof(ast_node_t),sizeof(ast_node_t) + sizeof(ast_node_t*));
+	ast_node_t* new_node = heap_realloc(context->m_heap,node,sizeof(ast_node_t),sizeof(ast_node_t) + sizeof(ast_node_t*));
 	if (!new_node)
 		longjmp(parser->m_jmp,1);
 
@@ -1445,7 +1445,7 @@ static ast_node_t* parse_number(context_t* context, parser_t* parser, ast_node_t
 {
 	if (!node)
 	{
-		node = heap_malloc(&context->m_heap,sizeof(ast_node_t));
+		node = heap_malloc(context->m_heap,sizeof(ast_node_t));
 		if (!node)
 			longjmp(parser->m_jmp,1);
 
@@ -1553,7 +1553,7 @@ static ast_node_t* parse_arg(context_t* context, parser_t* parser, token_type_t*
 	if (*next_type != tokName)
 		return parse_term(context,parser,999,next_type,next,ast_err);
 
-	node = heap_malloc(&context->m_heap,sizeof(ast_node_t));
+	node = heap_malloc(context->m_heap,sizeof(ast_node_t));
 	if (!node)
 		longjmp(parser->m_jmp,1);
 
@@ -1602,7 +1602,7 @@ static ast_node_t* parse_compound_term(context_t* context, parser_t* parser, ast
 		if (node->m_arity == alloc_arity)
 		{
 			size_t new_arity = alloc_arity * 2;
-			ast_node_t* new_node = heap_realloc(&context->m_heap,node,sizeof(ast_node_t) + (alloc_arity * sizeof(ast_node_t*)),sizeof(ast_node_t) + (new_arity * sizeof(ast_node_t*)));
+			ast_node_t* new_node = heap_realloc(context->m_heap,node,sizeof(ast_node_t) + (alloc_arity * sizeof(ast_node_t*)),sizeof(ast_node_t) + (new_arity * sizeof(ast_node_t*)));
 			if (!new_node)
 				longjmp(parser->m_jmp,1);
 
@@ -1634,7 +1634,7 @@ static ast_node_t* parse_list_term(context_t* context, parser_t* parser, token_t
 
 	do
 	{
-		*tail = heap_malloc(&context->m_heap,sizeof(ast_node_t) + (2*sizeof(ast_node_t*)));
+		*tail = heap_malloc(context->m_heap,sizeof(ast_node_t) + (2*sizeof(ast_node_t*)));
 		if (!(*tail))
 			longjmp(parser->m_jmp,1);
 
@@ -1667,7 +1667,7 @@ static ast_node_t* parse_list_term(context_t* context, parser_t* parser, token_t
 	else if (*next_type == tokCloseL)
 	{
 		/* Append [] */
-		*tail = heap_malloc(&context->m_heap,sizeof(ast_node_t));
+		*tail = heap_malloc(context->m_heap,sizeof(ast_node_t));
 		if (!(*tail))
 			longjmp(parser->m_jmp,1);
 
@@ -1686,7 +1686,7 @@ static ast_node_t* parse_list_term(context_t* context, parser_t* parser, token_t
 static ast_node_t* parse_name(context_t* context, parser_t* parser, unsigned int* max_prec, token_type_t* next_type, token_t* next, ast_error_t* ast_err)
 {
 	operator_t* op;
-	ast_node_t* node = heap_malloc(&context->m_heap,sizeof(ast_node_t));
+	ast_node_t* node = heap_malloc(context->m_heap,sizeof(ast_node_t));
 	if (!node)
 		longjmp(parser->m_jmp,1);
 
@@ -1735,7 +1735,7 @@ static ast_node_t* parse_chars_and_codes(context_t* context, parser_t* parser, i
 {
 	/* TODO: Check for utf8 chars token and split into multiple lists */
 
-	ast_node_t* node = heap_malloc(&context->m_heap,sizeof(ast_node_t));
+	ast_node_t* node = heap_malloc(context->m_heap,sizeof(ast_node_t));
 	if (!node)
 		longjmp(parser->m_jmp,1);
 
@@ -1758,7 +1758,7 @@ static ast_node_t* parse_term_base(context_t* context, parser_t* parser, unsigne
 		return parse_name(context,parser,max_prec,next_type,next,ast_err);
 
 	case tokVar:
-		node = heap_malloc(&context->m_heap,sizeof(ast_node_t));
+		node = heap_malloc(context->m_heap,sizeof(ast_node_t));
 		if (!node)
 			longjmp(parser->m_jmp,1);
 
@@ -1811,7 +1811,7 @@ static ast_node_t* parse_term_base(context_t* context, parser_t* parser, unsigne
 			return parse_list_term(context,parser,next_type,next,ast_err);
 		}
 
-		node = heap_malloc(&context->m_heap,sizeof(ast_node_t));
+		node = heap_malloc(context->m_heap,sizeof(ast_node_t));
 		if (!node)
 			longjmp(parser->m_jmp,1);
 
@@ -1822,7 +1822,7 @@ static ast_node_t* parse_term_base(context_t* context, parser_t* parser, unsigne
 		break;
 
 	case tokOpenC:
-		node = heap_malloc(&context->m_heap,sizeof(ast_node_t) + sizeof(ast_node_t*));
+		node = heap_malloc(context->m_heap,sizeof(ast_node_t) + sizeof(ast_node_t*));
 		if (!node)
 			longjmp(parser->m_jmp,1);
 
@@ -1990,7 +1990,7 @@ static ast_node_t* parse_term(context_t* context, parser_t* parser, unsigned int
 			break;
 		else
 		{
-			ast_node_t* next_node = heap_malloc(&context->m_heap,sizeof(ast_node_t) + ((1 + binary) * sizeof(ast_node_t*)));
+			ast_node_t* next_node = heap_malloc(context->m_heap,sizeof(ast_node_t) + ((1 + binary) * sizeof(ast_node_t*)));
 			if (!next_node)
 				longjmp(parser->m_jmp,1);
 
@@ -2204,7 +2204,7 @@ static parse_status_t collate_var_info(context_t* context, parser_t* parser, var
 			if (i == MAX_VAR_INDEX)
 				return emit_out_of_heap_error(&context->m_stack,NULL);
 
-			new_varinfo = heap_realloc(&context->m_heap,*varinfo,sizeof(var_info_t) * (*var_count),sizeof(var_info_t) * ((*var_count)+1));
+			new_varinfo = heap_realloc(context->m_heap,*varinfo,sizeof(var_info_t) * (*var_count),sizeof(var_info_t) * ((*var_count)+1));
 			if (!new_varinfo)
 				longjmp(parser->m_jmp,1);
 
@@ -2285,7 +2285,7 @@ parse_status_t read_term(context_t* context, stream_t* s)
 	}
 
 	/* Reset the heap */
-	heap_reset(&context->m_heap,heap_start);
+	heap_reset(context->m_heap,heap_start);
 
 	return status;
 }
