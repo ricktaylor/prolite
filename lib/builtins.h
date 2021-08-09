@@ -1,12 +1,8 @@
 #ifndef BUILTINS_H_
 #define BUILTINS_H_
 
-#include "context.h"
-
-typedef void (*builtin_fn_t)(context_t* context);
-
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
-static inline void builtin_##f(context_t* context) { }
+void builtin_##f(context_t* context);
 
 #include "builtin_functions.h"
 

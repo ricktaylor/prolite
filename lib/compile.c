@@ -1,6 +1,7 @@
 
 #include "stream.h"
 #include "compile.h"
+#include "builtins.h"
 
 #include <string.h>
 #include <stdarg.h>

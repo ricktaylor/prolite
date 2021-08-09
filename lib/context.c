@@ -336,9 +336,29 @@ operator_t* lookup_prefix_op(context_t* context, const unsigned char* name, size
 	return op;
 }
 
+void builtin_set_prolog_flag(context_t* context)
+{
+}
+
+void builtin_char_conversion(context_t* context)
+{
+}
+
+void builtin_current_char_conversion(context_t* context)
+{
+}
+
+void builtin_op(context_t* context)
+{
+}
+
+void builtin_current_op(context_t* context)
+{
+}
+
 // TODO: Move these around later...
 
-module_t* module_new(context_t* context, const char* name)
+module_t* module_new(context_t* context, const term_t* name)
 {
 	// TODO: Much more here!!
 
@@ -369,7 +389,9 @@ context_t* context_new(heap_t* heap)
 		c->m_stack = malloc(stack_size * sizeof(term_t));
 		c->m_stack += stack_size;
 		c->m_heap = heap;
-		c->m_module = module_new(c,"user");
+
+		term_t user = { .m_u64val = PACK_ATOM_EMBED_4('u','s','e','r') };
+		c->m_module = module_new(c,&user);
 	}
 
 	return c;

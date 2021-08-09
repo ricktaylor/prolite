@@ -1,7 +1,9 @@
 #ifndef COMPILE_H_
 #define COMPILE_H_
 
-#include "builtins.h"
+#include "context.h"
+
+typedef void (*builtin_fn_t)(context_t* context);
 
 #include <setjmp.h>
 
