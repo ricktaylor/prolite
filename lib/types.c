@@ -176,7 +176,7 @@ string_t get_string(const term_t* b, const debug_info_t** debug_info)
 	
 	case 0:
 		ret.m_len = (size_t)(all48 & MAX_ATOM_LEN);
-		ret.m_str = b->m_pval;
+		ret.m_str = (const unsigned char*)b;
 		b += bytes_to_cells(ret.m_len,sizeof(term_t));
 		break;
 	}
