@@ -296,7 +296,8 @@ continuation_t* compile_false(compile_context_t* context, continuation_t* cont, 
 
 static continuation_t* compile_cut(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	return set_flags(context,cont,FLAG_CUT);
+	continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
+	return goto_next(context,c,cont);
 }
 
 static continuation_t* compile_and(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -459,15 +460,6 @@ static continuation_t* compile_if_then(compile_context_t* context, continuation_
 
 continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, size_t arity, const term_t* goal)
 {
-	cont = make_subroutine(context,cont);
-
-	while (cont->m_entry_point->m_count == 3 &&
-		cont->m_entry_point->m_ops[0].m_opcode.m_op == OP_GOSUB &&
-		cont->m_entry_point->m_ops[2].m_opcode.m_op == OP_RET)
-	{
-		cont->m_entry_point = (void*)cont->m_entry_point->m_ops[1].m_term.m_pval;
-	}
-
 	continuation_t* c = new_continuation(context);
 	if (arity > 1)
 	{
@@ -497,18 +489,36 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 	}
 
 	continuation_t* c1 = new_continuation(context);
-	opcode_t* ops = append_opcodes(context,c1->m_tail,2);
+	opcode_t* ops = append_opcodes(context,c1->m_tail,3);
+	(ops++)->m_opcode.m_op = OP_PUSH_CUT;
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
 	ops->m_term.m_pval = fn;
 
 	continuation_t* c_end = new_continuation(context);
+	ops = append_opcodes(context,c_end->m_tail,1);
+	ops->m_opcode.m_op = OP_POP_CUT;
+
 	add_branch(context,c1,OP_BRANCH,FLAG_FAIL | FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+	ops = append_opcodes(context,c1->m_tail,1);
+	ops->m_opcode.m_op = OP_POP_CUT;
 	c1 = goto_next(context,c1,cont);
-	add_branch(context,c1,OP_BRANCH,FLAG_FAIL | FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
-		
-	ops = append_opcodes(context,c1->m_tail,2);
-	(ops++)->m_opcode.m_op = OP_JMP;
-	ops->m_term.m_pval = c1->m_entry_point;
+
+	continuation_t* c2 = new_continuation(context);
+	goto_next(context,c_end,c2);
+	c_end = c2;
+	
+	if (cont->m_always_flags & (FLAG_FAIL | FLAG_CUT | FLAG_THROW | FLAG_HALT))
+	{
+		c1 = goto_next(context,c1,c_end);
+	}
+	else
+	{
+		add_branch(context,c1,OP_BRANCH,FLAG_FAIL | FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+			
+		ops = append_opcodes(context,c1->m_tail,2);
+		(ops++)->m_opcode.m_op = OP_JMP;
+		ops->m_term.m_pval = c1->m_entry_point;
+	}
 	
 	c = goto_next(context,c,c1);
 	c->m_always_flags = cont->m_always_flags;
@@ -1040,14 +1050,6 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 	return c;
 }
 
-static const cfg_block_t* dedup_jmp(const cfg_block_t** pblk)
-{
-	while ((*pblk)->m_count == 2 && (*pblk)->m_ops[0].m_opcode.m_op == OP_JMP)
-		*pblk = (*pblk)->m_ops[1].m_term.m_pval;
-
-	return *pblk;
-}
-
 size_t inc_ip(optype_t op)
 {
 	size_t ip = 1;
@@ -1125,7 +1127,11 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 
 		case OP_JMP:
 			{
-				const cfg_block_t* next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval);
+				// Reduce JMP to JMP
+				const cfg_block_t* next = blk->m_ops[i+1].m_term.m_pval;
+				while (next->m_count == 2 && next->m_ops[0].m_opcode.m_op == OP_JMP)
+					next = next->m_ops[1].m_term.m_pval;
+
 				walk_cfgs(context,blks,next);
 				move_cfg(blks,blk,next);
 			}
@@ -1144,7 +1150,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 		case OP_BRANCH:
 		case OP_BRANCH_NOT:
 			{
-				const cfg_block_t* next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval);
+				const cfg_block_t* next = blk->m_ops[i+1].m_term.m_pval;
 				walk_cfgs(context,blks,next);
 				move_cfg(blks,blk,next);
 			}
@@ -1195,6 +1201,22 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 				{
 					memcpy(code,blk->m_ops + i,len * sizeof(*code));
 					code += len;
+				}
+				break;
+
+			case OP_BRANCH:
+				{
+					*code++ = blk->m_ops[i];
+
+					// Reduce BRANCH to BRANCH
+					const cfg_block_t* next = blk->m_ops[i+1].m_term.m_pval;
+					while (next->m_count >= 2 && next->m_ops[0].m_opcode.m_op == OP_BRANCH && 
+						(next->m_ops[0].m_opcode.m_arg & blk->m_ops[i].m_opcode.m_arg) == blk->m_ops[i].m_opcode.m_arg)
+					{
+						next = next->m_ops[1].m_term.m_pval;
+					}
+
+					(code++)->m_term.m_pval = next;
 				}
 				break;
 
