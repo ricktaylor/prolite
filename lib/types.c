@@ -1,9 +1,9 @@
-#include "types.h"
-#include "heap.h"
+#include "context.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <setjmp.h>
 
 #undef DECLARE_BUILTIN_STRING
 #define DECLARE_BUILTIN_STRING(s) { sizeof(#s)-1,(const unsigned char*)(#s) },
@@ -140,9 +140,9 @@ term_t* push_predicate(term_t* stack, size_t arity, const unsigned char* functor
 static const term_t* get_debug_info(const term_t* p, const debug_info_t** debug_info)
 {
 	if (debug_info)
-		*debug_info = (const debug_info_t*)p->m_u64val;
+		*debug_info = (const debug_info_t*)p;
 	
-	return p + 1;
+	return p + bytes_to_cells(sizeof(debug_info_t),sizeof(*p));
 }
 
 string_t get_string(const term_t* b, const debug_info_t** debug_info)
@@ -570,4 +570,140 @@ int term_precedes(const term_t* t1, const term_t* t2)
 		}
 	}
 	return r;
+}
+
+static void append_term_to_heap(context_t* context, const term_t* src, term_t** dst, size_t* old_len, size_t count, jmp_buf* jmp)
+{
+	*dst = heap_realloc(context->m_heap,*dst,*old_len,*old_len + (count * sizeof(term_t)));
+	if (!*dst)
+		longjmp(*jmp,1);
+
+	memcpy(*dst + (*old_len / sizeof(term_t)),src,count * sizeof(term_t));
+	*old_len += count * sizeof(term_t);
+}
+
+static void copy_term_to_heap_inner(context_t* context, const term_t* src, term_t** dst, size_t* dst_len, term_t* var_mapping, size_t* var_count, jmp_buf* jmp)
+{
+	const term_t* p = src;
+	uint64_t all48 = (p++)->m_u64val;
+	uint16_t hi16 = UNPACK_TYPE(all48);
+	prolite_type_t type = hi16 & 0x7;
+	int have_debug_info = (hi16 & prolite_debug_info);
+	all48 = UNPACK_MANT_48(all48);
+	hi16 = (all48 >> 32);
+
+	switch (type)
+	{
+	case prolite_var:
+		{
+			// TODO - var_mapping!!
+			size_t i = 0;
+			while (i < *var_count && var_mapping[i].m_u64val != all48)
+				++i;
+
+			if (i == *var_count)
+			{
+				(--context->m_stack)->m_u64val = all48;
+				++(*var_count);
+			}
+
+			term_t new_var = (term_t){ .m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(i) };
+			append_term_to_heap(context,&new_var,dst,dst_len,1,jmp);
+
+			if (have_debug_info)
+			{
+				src = p;
+				p = get_debug_info(p,NULL);
+				append_term_to_heap(context,p,dst,dst_len,src - p,jmp);
+			}
+		}
+		return;
+
+	case prolite_atom:
+	case prolite_chars:
+	case prolite_charcodes:
+		switch (hi16 >> 14)
+		{
+		case 3:
+			++p;
+			break;
+
+		case 0:
+			p += bytes_to_cells(all48 & MAX_ATOM_LEN,sizeof(term_t));
+			break;
+		}
+		if (have_debug_info)
+			p = get_debug_info(p,NULL);
+		break;
+
+	case prolite_compound:
+		{
+			size_t arity;
+			switch (hi16 >> 14)
+			{
+			case 3:
+				assert(0);
+				break;
+
+			case 2:
+				arity = (hi16 & 0x7800) >> 11;
+				if (have_debug_info)
+					p = get_debug_info(p,NULL);
+				break;
+			
+			case 1:
+				arity = hi16 & MAX_ARITY_BUILTIN;
+				if (have_debug_info)
+					p = get_debug_info(p,NULL);
+				break;
+			
+			case 0:
+				arity = (all48 & MAX_ARITY);
+				p = get_next_arg(p,NULL);
+				break;
+			}
+
+			append_term_to_heap(context,src,dst,dst_len,p - src,jmp);
+			
+			/* Skip args */
+			while (arity--)
+			{
+				p = get_next_arg(p,NULL);
+				copy_term_to_heap_inner(context,deref_var_term(context,p),dst,dst_len,var_mapping,var_count,jmp);
+			}
+		}
+		return;
+
+	default:
+		if (have_debug_info)
+			p = get_debug_info(p,NULL);
+		break;
+	}
+
+	append_term_to_heap(context,src,dst,dst_len,p - src,jmp);
+}
+
+const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* dst_len, size_t* var_count)
+{
+	term_t* sp = context->m_stack;
+	term_t* dst = NULL;
+	size_t top = heap_top(context->m_heap);
+
+	jmp_buf jmp;
+	if (!setjmp(jmp))
+	{
+		copy_term_to_heap_inner(context,deref_var_term(context,t),&dst,dst_len,context->m_stack,var_count,&jmp);
+	}
+	else
+	{
+		heap_reset(context->m_heap,top);
+
+		*dst_len = 0;
+		*var_count = 0;
+		dst = NULL;
+	}
+
+	context->m_stack = sp;
+
+	return dst;
 }

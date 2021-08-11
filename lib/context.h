@@ -46,33 +46,32 @@ typedef enum exec_flags
 	FLAG_HALT = 8
 } exec_flags_t;
 
+typedef struct substitutions
+{
+	size_t        m_count;
+	const term_t* m_vals[];
+} substitutions_t;
+
 typedef struct context
 {
-	heap_t*      m_heap;
-	term_t*      m_stack;
-	exec_flags_t m_flags;
-
-	module_t*    m_module;
+	heap_t*          m_heap;
+	term_t*          m_stack;
+	exec_flags_t     m_flags;
+	substitutions_t* m_locals;
+	substitutions_t* m_params;
+	module_t*        m_module;
+	
 } context_t;
 
 context_t* context_new(heap_t* heap);
 void context_delete(context_t* c);
 
+const term_t* deref_var_term(context_t* context, const term_t* t);
+
+const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* dst_len, size_t* var_count);
+
+void throw_instantiation_error(context_t* context, const term_t* t);
+void throw_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t);
+void throw_type_error(context_t* context, uint64_t p1, const term_t* t);
+
 #endif // CONTEXT_H_
-
-
-/* OLD GUFF
-
-struct predicate;
-
-struct clause
-{
-	struct predicate*   m_pred;
-	struct clause*      m_next;
-	struct clause*      m_prev;
-	size_t              m_var_count;
-	const term_t*       m_head;
-	size_t              m_entry_point;
-};
-
-*/

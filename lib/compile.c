@@ -496,12 +496,23 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 		ops->m_term.m_pval = deref_var(context,goal);
 	}
 
-	opcode_t* ops = append_opcodes(context,c->m_tail,3);
+	continuation_t* c1 = new_continuation(context);
+	opcode_t* ops = append_opcodes(context,c1->m_tail,2);
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
-	(ops++)->m_term.m_pval = fn;
-	ops->m_term.m_pval = cont->m_entry_point;
+	ops->m_term.m_pval = fn;
+
+	continuation_t* c_end = new_continuation(context);
+	add_branch(context,c1,OP_BRANCH,FLAG_FAIL | FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+	c1 = goto_next(context,c1,cont);
+	add_branch(context,c1,OP_BRANCH,FLAG_FAIL | FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+		
+	ops = append_opcodes(context,c1->m_tail,2);
+	(ops++)->m_opcode.m_op = OP_JMP;
+	ops->m_term.m_pval = c1->m_entry_point;
 	
-	c->m_always_flags = (cont->m_always_flags & (FLAG_FAIL | FLAG_THROW));
+	c = goto_next(context,c,c1);
+	c->m_always_flags = cont->m_always_flags;
+	c->m_tail = c_end->m_tail;
 
 	return c;
 }
@@ -1049,10 +1060,10 @@ size_t inc_ip(optype_t op)
 	case OP_PUSH_TERM_REF:
 	case OP_BRANCH:
 	case OP_BRANCH_NOT:
+	case OP_BUILTIN:
 		++ip;
 		break;
-
-	case OP_BUILTIN:
+	
     case OP_SET_VAR:
 		ip += 2;
 		break;	
@@ -1089,7 +1100,7 @@ static void move_cfg(cfg_vec_t* blks, const cfg_block_t* blk, const cfg_block_t*
 	}
 }
 
-static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_block_t* blk)
+static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_block_t* blk)
 {
 	for (size_t i=0; i < blks->m_count; ++i)
 	{
@@ -1106,8 +1117,6 @@ static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
-		const cfg_block_t* next = NULL;
-
 		switch (blk->m_ops[i].m_opcode.m_op)
 		{
 		case OP_NOP:
@@ -1115,9 +1124,11 @@ static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			break;
 
 		case OP_JMP:
-			next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval);
-			link_cfgs(context,blks,next);
-			move_cfg(blks,blk,next);
+			{
+				const cfg_block_t* next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval);
+				walk_cfgs(context,blks,next);
+				move_cfg(blks,blk,next);
+			}
 			break;
 
 		default:
@@ -1127,28 +1138,21 @@ static void link_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
-		const cfg_block_t* next = NULL;
-
 		switch (blk->m_ops[i].m_opcode.m_op)
 		{
 		case OP_GOSUB:
 		case OP_BRANCH:
 		case OP_BRANCH_NOT:
-			next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval);
-			link_cfgs(context,blks,next);
+			{
+				const cfg_block_t* next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval);
+				walk_cfgs(context,blks,next);
+				move_cfg(blks,blk,next);
+			}
 			break;
-
-		case OP_BUILTIN:
-			next = dedup_jmp((const cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval);
-			link_cfgs(context,blks,next);
-			break;
-
+		
 		default:
 			break;
-		}
-
-		if (next)
-			move_cfg(blks,blk,next);
+		}			
 	}
 }
 
@@ -1173,7 +1177,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 				if (blk->m_count == 1)
 				{
 					// See if there is a replacement we can reuse
-					for (const opcode_t* c = start; start < code; c += inc_ip(code->m_opcode.m_op))
+					for (const opcode_t* c = start; c < code; c += inc_ip(code->m_opcode.m_op))
 					{
 						if (c->m_opcode.m_op == OP_RET)
 						{
@@ -1218,17 +1222,6 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 				if (blks->m_blks[j].m_blk == code[1].m_term.m_pval)
 				{
 					code[1].m_term.m_u64val = blks->m_blks[j].m_offset - (code + 1 - start);
-					break;
-				}
-			}
-			break;
-
-		case OP_BUILTIN:
-			for (size_t j = 0; j < blks->m_count; ++j)
-			{
-				if (blks->m_blks[j].m_blk == code[2].m_term.m_pval)
-				{
-					code[2].m_term.m_u64val = blks->m_blks[j].m_offset - (code + 2 - start);
 					break;
 				}
 			}
@@ -1283,7 +1276,7 @@ void compile(context_t* context, stream_t* s)
 			ops->m_opcode.m_op = OP_END;
 			
 			cfg_vec_t blks = {0};
-			link_cfgs(&cc,&blks,c->m_entry_point);
+			walk_cfgs(&cc,&blks,c->m_entry_point);
 
 			dumpCFG(&blks,"./cfg.dot");
 

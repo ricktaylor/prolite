@@ -92,6 +92,18 @@ static uint32_t atom_to_code(const term_t* b)
 }
 #endif
 
+const term_t* deref_var_term(context_t* context, const term_t* t)
+{
+	if (get_term_type(t) == prolite_var)
+	{
+		assert(context->m_locals && get_var_index(t) < context->m_locals->m_count);
+		const term_t* g = context->m_locals->m_vals[get_var_index(t)];
+		if (g)
+			t = deref_var_term(context,t);
+	}
+	return t;
+}
+
 static operator_t* find_op(context_t* context, const unsigned char* name, size_t name_len)
 {
 	static operator_t s_builtins[] =

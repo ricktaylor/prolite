@@ -55,7 +55,7 @@ typedef union opcode
 
 typedef struct cfg_block
 {
-	size_t    m_count;  //< in sizeof(m_ops[0])
+	size_t    m_count;
 	opcode_t* m_ops;
 } cfg_block_t;
 
@@ -66,12 +66,6 @@ typedef struct continuation
 	uint8_t      m_always_flags;
 	unsigned     m_subroutine : 1;
 } continuation_t;
-
-typedef struct substitutions
-{
-	size_t        m_count;  //< in sizeof(m_ops[0])
-	const term_t* m_vals[];
-} substitutions_t;
 
 typedef struct compile_context
 {
