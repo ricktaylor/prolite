@@ -63,10 +63,10 @@ typedef struct context
 	
 } context_t;
 
+typedef void (*builtin_fn_t)(context_t* context);
+
 context_t* context_new(heap_t* heap);
 void context_delete(context_t* c);
-
-void call_continuation(context_t* context, const void* gosub);
 
 const term_t* deref_local_var(context_t* context, const term_t* t);
 

@@ -113,10 +113,11 @@ static operator_t* find_op(context_t* context, const unsigned char* name, size_t
 		/* 2 */ { NULL, eXFY, 1050 },
 		/* 3 */ { NULL, eXFY, 1000 },
 		/* 4 */ { NULL, eXFX, 700 },
-		/* 5 */ { NULL, eYFX, 500 },
-		/* 6 */ { NULL, eYFX, 400 },
-		/* 7 */ { NULL, eXFX, 200 },
-		/* 8 */ { NULL, eXFY, 200 },
+		/* 5 */ { NULL, eXFY, 600 },
+		/* 6 */ { NULL, eYFX, 500 },
+		/* 7 */ { NULL, eYFX, 400 },
+		/* 8 */ { NULL, eXFX, 200 },
+		/* 9 */ { NULL, eXFY, 200 },
 	};
 
 	if (context->m_module->m_operators)
@@ -141,16 +142,19 @@ static operator_t* find_op(context_t* context, const unsigned char* name, size_t
 		case '>':
 			return &s_builtins[4];
 
+		case ':':
+			return &s_builtins[5];
+
 		case '+':
 		case '-':
-			return &s_builtins[5];
+			return &s_builtins[6];
 
 		case '*':
 		case '/':
-			return &s_builtins[6];
+			return &s_builtins[7];
 	
 		case '^':
-			return &s_builtins[8];
+			return &s_builtins[9];
 
 		default:
 			break;
@@ -174,7 +178,7 @@ static operator_t* find_op(context_t* context, const unsigned char* name, size_t
 			if (name[1] == '=')
 				return &s_builtins[4];
 			if (name[1] == '/')
-				return &s_builtins[5];
+				return &s_builtins[6];
 			break;
 
 		case '=':
@@ -196,24 +200,24 @@ static operator_t* find_op(context_t* context, const unsigned char* name, size_t
 			if (name[1] == '=')
 				return &s_builtins[4];
 			if (name[1] == '>')
-				return &s_builtins[6];
+				return &s_builtins[7];
 			break;
 
 		case '/':
 			if (name[1] == '\\')
-				return &s_builtins[5];
-			if (name[1] == '/')
 				return &s_builtins[6];
+			if (name[1] == '/')
+				return &s_builtins[7];
 			break;
 
 		case '<':
 			if (name[1] == '<')
-				return &s_builtins[6];
+				return &s_builtins[7];
 			break;
 
 		case '*':
 			if (name[1] == '*')
-				return &s_builtins[7];
+				return &s_builtins[8];
 			break;
 
 		default:
@@ -249,17 +253,17 @@ static operator_t* find_op(context_t* context, const unsigned char* name, size_t
 
 		case 'r':
 			if (name[1] == 'e' && name[2] == 'm')
-				return &s_builtins[6];
+				return &s_builtins[7];
 			break;
 
 		case 'm':
 			if (name[1] == 'o' && name[2] == 'd')
-				return &s_builtins[6];
+				return &s_builtins[7];
 			break;
 
 		case 'd':
 			if (name[1] == 'i' && name[2] == 'v')
-				return &s_builtins[6];
+				return &s_builtins[7];
 			break;
 
 		default:
@@ -414,9 +418,4 @@ void context_delete(context_t* c)
 	module_delete(c->m_module);
 	//stack_delete(c->m_call_stack);
 	
-}
-
-void call_continuation(context_t* context, const void* gosub)
-{
-	// TODO
 }

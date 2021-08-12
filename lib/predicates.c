@@ -138,15 +138,15 @@ void assert_clause(context_t* context, const term_t* goal, int z, int dynamic)
 
 void builtin_assert(context_t* context)
 {
-	const void* gosub = (context->m_stack--)->m_pval;
 	const term_t* goal = (context->m_stack--)->m_pval;
+	const builtin_fn_t gosub = (context->m_stack--)->m_pval;
 
 	int assertz = (goal->m_u64val == PACK_COMPOUND_BUILTIN(assertz,1));
 	
 	assert_clause(context,deref_local_var(context,get_first_arg(goal,NULL)),assertz,1);
 
 	if (!(context->m_flags & (FLAG_HALT | FLAG_THROW)))
-		call_continuation(context,gosub);
+		(*gosub)(context);
 }
 
 void builtin_user_defined(context_t* context)

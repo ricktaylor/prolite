@@ -3,8 +3,6 @@
 
 #include "context.h"
 
-typedef void (*builtin_fn_t)(context_t* context);
-
 #include <setjmp.h>
 
 typedef enum prolite_type_flags
