@@ -1,5 +1,10 @@
 #include "context.h"
 
+void throw_out_of_memory_error(context_t* context, const term_t* t)
+{
+    // 't' just gives us debug info
+}
+
 void throw_instantiation_error(context_t* context, const term_t* t)
 {
 

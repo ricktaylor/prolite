@@ -7,7 +7,7 @@
 
 #include "../lib/stream.h"
 
-void compile(context_t* context, stream_t* s);
+void compile_term(context_t* context, const term_t* goal, size_t var_count);
 
 #include <string.h>
 #include <assert.h>
@@ -43,8 +43,8 @@ int main(int argc, char* argv[])
 	const char* cmd = argc > 1 ? argv[1] : "true.";
 
 	heap_t h = { .m_fn_malloc = &malloc, .m_fn_free = &free };
-	context_t* c = context_new(&h);
-	if (c)
+	context_t* context = context_new(&h);
+	if (context)
 	{
 		struct text_stream ts = {0};
 		ts.m_proto.m_fn_read = &text_stream_read;
@@ -52,9 +52,24 @@ int main(int argc, char* argv[])
 		ts.m_end = *ts.m_str + strlen(*ts.m_str);
 
 		// Read a term and prepare it for execution
-		compile(c,&ts.m_proto);
+		parse_status_t result = read_term(context,&ts.m_proto);
+		if (result == PARSE_OK)
+		{		
+			// Pop varinfo
+			size_t varcount = 0;
+			{
+				const term_t* sp = context->m_stack;
+				varcount = (sp++)->m_u64val;
+				for (size_t i = 0; i < varcount; ++i)
+					sp = get_next_arg(sp) + 1;
+
+				context->m_stack = (term_t*)sp;
+			}
+
+			compile_term(context,context->m_stack,varcount);
+		}
 		
-		context_delete(c);
+		context_delete(context);
 	}
 
 	heap_destroy(&h);

@@ -92,14 +92,14 @@ static uint32_t atom_to_code(const term_t* b)
 }
 #endif
 
-const term_t* deref_var_term(context_t* context, const term_t* t)
+const term_t* deref_local_var(context_t* context, const term_t* t)
 {
 	if (get_term_type(t) == prolite_var)
 	{
 		assert(context->m_locals && get_var_index(t) < context->m_locals->m_count);
 		const term_t* g = context->m_locals->m_vals[get_var_index(t)];
 		if (g)
-			t = deref_var_term(context,t);
+			t = deref_local_var(context,t);
 	}
 	return t;
 }
@@ -414,4 +414,9 @@ void context_delete(context_t* c)
 	module_delete(c->m_module);
 	//stack_delete(c->m_call_stack);
 	
+}
+
+void call_continuation(context_t* context, const void* gosub)
+{
+	// TODO
 }

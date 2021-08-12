@@ -52,6 +52,8 @@ typedef struct debug_info
 	int TODO;
 } debug_info_t;
 
+const debug_info_t* get_debug_info(const term_t* p);
+
 term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external);
 term_t* push_predicate(term_t* stack, size_t arity, const unsigned char* functor, size_t functor_len, int external);
 
@@ -98,8 +100,8 @@ static inline int has_debug_info(const term_t* t)
 	return !!(UNPACK_TYPE(t->m_u64val) & prolite_debug_info);
 }
 
-const term_t* get_first_arg(const term_t* compound, size_t* arity, const debug_info_t** debug_info);
-const term_t* get_next_arg(const term_t* p, const debug_info_t** debug_info);
+const term_t* get_first_arg(const term_t* compound, size_t* arity);
+const term_t* get_next_arg(const term_t* p);
 string_t get_predicate(const term_t* b, size_t* arity, const debug_info_t** debug_info);
 string_t get_string(const term_t* b, const debug_info_t** debug_info);
 

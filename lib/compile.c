@@ -259,14 +259,14 @@ static void pre_substitute_goal_inner(compile_context_t* context, const term_t* 
 				predicate_compare(g1,g2))
 		{
 			size_t arity;
-			const term_t* p1 = get_first_arg(g1,&arity,NULL);
-			const term_t* p2 = get_first_arg(g2,NULL,NULL);
+			const term_t* p1 = get_first_arg(g1,&arity);
+			const term_t* p2 = get_first_arg(g2,NULL);
 			while (arity--)
 			{
 				pre_substitute_goal_inner(context,deref_var(context,p1),deref_var(context,p2));
 
-				p1 = get_next_arg(p1,NULL);
-				p2 = get_next_arg(p2,NULL);
+				p1 = get_next_arg(p1);
+				p2 = get_next_arg(p2);
 			}
 		}
 	}
@@ -277,8 +277,8 @@ static void pre_substitute_goal(compile_context_t* context, const term_t* goal)
 	if (goal->m_u64val == PACK_COMPOUND_EMBED_1(2,'=') ||
 		goal->m_u64val == PACK_COMPOUND_BUILTIN(unify_with_occurs_check,2))
 	{
-		const term_t* g1 = get_first_arg(goal,NULL,NULL);
-		const term_t* g2 = get_next_arg(g1,NULL);
+		const term_t* g1 = get_first_arg(goal,NULL);
+		const term_t* g2 = get_next_arg(g1);
 
 		pre_substitute_goal_inner(context,deref_var(context,g1),deref_var(context,g2));
 	}
@@ -302,8 +302,8 @@ static continuation_t* compile_cut(compile_context_t* context, continuation_t* c
 
 static continuation_t* compile_and(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-	const term_t* g2 = get_next_arg(g1,NULL);
+	const term_t* g1 = get_first_arg(goal,NULL);
+	const term_t* g2 = get_next_arg(g1);
 
 	substitutions_t* s_orig = context->m_substs;
 	context->m_substs = copy_substitutions(context,context->m_substs);
@@ -389,15 +389,15 @@ static continuation_t* compile_if_then_else(compile_context_t* context, continua
 
 static continuation_t* compile_or(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-	const term_t* g2 = get_next_arg(g1,NULL);
+	const term_t* g1 = get_first_arg(goal,NULL);
+	const term_t* g2 = get_next_arg(g1);
 
 	substitutions_t* s_orig = context->m_substs;
 	context->m_substs = copy_substitutions(context,context->m_substs);
 
 	if (g1->m_u64val == PACK_COMPOUND_EMBED_2(2,'-','>'))
 	{
-		const term_t* g_if = get_first_arg(g1,NULL,NULL);
+		const term_t* g_if = get_first_arg(g1,NULL);
 
 		continuation_t* c_if = compile_goal(context,set_flags(context,new_continuation(context),FLAG_CUT),g_if);
 
@@ -410,7 +410,7 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 		}
 		else
 		{
-			c_then = compile_goal(context,cont,get_next_arg(g_if,NULL));
+			c_then = compile_goal(context,cont,get_next_arg(g_if));
 			
 			if (!(c_if->m_always_flags & FLAG_CUT))
 			{
@@ -448,8 +448,8 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 
 static continuation_t* compile_if_then(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g_if = get_first_arg(goal,NULL,NULL);
-	const term_t* g_then = get_next_arg(g_if,NULL);
+	const term_t* g_if = get_first_arg(goal,NULL);
+	const term_t* g_then = get_next_arg(g_if);
 
 	continuation_t* c_if = set_flags(context,new_continuation(context),FLAG_CUT);
 	c_if = compile_goal(context,c_if,g_if);
@@ -460,6 +460,15 @@ static continuation_t* compile_if_then(compile_context_t* context, continuation_
 
 continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, size_t arity, const term_t* goal)
 {
+	cont = make_subroutine(context,cont);
+
+	while (cont->m_entry_point->m_count == 3 &&
+		cont->m_entry_point->m_ops[0].m_opcode.m_op == OP_GOSUB &&
+		cont->m_entry_point->m_ops[2].m_opcode.m_op == OP_RET)
+	{
+		cont->m_entry_point = (void*)cont->m_entry_point->m_ops[1].m_term.m_pval;
+	}
+	
 	continuation_t* c = new_continuation(context);
 	if (arity > 1)
 	{
@@ -471,7 +480,7 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 		for (size_t i = 0; i < arity; ++i)
 		{
 			rev[i] = goal;
-			goal = get_next_arg(goal,NULL);
+			goal = get_next_arg(goal);
 		}
 
 		for (size_t i = arity; i--;)
@@ -488,41 +497,12 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 		ops->m_term.m_pval = deref_var(context,goal);
 	}
 
-	continuation_t* c1 = new_continuation(context);
-	opcode_t* ops = append_opcodes(context,c1->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_PUSH_CUT;
+	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
-	ops->m_term.m_pval = fn;
-
-	continuation_t* c_end = new_continuation(context);
-	ops = append_opcodes(context,c_end->m_tail,1);
-	ops->m_opcode.m_op = OP_POP_CUT;
-
-	add_branch(context,c1,OP_BRANCH,FLAG_FAIL | FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
-	ops = append_opcodes(context,c1->m_tail,1);
-	ops->m_opcode.m_op = OP_POP_CUT;
-	c1 = goto_next(context,c1,cont);
-
-	continuation_t* c2 = new_continuation(context);
-	goto_next(context,c_end,c2);
-	c_end = c2;
+	(ops++)->m_term.m_pval = fn;
+	ops->m_term.m_pval = cont->m_entry_point;
 	
-	if (cont->m_always_flags & (FLAG_FAIL | FLAG_CUT | FLAG_THROW | FLAG_HALT))
-	{
-		c1 = goto_next(context,c1,c_end);
-	}
-	else
-	{
-		add_branch(context,c1,OP_BRANCH,FLAG_FAIL | FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
-			
-		ops = append_opcodes(context,c1->m_tail,2);
-		(ops++)->m_opcode.m_op = OP_JMP;
-		ops->m_term.m_pval = c1->m_entry_point;
-	}
-	
-	c = goto_next(context,c,c1);
-	c->m_always_flags = cont->m_always_flags;
-	c->m_tail = c_end->m_tail;
+	c->m_always_flags = (cont->m_always_flags & (FLAG_FAIL | FLAG_THROW));
 
 	return c;
 }
@@ -534,7 +514,7 @@ static continuation_t* compile_user_defined(compile_context_t* context, continua
 
 static continuation_t* compile_throw(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	goal = deref_var(context,get_first_arg(goal,NULL,NULL));
+	goal = deref_var(context,get_first_arg(goal,NULL));
 
 	cont = set_flags(context,new_continuation(context),FLAG_THROW);
 
@@ -547,7 +527,7 @@ static continuation_t* compile_halt(compile_context_t* context, continuation_t* 
 
 	if (get_term_type(goal) != prolite_atom)
 	{
-		goal = deref_var(context,get_first_arg(goal,NULL,NULL));
+		goal = deref_var(context,get_first_arg(goal,NULL));
 
 		cont = compile_builtin(context,cont,&builtin_halt,1,goal);
 	}
@@ -570,7 +550,7 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 		case PACK_COMPOUND_EMBED_2(2,'-','>'):
 			{
 				size_t arity;
-				for (const term_t* p = get_first_arg(goal,&arity,NULL); arity--; p = get_next_arg(p,NULL))
+				for (const term_t* p = get_first_arg(goal,&arity); arity--; p = get_next_arg(p))
 				{
 					if (!compile_is_callable(context,deref_var(context,p)))
 						return 0;
@@ -600,7 +580,7 @@ static continuation_t* compile_call_inner(compile_context_t* context, continuati
 
 static continuation_t* compile_call(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	return wrap_cut(context,compile_call_inner(context,cont,get_first_arg(goal,NULL,NULL)));
+	return wrap_cut(context,compile_call_inner(context,cont,get_first_arg(goal,NULL)));
 }
 
 static continuation_t* compile_callN(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -610,9 +590,9 @@ static continuation_t* compile_callN(compile_context_t* context, continuation_t*
 
 static continuation_t* compile_catch(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-	const term_t* g2 = get_next_arg(g1,NULL);
-	const term_t* g3 = get_next_arg(g2,NULL);
+	const term_t* g1 = get_first_arg(goal,NULL);
+	const term_t* g2 = get_next_arg(g1);
+	const term_t* g3 = get_next_arg(g2);
 
 	continuation_t* c = wrap_cut(context,compile_call_inner(context,convert_to_gosub(context,cont),g1));
 	if (!(c->m_always_flags & FLAG_HALT))
@@ -641,7 +621,7 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 static continuation_t* compile_once(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
 	continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
-	c = compile_call_inner(context,c,get_first_arg(goal,NULL,NULL));
+	c = compile_call_inner(context,c,get_first_arg(goal,NULL));
 
 	return compile_if_then_else(context,c,cont,NULL);
 }
@@ -746,8 +726,8 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 		if (t1 == prolite_compound && predicate_compare(g1,g2))
 		{
 			size_t arity;
-			const term_t* p1 = get_first_arg(g1,&arity,NULL);
-			const term_t* p2 = get_first_arg(g2,NULL,NULL);
+			const term_t* p1 = get_first_arg(g1,&arity);
+			const term_t* p2 = get_first_arg(g2,NULL);
 
 			const term_t** rev = heap_malloc(context->m_heap,arity * 2 * sizeof(term_t*));
 			if (!rev)
@@ -758,8 +738,8 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 				rev[i*2] = deref_var(context,p1);
 				rev[i*2+1] = deref_var(context,p2);
 
-				p1 = get_next_arg(p1,NULL);
-				p2 = get_next_arg(p2,NULL);
+				p1 = get_next_arg(p1);
+				p2 = get_next_arg(p2);
 			}
 
 			while (arity--)
@@ -779,24 +759,24 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 
 static continuation_t* compile_unify(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-	const term_t* g2 = get_next_arg(g1,NULL);
+	const term_t* g1 = get_first_arg(goal,NULL);
+	const term_t* g2 = get_next_arg(g1);
 
 	return compile_unify_inner(context,cont,deref_var(context,g1),deref_var(context,g2),0);
 }
 
 static continuation_t* compile_unify_with_occurs_check(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-	const term_t* g2 = get_next_arg(g1,NULL);
+	const term_t* g1 = get_first_arg(goal,NULL);
+	const term_t* g2 = get_next_arg(g1);
 
 	return compile_unify_inner(context,cont,deref_var(context,g1),deref_var(context,g2),1);
 }
 
 static continuation_t* compile_not_unifiable(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = get_first_arg(goal,NULL,NULL);
-	const term_t* g2 = get_next_arg(g1,NULL);
+	const term_t* g1 = get_first_arg(goal,NULL);
+	const term_t* g2 = get_next_arg(g1);
 
 	continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
 	c = compile_unify_inner(context,c,deref_var(context,g1),deref_var(context,g2),0);
@@ -807,14 +787,14 @@ static continuation_t* compile_not_unifiable(compile_context_t* context, continu
 static continuation_t* compile_not_proveable(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
 	continuation_t* c = set_flags(context,new_continuation(context),FLAG_CUT);
-	c = compile_call_inner(context,c,get_first_arg(goal,NULL,NULL));
+	c = compile_call_inner(context,c,get_first_arg(goal,NULL));
 
 	return compile_if_then_else(context,c,compile_false(context,cont,NULL),cont);
 }
 
 static continuation_t* compile_callable(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 	switch (compile_is_callable(context,g1))
 	{
 	case 1:
@@ -848,7 +828,7 @@ continuation_t* compile_type_test(compile_context_t* context, continuation_t* co
 
 static continuation_t* compile_var(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 
 	if (get_term_type(g1) == prolite_var)
 		return compile_type_test(context,cont,type_flag_var,0,g1);
@@ -858,7 +838,7 @@ static continuation_t* compile_var(compile_context_t* context, continuation_t* c
 
 static continuation_t* compile_atom(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -874,7 +854,7 @@ static continuation_t* compile_atom(compile_context_t* context, continuation_t* 
 
 static continuation_t* compile_integer(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -890,7 +870,7 @@ static continuation_t* compile_integer(compile_context_t* context, continuation_
 
 static continuation_t* compile_float(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -906,7 +886,7 @@ static continuation_t* compile_float(compile_context_t* context, continuation_t*
 
 static continuation_t* compile_atomic(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -924,7 +904,7 @@ static continuation_t* compile_atomic(compile_context_t* context, continuation_t
 
 static continuation_t* compile_compound(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -942,7 +922,7 @@ static continuation_t* compile_compound(compile_context_t* context, continuation
 
 static continuation_t* compile_nonvar(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 	if (get_term_type(g1) == prolite_var)
 		return compile_type_test(context,cont,type_flag_var,1,g1);
 
@@ -951,7 +931,7 @@ static continuation_t* compile_nonvar(compile_context_t* context, continuation_t
 
 static continuation_t* compile_number(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -976,7 +956,7 @@ static int compile_is_ground(compile_context_t* context, const term_t* goal)
 	if (t == prolite_compound)
 	{
 		size_t arity;
-		for (const term_t* p = get_first_arg(goal,&arity,NULL); arity--; p = get_next_arg(p,NULL))
+		for (const term_t* p = get_first_arg(goal,&arity); arity--; p = get_next_arg(p))
 		{
 			if (!compile_is_ground(context,p))
 				return 0;
@@ -987,7 +967,7 @@ static int compile_is_ground(compile_context_t* context, const term_t* goal)
 
 static continuation_t* compile_ground(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL,NULL));
+	const term_t* g1 = deref_var(context,get_first_arg(goal,NULL));
 
 	if (compile_is_ground(context,g1))
 		return compile_true(context,cont,g1);
@@ -998,7 +978,7 @@ static continuation_t* compile_ground(compile_context_t* context, continuation_t
 static continuation_t* compile_builtin_fn(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, const term_t* goal)
 {
 	size_t arity;
-	goal = get_first_arg(goal,&arity,NULL);
+	goal = get_first_arg(goal,&arity);
 	return compile_builtin(context,cont,fn,arity,goal);
 }
 
@@ -1062,10 +1042,10 @@ size_t inc_ip(optype_t op)
 	case OP_PUSH_TERM_REF:
 	case OP_BRANCH:
 	case OP_BRANCH_NOT:
-	case OP_BUILTIN:
 		++ip;
 		break;
 	
+	case OP_BUILTIN:
     case OP_SET_VAR:
 		ip += 2;
 		break;	
@@ -1151,6 +1131,14 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 		case OP_BRANCH_NOT:
 			{
 				const cfg_block_t* next = blk->m_ops[i+1].m_term.m_pval;
+				walk_cfgs(context,blks,next);
+				move_cfg(blks,blk,next);
+			}
+			break;
+
+		case OP_BUILTIN:
+			{
+				const cfg_block_t* next = blk->m_ops[i+2].m_term.m_pval;
 				walk_cfgs(context,blks,next);
 				move_cfg(blks,blk,next);
 			}
@@ -1249,6 +1237,17 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 			}
 			break;
 		
+		case OP_BUILTIN:
+			for (size_t j = 0; j < blks->m_count; ++j)
+			{
+				if (blks->m_blks[j].m_blk == code[2].m_term.m_pval)
+				{
+					code[2].m_term.m_u64val = blks->m_blks[j].m_offset - (code + 2 - start);
+					break;
+				}
+			}
+			break;
+		
 		default:
 			break;
 		}
@@ -1257,72 +1256,52 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 	return (end - start);
 }
 
-void compile(context_t* context, stream_t* s)
+void compile_term(context_t* context, const term_t* goal, size_t var_count)
 {
-	// Read a term and prepare it for execution
-	parse_status_t result = read_term(context,s);
-	if (result == PARSE_OK)
+	size_t heap_start = heap_top(context->m_heap);
+	compile_context_t cc = { .m_heap = context->m_heap };
+	if (!setjmp(cc.m_jmp))
 	{
-		size_t heap_start = heap_top(context->m_heap);
-		compile_context_t cc = {0};
-		cc.m_heap = context->m_heap;
-		if (!setjmp(cc.m_jmp))
+		if (var_count)
 		{
-			// Pop varinfo
-			size_t varcount = 0;
-			{
-				const term_t* sp = context->m_stack;
-				varcount = (sp++)->m_u64val;
-				for (size_t i = 0; i < varcount; ++i)
-					sp = get_next_arg(sp,NULL) + 1;
+			cc.m_substs = heap_malloc(cc.m_heap,sizeof(substitutions_t) + (sizeof(term_t) * var_count));
+			if (!cc.m_substs)
+				longjmp(cc.m_jmp,1);
 
-				context->m_stack = (term_t*)sp;
-			}
-
-			if (varcount)
-			{
-				cc.m_substs = heap_malloc(cc.m_heap,sizeof(substitutions_t) + (sizeof(term_t) * varcount));
-				if (!cc.m_substs)
-					longjmp(cc.m_jmp,1);
-
-				cc.m_substs->m_count = varcount;
-				memset(cc.m_substs->m_vals,0,varcount * sizeof(term_t*));
-			}
-
-			continuation_t* c = new_continuation(&cc);
-			opcode_t* ops = append_opcodes(&cc,c->m_tail,1);
-			ops->m_opcode.m_op = OP_SUCCEEDS;
-
-			c = compile_goal(&cc,c,context->m_stack);
-			ops = append_opcodes(&cc,c->m_tail,1);
-			ops->m_opcode.m_op = OP_END;
-			
-			cfg_vec_t blks = {0};
-			walk_cfgs(&cc,&blks,c->m_entry_point);
-
-			dumpCFG(&blks,"./cfg.dot");
-
-			if (blks.m_total)
-			{
-				opcode_t* code = heap_malloc(cc.m_heap,blks.m_total * sizeof(opcode_t));
-				if (!code)
-					longjmp(cc.m_jmp,1);
-
-				blks.m_total = emit_ops(code,&blks);
-
-				dumpTrace(code,blks.m_total,"./pcode.txt");
-
-				// Put pcode on the stack... JIT later...
-				context->m_stack -= bytes_to_cells(blks.m_total * sizeof(opcode_t),sizeof(term_t));
-				memcpy(context->m_stack,code,blks.m_total * sizeof(opcode_t));
-			}			
-			(--context->m_stack)->m_u64val = blks.m_total;
+			cc.m_substs->m_count = var_count;
+			memset(cc.m_substs->m_vals,0,var_count * sizeof(term_t*));
 		}
-		
-		/* Bulk free all heap allocs */
-		heap_reset(cc.m_heap,heap_start);
-	}
 
-	/* We have just made heavy use of the heap */
-	heap_compact(context->m_heap);
+		continuation_t* c = new_continuation(&cc);
+		opcode_t* ops = append_opcodes(&cc,c->m_tail,1);
+		ops->m_opcode.m_op = OP_SUCCEEDS;
+
+		c = compile_goal(&cc,c,goal);
+		ops = append_opcodes(&cc,c->m_tail,1);
+		ops->m_opcode.m_op = OP_END;
+		
+		cfg_vec_t blks = {0};
+		walk_cfgs(&cc,&blks,c->m_entry_point);
+
+		dumpCFG(&blks,"./cfg.dot");
+
+		if (blks.m_total)
+		{
+			opcode_t* code = heap_malloc(cc.m_heap,blks.m_total * sizeof(opcode_t));
+			if (!code)
+				longjmp(cc.m_jmp,1);
+
+			blks.m_total = emit_ops(code,&blks);
+
+			dumpTrace(code,blks.m_total,"./pcode.txt");
+
+			// Put pcode on the stack... JIT later...
+			context->m_stack -= bytes_to_cells(blks.m_total * sizeof(opcode_t),sizeof(term_t));
+			memcpy(context->m_stack,code,blks.m_total * sizeof(opcode_t));
+		}			
+		(--context->m_stack)->m_u64val = blks.m_total;
+	}
+		
+	/* Bulk free all heap allocs */
+	heap_reset(cc.m_heap,heap_start);
 }

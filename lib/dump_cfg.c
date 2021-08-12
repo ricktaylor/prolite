@@ -107,14 +107,14 @@ static void dumpTerm(const term_t* t, FILE* f, int ref)
 			string_t s = get_predicate(t,&arity,NULL);
 			fprintf(f,"%s%.*s(",ref ? "&" : "",(int)s.m_len,s.m_str);
 
-			t = get_first_arg(t,NULL,NULL);
+			t = get_first_arg(t,NULL);
 			for (size_t i = 0; i < arity; ++i)
 			{
 				if (i)
 					fprintf(f,",");
 
 				dumpTerm(t,f,0);
-				t = get_next_arg(t,NULL);
+				t = get_next_arg(t);
 			}
 			fprintf(f,")");
 		}
@@ -179,7 +179,7 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"Builtin\\ %s",builtinName(blk->m_ops[i+1].m_term.m_pval));
+			fprintf(f,"Builtin\\ %s|<f%zu> ...\\ if\\ !FTH,\\ Gosub",builtinName(blk->m_ops[i+1].m_term.m_pval),i+1);
 			break;
 
 		case OP_SET_FLAGS:
@@ -259,6 +259,10 @@ static void dumpCFGBlock(const cfg_block_t* blk, FILE* f)
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0>;\n",blk,i,blk->m_ops[i+1].m_term.m_pval);
 			break;
 
+		case OP_BUILTIN:
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both label=\"!FTH\"];\n",blk,i+1,blk->m_ops[i+2].m_term.m_pval);
+			break;
+
 		default:
 			break;
 		}
@@ -321,7 +325,7 @@ void dumpTrace(const opcode_t* code, size_t count, const char* filename)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"extern %s();\n",builtinName(code[1].m_term.m_pval));
+			fprintf(f,"extern %s() { if (!FTH) gosub %+d (%zu); }\n",builtinName(code[1].m_term.m_pval),(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
 			break;
 
 		case OP_SET_FLAGS:

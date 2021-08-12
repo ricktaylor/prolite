@@ -66,10 +66,13 @@ typedef struct context
 context_t* context_new(heap_t* heap);
 void context_delete(context_t* c);
 
-const term_t* deref_var_term(context_t* context, const term_t* t);
+void call_continuation(context_t* context, const void* gosub);
 
-const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* dst_len, size_t* var_count);
+const term_t* deref_local_var(context_t* context, const term_t* t);
 
+const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* var_count);
+
+void throw_out_of_memory_error(context_t* context, const term_t* t);
 void throw_instantiation_error(context_t* context, const term_t* t);
 void throw_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t);
 void throw_type_error(context_t* context, uint64_t p1, const term_t* t);
