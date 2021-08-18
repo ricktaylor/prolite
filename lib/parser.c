@@ -1,12 +1,9 @@
-
-#include "types.h"
-#include "stream.h"
+#include "parser.h"
 
 #include <string.h>
 #include <errno.h>
 #include <math.h>
 #include <assert.h>
-#include <setjmp.h>
 #include <stdlib.h>
 
 #ifdef _MSC_VER
@@ -53,30 +50,6 @@ typedef enum token_type
 	tokComma,
 	tokEnd
 } token_type_t;
-
-typedef struct token
-{
-	size_t         m_alloc;
-	size_t         m_len;
-	unsigned char* m_str;  /* Need not be zero-terminated! */
-} token_t;
-
-typedef struct line_info
-{
-	size_t         m_start_line;
-	size_t         m_start_col;
-	size_t         m_end_line;
-	size_t         m_end_col;
-} line_info_t;
-
-typedef struct parser
-{
-	stream_t*    m_s;
-	token_t      m_buffer;
-	line_info_t  m_line_info;
-	jmp_buf      m_jmp;
-	int          m_eof;
-} parser_t;
 
 enum ast_type
 {
@@ -2108,6 +2081,11 @@ static parse_status_t emit_out_of_heap_error(term_t** stack, line_info_t* info)
 	return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'),info);
 }
 
+static parse_status_t emit_eof_error(term_t** stack, line_info_t* info)
+{
+	return emit_simple_error(stack,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(past_end_of_stream),info);
+}
+
 static parse_status_t emit_ast_error(term_t** stack, ast_error_t ast_err, line_info_t* info)
 {
 	switch (ast_err)
@@ -2228,13 +2206,49 @@ static parse_status_t collate_var_info(context_t* context, parser_t* parser, var
 	return status;
 }
 
+parse_status_t consult_term(context_t* context, parser_t* parser)
+{
+	parse_status_t status = PARSE_OK;
+	size_t heap_start = heap_top(context->m_heap);
+
+	if (!setjmp(parser->m_jmp))
+	{
+		ast_error_t ast_err = AST_ERR_NONE;
+		token_t next = {0};
+		token_type_t next_type;
+		ast_node_t* node;
+
+		next_type = token_next(context,parser,&next);
+		node = parse_term(context,parser,1201,&next_type,&next,&ast_err);
+		if (!node)
+		{
+			if (next_type != tokEOF)
+				status = emit_ast_error(&context->m_stack,ast_err,&parser->m_line_info);
+			else
+				status = PARSE_EOF;
+		}
+		else if (next_type != tokEnd)
+		{
+			status = emit_syntax_error_missing(&context->m_stack,PACK_ATOM_EMBED_1('.'),&parser->m_line_info);
+		}
+	}
+	else
+	{
+		status = emit_out_of_heap_error(&context->m_stack,&parser->m_line_info);
+	}
+
+	/* Reset the heap */
+	heap_reset(context->m_heap,heap_start);
+
+	return status;
+}
+
 parse_status_t read_term(context_t* context, stream_t* s)
 {
 	parse_status_t status = PARSE_OK;
 	size_t heap_start = heap_top(context->m_heap);
-	parser_t parser = {0};
-	parser.m_s = s;
-	parser.m_line_info.m_end_line = 1;
+
+	parser_t parser = { .m_s = s, .m_line_info.m_end_line = 1 };
 	if (!setjmp(parser.m_jmp))
 	{
 		ast_error_t ast_err = AST_ERR_NONE;
@@ -2249,7 +2263,7 @@ parse_status_t read_term(context_t* context, stream_t* s)
 			if (next_type != tokEOF)
 				status = emit_ast_error(&context->m_stack,ast_err,&parser.m_line_info);
 			else
-				status = PARSE_EOF;
+				status = emit_eof_error(&context->m_stack,&parser.m_line_info);
 		}
 		else if (next_type != tokEnd)
 		{
@@ -2289,13 +2303,3 @@ parse_status_t read_term(context_t* context, stream_t* s)
 
 	return status;
 }
-
-#if 0
-if (result == PARSE_EOF)
-	{
-		term_t arg;
-		arg.m_u64val = PACK_ATOM_BUILTIN(past_end_of_stream);
-		result = emit_error(context,&parser.m_line_info,PACK_COMPOUND_BUILTIN(syntax_error,1),1,&arg);
-	}
-
-#endif

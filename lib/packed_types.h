@@ -73,12 +73,14 @@ static const uint16_t prolite_debug_info = 0x8000;
 #define PACK_COMPOUND_EMBED_3(a,c1,c2,c3)       PACK_TYPE_EMBED(prolite_compound,a,3,c1,c2,c3,0,0)
 #define PACK_COMPOUND_EMBED_4(a,c1,c2,c3,c4)    PACK_TYPE_EMBED(prolite_compound,a,4,c1,c2,c3,c4,0)
 #define PACK_COMPOUND_EMBED_5(a,c1,c2,c3,c4,c5) PACK_TYPE_EMBED(prolite_compound,a,5,c1,c2,c3,c4,c5)
+#define PACK_COMPOUND_EMBED_MASK                PACK_TYPE_EMBED(prolite_compound,0,7,0xFF,0xFF,0xFF,0xFF,0xFF)
 
 #define MAX_ARITY_EMBED   0x7
 #define MAX_ARITY_BUILTIN 0x3FFF
 #define MAX_ARITY         ((UINT64_C(1) << 46) - 1)
 
 #define PACK_COMPOUND_BUILTIN(f,a)  (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(a) & MAX_ARITY_BUILTIN)) << 32) | (uint32_t)(BUILTIN_ATOM_##f)))
+#define PACK_COMPOUND_BUILTIN_MASK  (PACK_TYPE(prolite_compound) | PACK_MANT_48(UINT64_C(0x4000FFFFFFFF)))
 
 #define MAX_VAR_INDEX     ((UINT64_C(1) << 46) - 1)
 

@@ -11,6 +11,7 @@ libprolite_la_SOURCES = \
 	lib/compile.c \
 	lib/predicates.c \
 	lib/exceptions.c \
+	lib/consult.c \
 	lib/dump_cfg.c
 				
 libprolite_la_LDFLAGS = -pthread

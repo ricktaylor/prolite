@@ -5,7 +5,7 @@
  *      Author: taylorr
  */
 
-#include "../lib/stream.h"
+#include "../lib/parser.h"
 
 void compile_term(context_t* context, const term_t* goal, size_t var_count);
 

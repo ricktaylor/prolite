@@ -1,5 +1,4 @@
-
-#include "stream.h"
+#include "context.h"
 #include "compile.h"
 #include "builtins.h"
 
@@ -1002,8 +1001,8 @@ static continuation_t* compile_goal(compile_context_t* context, continuation_t* 
 		switch (get_term_type(goal))
 		{
 		case prolite_compound:
-			if ((goal->m_u64val & PACK_COMPOUND_EMBED_4(0,'c','a','l','l')) == PACK_COMPOUND_EMBED_4(0,'c','a','l','l') ||
-				(goal->m_u64val & PACK_COMPOUND_BUILTIN(call,0)) == PACK_COMPOUND_BUILTIN(call,0) ||
+			if ((goal->m_u64val & PACK_COMPOUND_EMBED_MASK) == PACK_COMPOUND_EMBED_4(0,'c','a','l','l') ||
+				(goal->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(call,0) ||
 				goal[1].m_u64val == PACK_ATOM_EMBED_4('c','a','l','l'))
 			{
 				c = wrap_cut(context,compile_callN(context,cont,goal));
