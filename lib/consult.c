@@ -2,30 +2,52 @@
 
 #include <assert.h>
 
-static void dynamic(context_t* context, formatter_t* output, const term_t* t)
+typedef struct consult_predicate
+{
+	term_t* t;
+
+} consult_predicate_t;
+
+typedef struct consult_context
+{
+	context_t*              m_context;
+	exception_handler_fn_t* m_eh;
+	stream_resolver_t*      m_resolver;
+
+} consult_context_t;
+
+static void dynamic(consult_context_t* context, const term_t* t)
 {
 	assert(0);
 }
 
-static void multifile(context_t* context, formatter_t* output, const term_t* t)
+static void multifile(consult_context_t* context, const term_t* t)
 {
 	assert(0);
 }
 
-static void discontiguous(context_t* context, formatter_t* output, const term_t* t)
+static void discontiguous(consult_context_t* context, const term_t* t)
 {
 	assert(0);
 }
 
-static void pi_directive_inner(context_t* context, formatter_t* output, const term_t* t, void (*fn)(context_t*,formatter_t*,const term_t*))
+static void pi_directive_inner(consult_context_t* context, const term_t* t, void (*fn)(consult_context_t*,const term_t*))
 {
 	if (t->m_u64val != PACK_COMPOUND_EMBED_1(2,'/'))
 		assert(0);
 
-	(*fn)(context,output,t);
+	const term_t* functor = get_first_arg(t,NULL);
+	if (get_term_type(functor) != prolite_atom)
+		assert(0);
+
+	const term_t* arity = get_next_arg(functor);
+	if (get_term_type(arity) != prolite_int32)
+		assert(0);
+
+	(*fn)(context,t);
 }
 
-static void pi_directive(context_t* context, formatter_t* output, const term_t* directive, void (*fn)(context_t*,formatter_t*,const term_t*))
+static void pi_directive(consult_context_t* context, const term_t* directive, void (*fn)(consult_context_t*,const term_t*))
 {
 	size_t arity = 0;
 	const term_t* arg = get_first_arg(directive,&arity);
@@ -35,102 +57,104 @@ static void pi_directive(context_t* context, formatter_t* output, const term_t* 
 		{
 			arg = get_first_arg(arg,NULL);
 
-			pi_directive_inner(context,output,arg,fn);
+			pi_directive_inner(context,arg,fn);
 
 			arg = get_next_arg(arg);
 		}
 
 		if (arg->m_u64val != PACK_ATOM_EMBED_2('[',']'))	
-			pi_directive_inner(context,output,arg,fn);
+			pi_directive_inner(context,arg,fn);
 	}
 	else
 	{
-		// PI_Sequence (I have assumed this is parsed as directive/N )
+		// PI_Sequence (TODO: I have assumed this is parsed as directive/N )
 		while (arity--)
 		{
-			pi_directive_inner(context,output,arg,fn);
+			pi_directive_inner(context,arg,fn);
 
 			arg = get_next_arg(arg);
 		}
 	}
 }
 
-static void compile_initializer(context_t* context, formatter_t* output, const term_t* goal)
+static void compile_initializer(consult_context_t* context, const term_t* goal)
 {
 	assert(0);
 }
 
-static void assert_clause(context_t* context, formatter_t* output, const term_t* clause)
+static void assert_clause(consult_context_t* context, const term_t* clause)
 {
 	assert(0);
 }
 
-static void include(context_t* context, formatter_t* output, stream_resolver_t* resolver, const term_t* t);
+static void include(consult_context_t* context, const term_t* t);
 
-static void ensure_loaded(context_t* context, formatter_t* output, stream_resolver_t* resolver, const term_t* t)
+static void ensure_loaded(consult_context_t* context, const term_t* t)
 {
 	assert(0);
 }
 
-static void load_file_inner(context_t* context, stream_t* input, formatter_t* output, stream_resolver_t* resolver)
+static void load_file_inner(consult_context_t* context, stream_t* input)
 {
 	parser_t parser = { .m_s = input, .m_line_info.m_end_line = 1 };
 	
 	for (parse_status_t status = PARSE_OK; status != PARSE_EOF;)
 	{
-		term_t* sp = context->m_stack;
-		status = consult_term(context,&parser);
+		term_t* sp = context->m_context->m_stack;
+		status = consult_term(context->m_context,&parser);
+
+		const term_t* term = context->m_context->m_stack;
+
 		if (status == PARSE_THROW)
 		{
-			formatter_write(output,context->m_stack);
+			(*context->m_eh)(context->m_context,term);
 		}
 		else if (status == PARSE_OK)
-		{
-			const term_t* term = context->m_stack;
+		{			
 			if (term->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
 			{
 				term = get_first_arg(term,NULL);
 				switch (term->m_u64val)
 				{
 				case PACK_COMPOUND_BUILTIN(include,1):
-					include(context,output,resolver,get_first_arg(term,NULL));
+					include(context,get_first_arg(term,NULL));
 					break;
 
 				case PACK_COMPOUND_BUILTIN(ensure_loaded,1):
-					ensure_loaded(context,output,resolver,get_first_arg(term,NULL));
+					ensure_loaded(context,get_first_arg(term,NULL));
 					break;
 
 				case PACK_COMPOUND_BUILTIN(initialization,1):
-					compile_initializer(context,output,get_first_arg(term,NULL));
+					compile_initializer(context,get_first_arg(term,NULL));
 					break;
 
 				case PACK_COMPOUND_BUILTIN(dynamic,1):
-					pi_directive(context,output,term,&dynamic);
+					pi_directive(context,term,&dynamic);
 					break;
 
 				case PACK_COMPOUND_BUILTIN(multifile,1):
-					pi_directive(context,output,term,&multifile);
+					pi_directive(context,term,&multifile);
 					break;
 
 				case PACK_COMPOUND_BUILTIN(discontiguous,1):
-					pi_directive(context,output,term,&discontiguous);
+					pi_directive(context,term,&discontiguous);
 					break;
 
 				default:
 					if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(dynamic,0))
-						pi_directive(context,output,term,&dynamic);
+						pi_directive(context,term,&dynamic);
 					else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(multifile,0))
-						pi_directive(context,output,term,&multifile);
+						pi_directive(context,term,&multifile);
 					else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(discontiguous,0))
-						pi_directive(context,output,term,&discontiguous);
+						pi_directive(context,term,&discontiguous);
 					else if (get_term_type(term) == prolite_compound)
 					{
 						if (term[1].m_u64val == PACK_ATOM_BUILTIN(dynamic))
-							pi_directive(context,output,term,&dynamic);
+							pi_directive(context,term,&dynamic);
 						if (term[1].m_u64val == PACK_ATOM_BUILTIN(multifile))
-							pi_directive(context,output,term,&multifile);
+							pi_directive(context,term,&multifile);
 						if (term[1].m_u64val == PACK_ATOM_BUILTIN(discontiguous))
-							pi_directive(context,output,term,&discontiguous);
+							pi_directive(context,term,&discontiguous);
 						else
 							assert(0);
 					}
@@ -144,23 +168,23 @@ static void load_file_inner(context_t* context, stream_t* input, formatter_t* ou
 			else
 			{
 				/* Assert the term */
-				assert_clause(context,output,term);
+				assert_clause(context,term);
 			}
 		}
 
 		// Reset stack
-		context->m_stack = sp;
+		context->m_context->m_stack = sp;
 	}
 }
 
-static void include(context_t* context, formatter_t* output, stream_resolver_t* resolver, const term_t* t)
+static void include(consult_context_t* context, const term_t* t)
 {
-	stream_t* s = stream_resolver_open(resolver,output,t);
+	stream_t* s = stream_resolver_open(context->m_resolver,context->m_eh,t);
 	if (s)
 	{
 		/* TODO: Twiddle with context */
 
-		load_file_inner(context,s,output,resolver);
+		load_file_inner(context,s);
 		
 		/* TODO: Untwiddle context */
 
@@ -168,11 +192,18 @@ static void include(context_t* context, formatter_t* output, stream_resolver_t* 
 	}
 }
 
-void consult(context_t* context, stream_t* input, formatter_t* output, stream_resolver_t* resolver)
+void consult(context_t* context, stream_t* input, exception_handler_fn_t* eh, stream_resolver_t* resolver)
 {
 	size_t heap_start = heap_top(context->m_heap);
 
-	load_file_inner(context,input,output,resolver);
+	consult_context_t cc = 
+	{
+		.m_context = context,
+		.m_eh = eh,
+		.m_resolver = resolver
+	};
+
+	load_file_inner(&cc,input);
 
 	// TODO: Call initializers
 

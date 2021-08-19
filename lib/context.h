@@ -65,6 +65,8 @@ typedef struct context
 
 typedef void (*builtin_fn_t)(context_t* context);
 
+typedef void (*exception_handler_fn_t)(context_t* context, const term_t* term);
+
 context_t* context_new(heap_t* heap);
 void context_delete(context_t* c);
 

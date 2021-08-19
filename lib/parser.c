@@ -2222,58 +2222,20 @@ parse_status_t consult_term(context_t* context, parser_t* parser)
 		node = parse_term(context,parser,1201,&next_type,&next,&ast_err);
 		if (!node)
 		{
-			if (next_type != tokEOF)
-				status = emit_ast_error(&context->m_stack,ast_err,&parser->m_line_info);
-			else
+			if (next_type == tokEOF)
 				status = PARSE_EOF;
+			else
+				status = emit_ast_error(&context->m_stack,ast_err,&parser->m_line_info);	
 		}
 		else if (next_type != tokEnd)
 		{
 			status = emit_syntax_error_missing(&context->m_stack,PACK_ATOM_EMBED_1('.'),&parser->m_line_info);
 		}
-	}
-	else
-	{
-		status = emit_out_of_heap_error(&context->m_stack,&parser->m_line_info);
-	}
-
-	/* Reset the heap */
-	heap_reset(context->m_heap,heap_start);
-
-	return status;
-}
-
-parse_status_t read_term(context_t* context, stream_t* s)
-{
-	parse_status_t status = PARSE_OK;
-	size_t heap_start = heap_top(context->m_heap);
-
-	parser_t parser = { .m_s = s, .m_line_info.m_end_line = 1 };
-	if (!setjmp(parser.m_jmp))
-	{
-		ast_error_t ast_err = AST_ERR_NONE;
-		token_t next = {0};
-		token_type_t next_type;
-		ast_node_t* node;
-
-		next_type = token_next(context,&parser,&next);
-		node = parse_term(context,&parser,1201,&next_type,&next,&ast_err);
-		if (!node)
-		{
-			if (next_type != tokEOF)
-				status = emit_ast_error(&context->m_stack,ast_err,&parser.m_line_info);
-			else
-				status = emit_eof_error(&context->m_stack,&parser.m_line_info);
-		}
-		else if (next_type != tokEnd)
-		{
-			status = emit_syntax_error_missing(&context->m_stack,PACK_ATOM_EMBED_1('.'),&parser.m_line_info);
-		}
 		else
 		{
 			var_info_t* varinfo = NULL;
 			size_t varcount = 0;
-			status = collate_var_info(context,&parser,&varinfo,&varcount,node);
+			status = collate_var_info(context,parser,&varinfo,&varcount,node);
 			if (status == PARSE_OK)
 			{
 				size_t i = varcount;
@@ -2295,11 +2257,26 @@ parse_status_t read_term(context_t* context, stream_t* s)
 	}
 	else
 	{
-		status = emit_out_of_heap_error(&context->m_stack,&parser.m_line_info);
+		status = emit_out_of_heap_error(&context->m_stack,&parser->m_line_info);
 	}
 
 	/* Reset the heap */
 	heap_reset(context->m_heap,heap_start);
 
+	return status;
+}
+
+parse_status_t read_term(context_t* context, stream_t* s)
+{
+	parser_t parser = 
+	{
+		.m_s = s,
+		.m_line_info.m_end_line = 1
+	};
+
+	parse_status_t status = consult_term(context,&parser);
+	if (status == PARSE_EOF)
+		status = emit_eof_error(&context->m_stack,&parser.m_line_info);
+		
 	return status;
 }
