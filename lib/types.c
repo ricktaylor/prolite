@@ -492,7 +492,7 @@ static int type_precedes(prolite_type_t t)
 	case prolite_double:
 		return 1;
 
-	case prolite_int32:
+	case prolite_integer:
 	case prolite_atom:
 	case prolite_compound:
 		return t;
@@ -557,7 +557,7 @@ int term_compare(const term_t* t1, const term_t* t2)
 			r = (t1->m_dval == t2->m_dval);
 			break;
 		
-		case prolite_int32:	
+		case prolite_integer:	
 		case prolite_var:
 		default:
 			r = (t1->m_u64val == t2->m_u64val);
@@ -623,7 +623,7 @@ int term_precedes(const term_t* t1, const term_t* t2)
 			r = (int)(t1->m_dval - t2->m_dval);
 			break;
 		
-		case prolite_int32:
+		case prolite_integer:
 			r = get_integer(t1) - get_integer(t2);
 			break;
 		

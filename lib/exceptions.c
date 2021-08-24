@@ -19,3 +19,8 @@ void throw_type_error(context_t* context, uint64_t p1, const term_t* t)
 {
 
 }
+
+void throw_representation_error(context_t* context, uint64_t p1, const term_t* t)
+{
+
+}

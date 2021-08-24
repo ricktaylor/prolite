@@ -124,7 +124,7 @@ static void dumpTerm(const term_t* t, FILE* f, int ref)
 		fprintf(f,"%slocal[%zu]",ref ? "" : "*",(size_t)get_var_index(t));
 		break;
 
-	case prolite_int32:
+	case prolite_integer:
 		fprintf(f,"%lu",(long)get_integer(t));
 		break;
 

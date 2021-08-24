@@ -1486,7 +1486,7 @@ static ast_node_t* parse_number(context_t* context, parser_t* parser, ast_node_t
 					v |= (next->m_str[i] - '0');
 			}
 
-			if (v > (UINT64_C(0x7FFFFFFF) + neg))
+			if (v > (UINT64_C(0x7FFFFFFFFFFF) + neg))
 				return syntax_error(neg ? AST_ERR_MIN_INTEGER : AST_ERR_MAX_INTEGER,ast_err);
 		}
 

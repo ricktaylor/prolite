@@ -1,12 +1,8 @@
-#ifndef heap_H_INCLUDED_
-#define heap_H_INCLUDED_
+#ifndef HEAP_H_
+#define HEAP_H_
 
 #include <stdint.h>
 #include <stddef.h>
-
-#if defined(_MSC_VER)
-#define inline __inline
-#endif
 
 // This isn't a 'heap', it's just an arena allocator for the heap
 
@@ -52,4 +48,4 @@ void heap_free(heap_t* heap, void* ptr, size_t len);
 
 void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len);
 
-#endif /* heap_H_INCLUDED_ */
+#endif /* HEAP_H_ */

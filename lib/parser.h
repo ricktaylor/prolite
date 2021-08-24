@@ -1,5 +1,5 @@
-#ifndef PARSER_H_INCLUDED_
-#define PARSER_H_INCLUDED_
+#ifndef PARSER_H_
+#define PARSER_H_
 
 #include "context.h"
 #include "stream.h"
@@ -40,4 +40,4 @@ typedef enum parse_status
 parse_status_t read_term(context_t* context, stream_t* s);
 parse_status_t consult_term(context_t* context, parser_t* parser);
 
-#endif // PARSER_H_INCLUDED_
+#endif // PARSER_H_

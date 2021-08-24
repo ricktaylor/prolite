@@ -9,7 +9,7 @@ typedef enum prolite_type_flags
 {
 	type_flag_double = (1 << prolite_double),
 	type_flag_var = (1 << prolite_var),
-	type_flag_int32 = (1 << prolite_int32),
+	type_flag_int32 = (1 << prolite_integer),
 	type_flag_atom = (1 << prolite_atom),
 	type_flag_compound = (1 << prolite_compound),
 	type_flag_chars = (1 << prolite_chars),

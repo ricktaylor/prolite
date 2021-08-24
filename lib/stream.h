@@ -1,5 +1,5 @@
-#ifndef STREAM_H_INCLUDED_
-#define STREAM_H_INCLUDED_
+#ifndef STREAM_H_
+#define STREAM_H_
 
 #include "context.h"
 
@@ -33,4 +33,4 @@ static inline stream_t* stream_resolver_open(struct stream_resolver* r, exceptio
 	return s;
 }
 
-#endif /* STREAM_H_INCLUDED_ */
+#endif /* STREAM_H_ */

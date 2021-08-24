@@ -859,7 +859,7 @@ static continuation_t* compile_integer(compile_context_t* context, continuation_
 	case prolite_var:
 		return compile_type_test(context,cont,type_flag_int32,0,g1);
 
-	case prolite_int32:
+	case prolite_integer:
 		return compile_true(context,cont,goal);
 
 	default:
@@ -936,7 +936,7 @@ static continuation_t* compile_number(compile_context_t* context, continuation_t
 	case prolite_var:
 		return compile_type_test(context,cont,type_flag_int32 | type_flag_double,0,g1);
 
-	case prolite_int32:
+	case prolite_integer:
 	case prolite_double:
 		return compile_true(context,cont,goal);
 

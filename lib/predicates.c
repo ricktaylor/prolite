@@ -1,21 +1,4 @@
-#include "context.h"
-
-typedef struct clause
-{
-	size_t       m_locals_count;
-	term_t*      m_args;
-	term_t*      m_body;
-
-	debug_info_t m_debug_info;
-
-} clause_t;
-
-typedef struct predicate
-{
-	unsigned  m_dynamic : 1;
-	size_t    m_clause_count;
-	clause_t* m_clauses;
-} predicate_t;
+#include "predicates.h"
 
 static predicate_t* find_predicate(const term_t* head)
 {
@@ -58,9 +41,9 @@ static int assert_is_callable(context_t* context, const term_t* goal)
 	}
 }
 
-void assert_clause(context_t* context, const term_t* goal, int z, int dynamic)
+void term_to_clause(context_t* context, const term_t* t, clause_t* clause)
 {
-	const term_t* head = goal;
+	const term_t* head = t;
 	const term_t* body = NULL;
 
 	if (head->m_u64val == PACK_COMPOUND_EMBED_2(2,':','-'))
@@ -94,46 +77,31 @@ void assert_clause(context_t* context, const term_t* goal, int z, int dynamic)
 	if (body && !assert_is_callable(context,body))
 		return throw_type_error(context,PACK_ATOM_BUILTIN(callable),body);
 
-	clause_t clause = { .m_locals_count = 0 };
-
-	// Copy goal to heap
+	// Copy t to heap
 	size_t top = heap_top(context->m_heap);
-	head = copy_term_to_heap(context,goal,&clause.m_locals_count);
-	if (!head)
-		return throw_out_of_memory_error(context,goal);
+	clause->m_head = copy_term_to_heap(context,t,&clause->m_locals_count);
+	if (!clause->m_head)
+		return throw_out_of_memory_error(context,t);
+
+	// TODO: Safely copy away head+body
 
 	if (body)
 	{
-		head = get_first_arg(head,NULL);
-		body = get_next_arg(head);
-	}
-
-	if (get_term_type(head) == prolite_compound)
-	{
-		size_t arity = 0;
-		const term_t* arg_start = get_first_arg(head,&arity);
-		const term_t* arg_end = arg_start;
-
-		while (arity--)
-			arg_end = get_next_arg(arg_end);
-		
-		// TODO: Safely copy away args
-	}
-
-	if (body)
-	{
-		// TODO: Safely copy away body
-	}
-		
-	const debug_info_t* debug_info = get_debug_info(head);
-	{
-		// TODO: Safely copy away debug info
-		clause.m_debug_info = *debug_info;
+		clause->m_head = get_first_arg(clause->m_head,NULL);
+		clause->m_body = get_next_arg(clause->m_head);
 	}
 			
-	predicate_t* pred = find_predicate(head);
-
 	heap_reset(context->m_heap,top);
+}
+
+static void assert_clause(context_t* context, const term_t* t, int z)
+{
+	clause_t clause = {0};
+	term_to_clause(context,t,&clause);
+			
+	predicate_t* pred = find_predicate(clause.m_head);
+
+	
 }
 
 void builtin_assert(context_t* context)
@@ -143,7 +111,7 @@ void builtin_assert(context_t* context)
 
 	int assertz = (goal->m_u64val == PACK_COMPOUND_BUILTIN(assertz,1));
 	
-	assert_clause(context,deref_local_var(context,get_first_arg(goal,NULL)),assertz,1);
+	assert_clause(context,deref_local_var(context,get_first_arg(goal,NULL)),assertz);
 
 	if (!(context->m_flags & (FLAG_HALT | FLAG_THROW)))
 		(*gosub)(context);
