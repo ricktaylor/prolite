@@ -5,6 +5,7 @@ lib_LTLIBRARIES = libprolite.la
 
 libprolite_la_SOURCES = \
 	lib/heap.c \
+	lib/btree.c \
 	lib/types.c \
 	lib/parser.c \
 	lib/context.c \

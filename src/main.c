@@ -6,6 +6,7 @@
  */
 
 #include "../lib/parser.h"
+#include "../lib/btree.h"
 
 void compile_term(context_t* context, const term_t* goal, size_t var_count);
 
@@ -38,8 +39,59 @@ static int64_t text_stream_read(stream_t* s, void* dest, size_t len)
 	return r;
 }
 
+void dump_btree(const btree_t* bt, const char* filename);
+
+static void btree_tests(void)
+{
+	btree_t bt = { .m_fn_malloc = &malloc, .m_fn_free = &free };
+
+	int vals[] = {0,1,2,3,4,5,6,7,8,9};
+
+	btree_insert(&bt,4,&vals[4]);
+
+	dump_btree(&bt,"./btree.dot");
+
+	btree_insert(&bt,5,&vals[5]);
+
+	dump_btree(&bt,"./btree.dot");
+
+	btree_insert(&bt,2,&vals[2]);
+
+	dump_btree(&bt,"./btree.dot");
+
+	btree_insert(&bt,3,&vals[3]);
+
+	dump_btree(&bt,"./btree.dot");
+
+	btree_insert(&bt,0,&vals[0]);
+
+	dump_btree(&bt,"./btree.dot");
+
+	btree_insert(&bt,1,&vals[1]);
+
+	dump_btree(&bt,"./btree.dot");
+
+	btree_insert(&bt,9,&vals[9]);
+
+	dump_btree(&bt,"./btree.dot");
+
+	btree_insert(&bt,8,&vals[8]);
+
+	dump_btree(&bt,"./btree.dot");
+
+	btree_insert(&bt,7,&vals[7]);
+
+	dump_btree(&bt,"./btree.dot");
+
+	btree_insert(&bt,6,&vals[6]);
+
+	dump_btree(&bt,"./btree.dot");
+}
+
 int main(int argc, char* argv[])
 {
+	btree_tests();
+
 	const char* cmd = argc > 1 ? argv[1] : "true.";
 
 	heap_t h = { .m_fn_malloc = &malloc, .m_fn_free = &free };
