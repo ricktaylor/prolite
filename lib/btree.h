@@ -21,7 +21,6 @@ typedef enum btree_page_type
 struct btree_page
 {
 	btree_page_type_t  m_type;
-	struct btree_page* m_parent;
 	size_t             m_count;
 	struct btree_kv    m_data[];
 };
