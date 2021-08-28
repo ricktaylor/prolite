@@ -5,24 +5,11 @@
 
 // This isn't a 'btree', it's a b+tree
 
-struct btree_kv
-{
-	uint64_t key;
-	void*    value;
-};
-
-typedef enum btree_page_type
-{
-	bt_root = 0,
-	bt_internal,
-	bt_leaf
-} btree_page_type_t;
-
 struct btree_page
 {
-	btree_page_type_t  m_type;
-	size_t             m_count;
-	struct btree_kv    m_data[];
+	unsigned          m_internal : 1;
+	unsigned int      m_count;
+	uint64_t          m_keys[];
 };
 
 typedef struct btree

@@ -39,20 +39,7 @@ static int64_t text_stream_read(stream_t* s, void* dest, size_t len)
 	return r;
 }
 
-void dump_btree(const btree_t* bt, const char* filename);
-
-static void btree_tests(void)
-{
-	btree_t bt = { .m_fn_malloc = &malloc, .m_fn_free = &free };
-
-	int v = 12;
-	for (size_t i=0; i < 50; ++i)
-	{
-		btree_insert(&bt,rand() % 40,&v);
-
-		dump_btree(&bt,"./btree.dot");
-	}
-}
+void btree_tests(void);
 
 int main(int argc, char* argv[])
 {
