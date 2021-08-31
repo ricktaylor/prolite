@@ -8,9 +8,9 @@
 
 struct btree_page
 {
-	unsigned          m_internal : 1;
-	unsigned int      m_count;
-	uint64_t          m_keys[];
+	_Bool    m_internal;
+	uint32_t m_count;
+	uint64_t m_keys[];
 };
 
 typedef struct btree
