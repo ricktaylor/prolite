@@ -10,7 +10,6 @@ struct heap;
 
 struct heap_page
 {
-	struct heap*      m_heap;
 	struct heap_page* m_prev;
 	struct heap_page* m_next;
 	uint32_t          m_count;
