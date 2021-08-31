@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// This isn't a 'heap', it's just an arena allocator for the heap
+// This isn't a 'heap', it's just an arena allocator
 
 struct heap;
 
