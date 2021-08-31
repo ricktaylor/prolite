@@ -1,4 +1,3 @@
-
 #include "btree.h"
 
 #include <stdlib.h>
@@ -67,18 +66,9 @@ void* btree_lookup(btree_t* bt, uint64_t key)
 	}
 }
 
-static struct btree_page* new_page(btree_t* bt)
-{
-	struct btree_page* page = (*bt->m_fn_malloc)(c_page_size);
-	if (page)
-		memset(page,0,c_page_size);
-
-	return page;
-}
-
 static struct btree_page* new_root(btree_t* bt, struct btree_page* left, struct btree_page* right, uint64_t key)
 {
-	struct btree_page* new_root = new_page(bt);
+	struct btree_page* new_root = (*bt->m_fn_malloc)(c_page_size);
 	if (new_root)
 	{
 		new_root->m_internal = 1;
@@ -95,9 +85,10 @@ static struct btree_page* new_root(btree_t* bt, struct btree_page* left, struct 
 
 static struct btree_page* split_leaf(btree_t* bt, struct btree_page* left)
 {
-	struct btree_page* right = new_page(bt);
+	struct btree_page* right = (*bt->m_fn_malloc)(c_page_size);
 	if (right)
 	{
+		right->m_internal = 0;
 		right->m_count = (c_max_degree / 2) + 1;
 		left->m_count = c_max_degree + 1 - right->m_count;
 
@@ -109,7 +100,7 @@ static struct btree_page* split_leaf(btree_t* bt, struct btree_page* left)
 
 static struct btree_page* split_internal(btree_t* bt, struct btree_page* left)
 {
-	struct btree_page* right = new_page(bt);
+	struct btree_page* right = (*bt->m_fn_malloc)(c_page_size);
 	if (right)
 	{
 		right->m_internal = 1;
@@ -240,9 +231,12 @@ void* btree_insert(btree_t* bt, uint64_t key, void* val)
 
 	if (!bt->m_root)
 	{
-		bt->m_root = new_page(bt);
+		bt->m_root = (*bt->m_fn_malloc)(c_page_size);
 		if (!bt->m_root)
 			return NULL;
+
+		bt->m_root->m_internal = 0;
+		bt->m_root->m_count = 0;
 	}
 
 	struct btree_page* page = bt->m_root;
@@ -419,6 +413,7 @@ void* btree_remove(btree_t* bt, uint64_t key)
 	return kv_remove(bt,bt->m_root,key);
 }
 
+#if 0 // TEST
 #include <stdio.h>
 
 static void dump_page(FILE* f, struct btree_page* page)
@@ -489,12 +484,13 @@ void btree_tests(void)
 	int v = 12;
 	for (size_t i=0; i < 5000; ++i)
 	{
-		btree_insert(&bt,rand() % 99 + 1,&v);
+		btree_insert(&bt,rand() % 999 + 1,&v);
 
 		dump_btree(&bt,"./btree.dot");
 
-		btree_remove(&bt,rand() % 99 + 1);
+		btree_remove(&bt,rand() % 999 + 1);
 
 		dump_btree(&bt,"./btree.dot");
 	}
 }
+#endif

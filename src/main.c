@@ -43,7 +43,7 @@ void btree_tests(void);
 
 int main(int argc, char* argv[])
 {
-	btree_tests();
+	//btree_tests();
 
 	const char* cmd = argc > 1 ? argv[1] : "true.";
 

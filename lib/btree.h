@@ -1,7 +1,8 @@
 #ifndef BTREE_H_
 #define BTREE_H_
 
-#include "heap.h"
+#include <stdint.h>
+#include <stddef.h>
 
 // This isn't a 'btree', it's a b+tree
 
