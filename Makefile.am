@@ -23,8 +23,6 @@ libprolite_la_SOURCES = \
 	lib/predicates.c \
 	lib/exceptions.c
 
-libprolite_la_CPPFLAGS = -DVERSION=\"$(VERSION)\"
-
 if ENABLE_TESTS
 libprolite_la_SOURCES += \
 	lib/dump_cfg.c
@@ -42,18 +40,17 @@ prolite_LDADD = libprolite.la
 prolite_LDFLAGS = -static
 
 if ENABLE_TESTS
-#check_PROGRAMS = \
-#	test_libprolite
+check_PROGRAMS = \
+	test_btree
 
-#TESTLDADD = libprolite.la
-#TESTLDFLAGS = -no-install -static
+TESTLDADD = libprolite.la
+TESTLDFLAGS = -no-install -static
 
-#nodist_test_libprolite_SOURCES = \
-#	test/main.c
+nodist_test_btree_SOURCES = \
+	test/internal/btree_tests.c
 
-#test_libprolite_CFLAGS = -DPACKAGE_NAME=\"$(PACKAGE_NAME)\"
-#test_libprolite_LDADD = $(TESTLDADD) -lcunit
-#test_libprolite_LDFLAGS = $(TESTLDFLAGS)
+test_btree_LDADD = $(TESTLDADD)
+test_btree_LDFLAGS = $(TESTLDFLAGS)
 
 endif # ENABLE_TESTS
 

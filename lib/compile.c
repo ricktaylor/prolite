@@ -1282,7 +1282,9 @@ void compile_term(context_t* context, const term_t* goal, size_t var_count)
 		cfg_vec_t blks = {0};
 		walk_cfgs(&cc,&blks,c->m_entry_point);
 
+#if ENABLE_TESTS
 		dumpCFG(&blks,"./cfg.dot");
+#endif
 
 		if (blks.m_total)
 		{
@@ -1292,7 +1294,9 @@ void compile_term(context_t* context, const term_t* goal, size_t var_count)
 
 			blks.m_total = emit_ops(code,&blks);
 
+#if ENABLE_TESTS
 			dumpTrace(code,blks.m_total,"./pcode.txt");
+#endif
 
 			// Put pcode on the stack... JIT later...
 			context->m_stack -= bytes_to_cells(blks.m_total * sizeof(opcode_t),sizeof(term_t));

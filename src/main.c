@@ -39,12 +39,8 @@ static int64_t text_stream_read(stream_t* s, void* dest, size_t len)
 	return r;
 }
 
-void btree_tests(void);
-
 int main(int argc, char* argv[])
 {
-	//btree_tests();
-
 	const char* cmd = argc > 1 ? argv[1] : "true.";
 
 	heap_t h = { .m_fn_malloc = &malloc, .m_fn_free = &free };

@@ -98,7 +98,9 @@ typedef struct cfg_vec
 
 size_t inc_ip(optype_t op);
 
+#if ENABLE_TESTS
 void dumpCFG(const cfg_vec_t* blks, const char* filename);
 void dumpTrace(const opcode_t* code, size_t count, const char* filename);
+#endif
 
 #endif // COMPILE_H_
