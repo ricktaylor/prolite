@@ -1,5 +1,5 @@
-#include "parser.h"
-#include "predicates.h"
+#include "../lib/parser.h"
+#include "../lib/predicates.h"
 
 #include <assert.h>
 

@@ -99,7 +99,7 @@ static void assert_clause(context_t* context, const term_t* t, int z)
 	clause_t clause = {0};
 	term_to_clause(context,t,&clause);
 			
-	predicate_t* pred = find_predicate(clause.m_head);
+	/*predicate_t* pred =*/ find_predicate(clause.m_head);
 
 	
 }
