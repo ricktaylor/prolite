@@ -413,7 +413,7 @@ void* btree_remove(btree_t* bt, uint64_t key)
 	return kv_remove(bt,bt->m_root,key);
 }
 
-#if 0 // TEST
+#if ENABLE_TESTS
 #include <stdio.h>
 
 static void dump_page(FILE* f, struct btree_page* page)
@@ -493,4 +493,4 @@ void btree_tests(void)
 		dump_btree(&bt,"./btree.dot");
 	}
 }
-#endif
+#endif // ENABLE_TESTS

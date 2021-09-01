@@ -1,5 +1,5 @@
 #ifndef PROLITE_H_INCLUDED
-#define BTREE_H_INCLUDED
+#define PROLITE_H_INCLUDED
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,4 +15,4 @@ extern "C" {
 }
 #endif
 
-#endif // _H_INCLUDED
+#endif // PROLITE_H_INCLUDED

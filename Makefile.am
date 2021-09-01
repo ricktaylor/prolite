@@ -3,6 +3,11 @@ ACLOCAL_AMFLAGS = -I m4
 
 AM_DISTCHECK_CONFIGURE_FLAGS = --disable-tests
 
+AM_CPPFLAGS = -DVERSION=\"$(VERSION)\"
+if ENABLE_TESTS
+AM_CPPFLAGS += -DENABLE_TESTS
+endif
+
 lib_LTLIBRARIES = libprolite.la
 
 proliteincludedir = @includedir@/prolite
@@ -16,10 +21,16 @@ libprolite_la_SOURCES = \
 	lib/context.c \
 	lib/compile.c \
 	lib/predicates.c \
-	lib/exceptions.c \
+	lib/exceptions.c
+
+libprolite_la_CPPFLAGS = -DVERSION=\"$(VERSION)\"
+
+if ENABLE_TESTS
+libprolite_la_SOURCES += \
 	lib/dump_cfg.c
+endif
 				
-libprolite_la_LDFLAGS = -pthread -version-number $(shell echo $(VERSION) | grep -oP '^\d+.\d+.\d+' | sed 's/\./:/g') 
+libprolite_la_LDFLAGS = -version-number $(shell echo $(VERSION) | grep -oP '^\d+.\d+.\d+' | sed 's/\./:/g') 
 
 bin_PROGRAMS = prolite 
 
@@ -27,16 +38,15 @@ prolite_SOURCES = \
 	src/consult.c \
 	src/main.c
 	
-prolite_CPPFLAGS = -DVERSION=\"$(VERSION)\"
 prolite_LDADD = libprolite.la
-prolite_LDFLAGS = -pthread -static
+prolite_LDFLAGS = -static
 
 if ENABLE_TESTS
 #check_PROGRAMS = \
 #	test_libprolite
 
 #TESTLDADD = libprolite.la
-#TESTLDFLAGS = -pthread -no-install -static
+#TESTLDFLAGS = -no-install -static
 
 #nodist_test_libprolite_SOURCES = \
 #	test/main.c
