@@ -2238,12 +2238,10 @@ parse_status_t consult_term(context_t* context, parser_t* parser)
 			status = collate_var_info(context,parser,&varinfo,&varcount,node);
 			if (status == PARSE_OK)
 			{
-				size_t i = varcount;
-
 				context->m_stack = emit_ast_node(context->m_stack,node);
 
 				/* Write out var count */
-				while (i--)
+				for (size_t i = varcount; i--; )
 				{
 					/* use count */
 					(--context->m_stack)->m_u64val = varinfo[i].m_use_count;

@@ -27,7 +27,7 @@ typedef struct parser
 	token_t      m_buffer;
 	line_info_t  m_line_info;
 	jmp_buf      m_jmp;
-	int          m_eof;
+	unsigned     m_eof : 1;
 } parser_t;
 
 typedef enum parse_status
