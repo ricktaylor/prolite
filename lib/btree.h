@@ -23,5 +23,6 @@ typedef struct btree
 void* btree_lookup(btree_t* bt, uint64_t key);
 void* btree_insert(btree_t* bt, uint64_t key, void* val);
 void* btree_remove(btree_t* bt, uint64_t key);
+void btree_clear(btree_t* bt);
 
 #endif // BTREE_H_

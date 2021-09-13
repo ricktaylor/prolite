@@ -413,6 +413,28 @@ void* btree_remove(btree_t* bt, uint64_t key)
 	return kv_remove(bt,bt->m_root,key);
 }
 
+static void page_clear(btree_t* bt, struct btree_page* page)
+{
+	if (page->m_internal)
+	{
+		size_t i;
+		for (i=0; i < page->m_count; ++i)
+			page_clear(bt,values(page)[i]);
+		page_clear(bt,values(page)[i]);
+	}
+	
+	(*bt->m_fn_free)(page);
+}
+
+void btree_clear(btree_t* bt)
+{
+	if (bt && bt->m_root)
+	{
+		page_clear(bt,bt->m_root);
+		bt->m_root = NULL;
+	}
+}
+
 #if ENABLE_TESTS
 #include <stdio.h>
 
@@ -492,5 +514,7 @@ void btree_tests(void)
 
 		dump_btree(&bt,"./btree.dot");
 	}
+
+	btree_clear(&bt);
 }
 #endif // ENABLE_TESTS
