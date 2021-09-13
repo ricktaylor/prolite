@@ -3,6 +3,7 @@
 
 #include "types.h"
 #include "heap.h"
+#include "setjmp.h"
 
 typedef enum operator_specifier
 {

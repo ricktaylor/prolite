@@ -4,8 +4,6 @@
 #include "context.h"
 #include "stream.h"
 
-#include <setjmp.h>
-
 typedef struct token
 {
 	size_t         m_alloc;

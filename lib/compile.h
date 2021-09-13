@@ -3,8 +3,6 @@
 
 #include "context.h"
 
-#include <setjmp.h>
-
 typedef enum prolite_type_flags
 {
 	type_flag_double = (1 << prolite_double),
