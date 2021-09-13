@@ -2230,6 +2230,19 @@ parse_status_t consult_term(context_t* context, parser_t* parser)
 		else if (next_type != tokEnd)
 		{
 			status = emit_syntax_error_missing(&context->m_stack,PACK_ATOM_EMBED_1('.'),&parser->m_line_info);
+
+			if (parser->m_multiterm)
+			{
+				// Skip to '.'
+				do
+				{
+					heap_reset(context->m_heap,heap_start);
+					next.m_len = next.m_alloc = 0;
+
+					next_type = token_next(context,parser,&next);			
+
+				} while (next_type != tokEnd && next_type != tokEOF);
+			}
 		}
 		else
 		{
