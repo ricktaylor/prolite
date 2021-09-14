@@ -174,7 +174,7 @@ string_t get_string(const term_t* t, const debug_info_t** debug_info)
 		break;
 	}
 
-	if (debug_info)
+	if (debug_info && have_debug_info)
 		*debug_info = (const debug_info_t*)t;
 
 	return ret;
@@ -208,7 +208,7 @@ string_t get_predicate(const term_t* t, size_t* arity, const debug_info_t** debu
 		ret.m_data[4] = all48;
 		ret.m_str = ret.m_data;
 
-		if (debug_info)
+		if (debug_info && have_debug_info)
 			*debug_info = (const debug_info_t*)t;
 		break;
 	
@@ -218,7 +218,7 @@ string_t get_predicate(const term_t* t, size_t* arity, const debug_info_t** debu
 
 		ret = s_builtin_strings[(uint32_t)all48];
 
-		if (debug_info)
+		if (debug_info && have_debug_info)
 			*debug_info = (const debug_info_t*)t;
 		break;
 	
@@ -647,8 +647,8 @@ static void append_term_to_heap(context_t* context, const term_t* src, term_t** 
 
 static void copy_term_to_heap_inner(context_t* context, const term_t* src, term_t** dst, size_t* dst_len, term_t* var_mapping, size_t* var_count, jmp_buf* jmp)
 {
-	const term_t* dst = src;
-	uint64_t all48 = (dst++)->m_u64val;
+	const term_t* p = src;
+	uint64_t all48 = (p++)->m_u64val;
 	uint16_t hi16 = UNPACK_TYPE(all48);
 	prolite_type_t type = hi16 & 0x7;
 	int have_debug_info = (hi16 & prolite_debug_info);
@@ -674,9 +674,9 @@ static void copy_term_to_heap_inner(context_t* context, const term_t* src, term_
 
 			if (have_debug_info)
 			{
-				src = dst;
-				dst = skip_debug_info(dst,NULL);
-				append_term_to_heap(context,dst,dst,dst_len,src - dst,jmp);
+				src = p;
+				p = skip_debug_info(p,NULL);
+				append_term_to_heap(context,p,dst,dst_len,src - p,jmp);
 			}
 		}
 		return;
@@ -687,15 +687,15 @@ static void copy_term_to_heap_inner(context_t* context, const term_t* src, term_
 		switch (hi16 >> 14)
 		{
 		case 3:
-			++dst;
+			++p;
 			break;
 
 		case 0:
-			dst += bytes_to_cells(all48 & MAX_ATOM_LEN,sizeof(term_t));
+			p += bytes_to_cells(all48 & MAX_ATOM_LEN,sizeof(term_t));
 			break;
 		}
 		if (have_debug_info)
-			dst = skip_debug_info(dst,NULL);
+			p = skip_debug_info(p,NULL);
 		break;
 
 	case prolite_compound:
@@ -710,39 +710,39 @@ static void copy_term_to_heap_inner(context_t* context, const term_t* src, term_
 			case 2:
 				arity = (hi16 & 0x7800) >> 11;
 				if (have_debug_info)
-					dst = skip_debug_info(dst,NULL);
+					p = skip_debug_info(p,NULL);
 				break;
 			
 			case 1:
 				arity = hi16 & MAX_ARITY_BUILTIN;
 				if (have_debug_info)
-					dst = skip_debug_info(dst,NULL);
+					p = skip_debug_info(p,NULL);
 				break;
 			
 			case 0:
 				arity = (all48 & MAX_ARITY);
-				dst = get_next_arg(dst);
+				p = get_next_arg(p);
 				break;
 			}
 
-			append_term_to_heap(context,src,dst,dst_len,dst - src,jmp);
+			append_term_to_heap(context,src,dst,dst_len,p - src,jmp);
 			
 			/* Skip args */
 			while (arity--)
 			{
-				dst = get_next_arg(dst);
-				copy_term_to_heap_inner(context,deref_local_var(context,dst),dst,dst_len,var_mapping,var_count,jmp);
+				p = get_next_arg(p);
+				copy_term_to_heap_inner(context,deref_local_var(context,p),dst,dst_len,var_mapping,var_count,jmp);
 			}
 		}
 		return;
 
 	default:
 		if (have_debug_info)
-			dst = skip_debug_info(dst,NULL);
+			p = skip_debug_info(p,NULL);
 		break;
 	}
 
-	append_term_to_heap(context,src,dst,dst_len,dst - src,jmp);
+	append_term_to_heap(context,src,dst,dst_len,p - src,jmp);
 }
 
 const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* var_count)
