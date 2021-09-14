@@ -52,20 +52,20 @@ typedef struct debug_info
 	int TODO;
 } debug_info_t;
 
-const debug_info_t* get_debug_info(const term_t* p);
+const debug_info_t* get_debug_info(const term_t* t);
 
 term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external);
-term_t* push_predicate(term_t* stack, size_t arity, const unsigned char* functor, size_t functor_len, int external);
+term_t* push_predicate(term_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len, int external);
 
-static inline term_t* push_integer(term_t* stack, int64_t v)
+static inline term_t* push_integer(term_t* stack, int64_t i)
 {
-	(--stack)->m_u64val = PACK_TYPE(prolite_integer) | PACK_MANT_48(v);
+	(--stack)->m_u64val = PACK_TYPE(prolite_integer) | PACK_MANT_48(i);
 	return stack;
 }
 
-static inline term_t* push_double(term_t* stack, double v)
+static inline term_t* push_double(term_t* stack, double d)
 {
-	(--stack)->m_dval = v;
+	(--stack)->m_dval = d;
 	return stack;
 }
 
@@ -80,14 +80,14 @@ static inline size_t get_var_index(const term_t* v)
 	return UNPACK_MANT_48(v->m_u64val);
 }
 
-static inline int64_t get_integer(const term_t* v)
+static inline int64_t get_integer(const term_t* i)
 {
 	struct sign_extend
 	{
 		int64_t i64 : 48;
 	};
 
-	struct sign_extend se = { .i64 = UNPACK_MANT_48(v->m_u64val) };
+	struct sign_extend se = { .i64 = UNPACK_MANT_48(i->m_u64val) };
 	return se.i64;
 }
 
@@ -107,9 +107,9 @@ static inline int has_debug_info(const term_t* t)
 }
 
 const term_t* get_first_arg(const term_t* compound, size_t* arity);
-const term_t* get_next_arg(const term_t* p);
-string_t get_predicate(const term_t* b, size_t* arity, const debug_info_t** debug_info);
-string_t get_string(const term_t* b, const debug_info_t** debug_info);
+const term_t* get_next_arg(const term_t* t);
+string_t get_predicate(const term_t* t, size_t* arity, const debug_info_t** debug_info);
+string_t get_string(const term_t* t, const debug_info_t** debug_info);
 
 int predicate_compare(const term_t* c1, const term_t* c2);
 int term_compare(const term_t* t1, const term_t* t2);
