@@ -10,6 +10,7 @@
 const string_t s_builtin_strings[] =
 {
 #include "builtin_strings.h"
+	{ 0, NULL }
 };
 
 static int string_compare(const void* p1, const void* p2)
@@ -18,15 +19,15 @@ static int string_compare(const void* p1, const void* p2)
 	const string_t* s2 = p2;
 
 	int r = (s1->m_len - s2->m_len);
-	if (r == 0)
+	if (r == 0 && s1->m_len)
 		r = memcmp(s1->m_str,s2->m_str,s1->m_len);
 
 	return r;
 }
 
-static uint32_t is_builtin_string(const unsigned char* str, size_t len)
+static builtin_atom_id_t is_builtin_string(const unsigned char* str, size_t len)
 {
-	uint32_t ret = -1;
+	builtin_atom_id_t ret = BUILTIN_ATOM_;
 	string_t f = 
 	{
 		.m_len = len,
@@ -35,7 +36,7 @@ static uint32_t is_builtin_string(const unsigned char* str, size_t len)
 
 	string_t* r = bsearch(&f,s_builtin_strings,sizeof(s_builtin_strings) / sizeof(s_builtin_strings[0]),sizeof(s_builtin_strings[0]),&string_compare);
 	if (r)
-		ret = (uint32_t)(r - s_builtin_strings);
+		ret = (builtin_atom_id_t)(r - s_builtin_strings);
 
 	return ret;
 }
@@ -70,7 +71,7 @@ term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str
 		break;
 
 	default:
-		if ((builtin = is_builtin_string(str,len)) != -1)
+		if ((builtin = is_builtin_string(str,len)) != BUILTIN_ATOM_)
 		{
 			(--stack)->m_u64val = (PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0x4000) << 32) | builtin));
 		}
@@ -123,7 +124,7 @@ term_t* push_predicate(term_t* stack, uint64_t arity, const unsigned char* funct
 			break;
 		}
 	}
-	else if (arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(functor,functor_len)) != -1)
+	else if (arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(functor,functor_len)) != BUILTIN_ATOM_)
 	{
 		(--stack)->m_u64val = (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(arity) & MAX_ARITY_BUILTIN)) << 32) | builtin));
 	}
@@ -414,7 +415,7 @@ const debug_info_t* get_debug_info(const term_t* t)
 	return di;
 }
 
-static int atom_compare(const term_t* a1, const term_t* a2)
+int atom_compare(const term_t* a1, const term_t* a2)
 {
 	int r = (a1->m_u64val == a2->m_u64val);
 	if (!r)

@@ -1,13 +1,136 @@
 #include "predicates.h"
+#include "fnv1a.h"
 
-static predicate_t* find_predicate(const term_t* head)
+#include <string.h>
+#include <assert.h>
+
+typedef union short_str_hash
 {
-	// TODO - We can do a fast B+Tree lookup on head->m_u64val
-	
-	return NULL;
+	unsigned char m_chars[8];
+	uint64_t      m_u64val;
+} short_str_hash_t;
+
+predicate_base_t* predicate_map_lookup(predicate_map_t* pm, const term_t* functor)
+{
+	prolite_type_t type = get_term_type(functor);
+	assert(type == prolite_atom || type == prolite_compound);
+
+	void* p = btree_lookup(pm,functor->m_u64val);
+	if (p)
+	{
+		unsigned int sub_type = get_term_subtype(functor);
+		if (sub_type == 0 || sub_type == 3)
+		{
+			btree_t sub_tree = 
+			{
+				.m_fn_malloc = pm->m_fn_malloc,
+				.m_fn_free = pm->m_fn_free,
+				.m_root = p
+			};
+			string_t s;
+
+			if (type == prolite_atom)
+				s = get_string(functor,NULL);
+			else
+				s = get_predicate(functor,NULL,NULL);
+
+			if (s.m_len <= 8)
+			{
+				short_str_hash_t sh = {0};
+				memcpy(sh.m_chars,s.m_str,s.m_len);
+
+				p = btree_lookup(&sub_tree,sh.m_u64val);
+			}
+			else
+			{
+				p = btree_lookup(&sub_tree,fnv1a_64(s.m_str,s.m_len));
+
+				// TODO: Check for clashes...
+				if (p)
+				{
+					if (type == prolite_atom)
+						assert(atom_compare(((predicate_base_t*)p)->m_functor,functor));
+					else
+						assert(predicate_compare(((predicate_base_t*)p)->m_functor,functor));
+				}				
+			}			
+		}
+	}
+
+	return p;
 }
 
-static int assert_is_callable(context_t* context, const term_t* goal)
+predicate_base_t* predicate_map_insert(predicate_map_t* pm, predicate_base_t* pred)
+{
+	prolite_type_t type = get_term_type(pred->m_functor);
+	assert(type == prolite_atom || type == prolite_compound);
+
+	void* p = btree_insert(pm,pred->m_functor->m_u64val,pred);
+	if (p)
+	{
+		unsigned int sub_type = get_term_subtype(pred->m_functor);
+		if (sub_type == 0 || sub_type == 3)
+		{
+			btree_t sub_tree = 
+			{
+				.m_fn_malloc = pm->m_fn_malloc,
+				.m_fn_free = pm->m_fn_free,
+				.m_root = p
+			};
+			string_t s;
+
+			if (type == prolite_atom)
+				s = get_string(pred->m_functor,NULL);
+			else
+				s = get_predicate(pred->m_functor,NULL,NULL);
+
+			if (s.m_len <= 8)
+			{
+				short_str_hash_t sh = {0};
+				memcpy(sh.m_chars,s.m_str,s.m_len);
+
+				p = btree_insert(&sub_tree,sh.m_u64val,pred);
+			}
+			else
+			{
+				p = btree_insert(&sub_tree,fnv1a_64(s.m_str,s.m_len),pred);
+
+				// TODO: Check for clashes...
+				if (p)
+				{
+					if (type == prolite_atom)
+						assert(atom_compare(((predicate_base_t*)p)->m_functor,pred->m_functor));
+					else
+						assert(predicate_compare(((predicate_base_t*)p)->m_functor,pred->m_functor));
+				}
+			}
+		}
+	}
+
+	return p;
+}
+
+int predicate_is_builtin(const term_t* functor)
+{
+	switch (functor->m_u64val)
+	{
+#define DECLARE_BUILTIN_INTRINSIC(f,n) \
+	case (n):
+
+#define DECLARE_BUILTIN_FUNCTION(f,n) \
+	case (n):
+
+#include "builtin_functions.h"
+		return 1;
+
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+/*static int assert_is_callable(context_t* context, const term_t* goal)
 {
 	switch (get_term_type(goal))
 	{
@@ -55,9 +178,11 @@ void term_to_clause(context_t* context, const term_t* t, clause_t* clause)
 
 	switch (head->m_u64val)
 	{
+#undef DECLARE_BUILTIN_INTRINSIC
 #define DECLARE_BUILTIN_INTRINSIC(f,n) \
 	case (n):
 
+#undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,n) \
 	case (n):
 
@@ -72,8 +197,8 @@ void term_to_clause(context_t* context, const term_t* t, clause_t* clause)
 		if (!assert_is_callable(context,head))
 			return throw_type_error(context,PACK_ATOM_BUILTIN(callable),head);
 		break;
-	}	
-	
+	}
+
 	if (body && !assert_is_callable(context,body))
 		return throw_type_error(context,PACK_ATOM_BUILTIN(callable),body);
 
@@ -90,18 +215,18 @@ void term_to_clause(context_t* context, const term_t* t, clause_t* clause)
 		clause->m_head = get_first_arg(clause->m_head,NULL);
 		clause->m_body = get_next_arg(clause->m_head);
 	}
-			
+
 	heap_reset(context->m_heap,top);
-}
+}*/
 
 static void assert_clause(context_t* context, const term_t* t, int z)
 {
-	clause_t clause = {0};
-	term_to_clause(context,t,&clause);
-			
-	/*predicate_t* pred =*/ find_predicate(clause.m_head);
+	//clause_t clause = {0};
+	//term_to_clause(context,t,&clause);
 
-	
+	//predicate_t* pred = find_predicate(clause.m_head);
+
+
 }
 
 void builtin_assert(context_t* context)
@@ -110,7 +235,7 @@ void builtin_assert(context_t* context)
 	const builtin_fn_t gosub = (context->m_stack--)->m_pval;
 
 	int assertz = (goal->m_u64val == PACK_COMPOUND_BUILTIN(assertz,1));
-	
+
 	assert_clause(context,deref_local_var(context,get_first_arg(goal,NULL)),assertz);
 
 	if (!(context->m_flags & (FLAG_HALT | FLAG_THROW)))

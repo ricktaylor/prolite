@@ -65,6 +65,7 @@ static const uint16_t prolite_debug_info = 0x8000;
 #define PACK_ATOM_EMBED_5(c1,c2,c3,c4,c5) PACK_TYPE_EMBED(prolite_atom,0,5,c1,c2,c3,c4,c5)
 
 #define PACK_ATOM_BUILTIN(name)  (PACK_TYPE(prolite_atom) | PACK_MANT_48((UINT64_C(0x4000) << 32) | (uint32_t)(BUILTIN_ATOM_##name)))
+#define PACK_ATOM_NUL            (PACK_TYPE(prolite_atom) | PACK_MANT_48((UINT64_C(0x4000) << 32) | (uint32_t)(BUILTIN_ATOM_)))
 
 #define MAX_ATOM_LEN      ((UINT64_C(1) << 46) - 1)
 
