@@ -4,57 +4,60 @@
 #include <string.h>
 #include <assert.h>
 
-typedef union short_str_hash
+typedef union short_str_key
 {
 	unsigned char m_chars[8];
 	uint64_t      m_u64val;
-} short_str_hash_t;
+} short_str_key_t;
 
-predicate_base_t* predicate_map_lookup(predicate_map_t* pm, const term_t* functor)
+static uint64_t predicate_key(const term_t* functor, int* is_sub_tree)
 {
 	prolite_type_t type = get_term_type(functor);
 	assert(type == prolite_atom || type == prolite_compound);
 
-	void* p = btree_lookup(pm,functor->m_u64val);
-	if (p)
+	uint64_t key = functor->m_u64val;
+	unsigned int sub_type = get_term_subtype(functor);
+	if (sub_type == 0 || sub_type == 3)
 	{
-		unsigned int sub_type = get_term_subtype(functor);
-		if (sub_type == 0 || sub_type == 3)
+		string_t s;
+		if (type == prolite_atom)
+			s = get_string(functor,NULL);
+		else
+			s = get_predicate(functor,NULL,NULL);
+
+		if (s.m_len <= 8)
 		{
-			btree_t sub_tree = 
-			{
-				.m_fn_malloc = pm->m_fn_malloc,
-				.m_fn_free = pm->m_fn_free,
-				.m_root = p
-			};
-			string_t s;
+			short_str_key_t sk = {0};
+			memcpy(sk.m_chars,s.m_str,s.m_len);
 
-			if (type == prolite_atom)
-				s = get_string(functor,NULL);
-			else
-				s = get_predicate(functor,NULL,NULL);
-
-			if (s.m_len <= 8)
-			{
-				short_str_hash_t sh = {0};
-				memcpy(sh.m_chars,s.m_str,s.m_len);
-
-				p = btree_lookup(&sub_tree,sh.m_u64val);
-			}
-			else
-			{
-				p = btree_lookup(&sub_tree,fnv1a_64(s.m_str,s.m_len));
-
-				// TODO: Check for clashes...
-				if (p)
-				{
-					if (type == prolite_atom)
-						assert(atom_compare(((predicate_base_t*)p)->m_functor,functor));
-					else
-						assert(predicate_compare(((predicate_base_t*)p)->m_functor,functor));
-				}				
-			}			
+			key = sk.m_u64val;
 		}
+		else
+			key = fnv1a_64(s.m_str,s.m_len);
+
+		*is_sub_tree = 1;
+	}
+	else
+		*is_sub_tree = 0;
+
+	return key;
+}
+
+predicate_base_t* predicate_map_lookup(predicate_map_t* pm, const term_t* functor)
+{
+	int is_sub_tree = 0;
+	uint64_t key = predicate_key(functor,&is_sub_tree);
+
+	void* p = btree_lookup(pm,functor->m_u64val);
+	if (p && is_sub_tree)
+	{
+		btree_t sub_tree = 
+		{
+			.m_fn_malloc = pm->m_fn_malloc,
+			.m_fn_free = pm->m_fn_free,
+			.m_root = p
+		};
+		p = btree_lookup(&sub_tree,key);
 	}
 
 	return p;
@@ -62,52 +65,55 @@ predicate_base_t* predicate_map_lookup(predicate_map_t* pm, const term_t* functo
 
 predicate_base_t* predicate_map_insert(predicate_map_t* pm, predicate_base_t* pred)
 {
-	prolite_type_t type = get_term_type(pred->m_functor);
-	assert(type == prolite_atom || type == prolite_compound);
-
-	void* p = btree_insert(pm,pred->m_functor->m_u64val,pred);
-	if (p)
+	predicate_base_t* curr_pred;
+	int is_sub_tree = 0;
+	uint64_t key = predicate_key(pred->m_functor,&is_sub_tree);
+	if (is_sub_tree)
 	{
-		unsigned int sub_type = get_term_subtype(pred->m_functor);
-		if (sub_type == 0 || sub_type == 3)
+		// Get sub-tree
+		btree_t sub_tree = 
 		{
-			btree_t sub_tree = 
+			.m_fn_malloc = pm->m_fn_malloc,
+			.m_fn_free = pm->m_fn_free
+		};
+
+		sub_tree.m_root = btree_lookup(pm,pred->m_functor->m_u64val);
+		if (!sub_tree.m_root)
+		{
+			curr_pred = btree_insert(&sub_tree,key,pred);
+			if (!curr_pred)
+				return NULL;
+
+			if (!btree_insert(pm,pred->m_functor->m_u64val,sub_tree.m_root))
 			{
-				.m_fn_malloc = pm->m_fn_malloc,
-				.m_fn_free = pm->m_fn_free,
-				.m_root = p
-			};
-			string_t s;
-
-			if (type == prolite_atom)
-				s = get_string(pred->m_functor,NULL);
-			else
-				s = get_predicate(pred->m_functor,NULL,NULL);
-
-			if (s.m_len <= 8)
-			{
-				short_str_hash_t sh = {0};
-				memcpy(sh.m_chars,s.m_str,s.m_len);
-
-				p = btree_insert(&sub_tree,sh.m_u64val,pred);
-			}
-			else
-			{
-				p = btree_insert(&sub_tree,fnv1a_64(s.m_str,s.m_len),pred);
-
-				// TODO: Check for clashes...
-				if (p)
-				{
-					if (type == prolite_atom)
-						assert(atom_compare(((predicate_base_t*)p)->m_functor,pred->m_functor));
-					else
-						assert(predicate_compare(((predicate_base_t*)p)->m_functor,pred->m_functor));
-				}
+				btree_clear(&sub_tree);
+				return NULL;
 			}
 		}
+		else
+		{
+			curr_pred = btree_insert(&sub_tree,key,pred);
+			if (!curr_pred)
+				return NULL;
+		
+#if !defined(NDEBUG)
+			// TODO: Check for clashes...
+			if (curr_pred != pred)
+			{
+				if (get_term_type(pred->m_functor) == prolite_atom)
+					assert(atom_compare(curr_pred->m_functor,pred->m_functor));
+				else
+					assert(predicate_compare(curr_pred->m_functor,pred->m_functor));
+			}
+		}
+#endif
 	}
-
-	return p;
+	else
+	{
+		curr_pred = btree_insert(pm,pred->m_functor->m_u64val,pred);
+	}
+	
+	return curr_pred;
 }
 
 int predicate_is_builtin(const term_t* functor)
