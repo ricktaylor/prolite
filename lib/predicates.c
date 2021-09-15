@@ -4,12 +4,6 @@
 #include <string.h>
 #include <assert.h>
 
-typedef union short_str_key
-{
-	unsigned char m_chars[8];
-	uint64_t      m_u64val;
-} short_str_key_t;
-
 static uint64_t predicate_key(const term_t* functor, int* is_sub_tree)
 {
 	prolite_type_t type = get_term_type(functor);
@@ -27,7 +21,11 @@ static uint64_t predicate_key(const term_t* functor, int* is_sub_tree)
 
 		if (s.m_len <= 8)
 		{
-			short_str_key_t sk = {0};
+			union short_str_key
+			{
+				unsigned char m_chars[8];
+				uint64_t      m_u64val;
+			} sk = {0};
 			memcpy(sk.m_chars,s.m_str,s.m_len);
 
 			key = sk.m_u64val;
@@ -76,8 +74,8 @@ predicate_base_t* predicate_map_insert(predicate_map_t* pm, predicate_base_t* pr
 			.m_fn_malloc = pm->m_fn_malloc,
 			.m_fn_free = pm->m_fn_free
 		};
-
 		sub_tree.m_root = btree_lookup(pm,pred->m_functor->m_u64val);
+
 		if (!sub_tree.m_root)
 		{
 			curr_pred = btree_insert(&sub_tree,key,pred);
@@ -96,17 +94,9 @@ predicate_base_t* predicate_map_insert(predicate_map_t* pm, predicate_base_t* pr
 			if (!curr_pred)
 				return NULL;
 		
-#if !defined(NDEBUG)
 			// TODO: Check for clashes...
-			if (curr_pred != pred)
-			{
-				if (get_term_type(pred->m_functor) == prolite_atom)
-					assert(atom_compare(curr_pred->m_functor,pred->m_functor));
-				else
-					assert(predicate_compare(curr_pred->m_functor,pred->m_functor));
-			}
+			assert(predicate_compare(curr_pred->m_functor,pred->m_functor));
 		}
-#endif
 	}
 	else
 	{

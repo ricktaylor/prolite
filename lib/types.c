@@ -415,7 +415,7 @@ const debug_info_t* get_debug_info(const term_t* t)
 	return di;
 }
 
-int atom_compare(const term_t* a1, const term_t* a2)
+static int atom_compare(const term_t* a1, const term_t* a2)
 {
 	int r = (a1->m_u64val == a2->m_u64val);
 	if (!r)
@@ -449,9 +449,10 @@ static int atom_precedes(const term_t* a1, const term_t* a2)
 	return r;
 }
 
-int predicate_compare(const term_t* c1, const term_t* c2)
+static int functor_compare(const term_t* c1, const term_t* c2)
 {
 	int r = 0;
+
 	if (c1->m_u64val == c2->m_u64val)
 	{
 		uint16_t hi16 = (UNPACK_MANT_48(c1->m_u64val) >> 32);
@@ -463,7 +464,29 @@ int predicate_compare(const term_t* c1, const term_t* c2)
 		else
 			r = 1;
 	}
+
 	return r;
+}
+
+int predicate_compare(const term_t* c1, const term_t* c2)
+{
+	prolite_type_t type1 = get_term_type(c1);
+	prolite_type_t type2 = get_term_type(c2);
+	if (type1 == type2)
+	{
+		switch (type1)
+		{
+		case prolite_atom:
+			return atom_compare(c1,c2);
+			
+		case prolite_compound:
+			return functor_compare(c1,c2);
+			
+		default:
+			break;
+		}
+	}
+	return 0;
 }
 
 static int compound_precedes(const term_t* c1, const term_t* c2)
@@ -537,7 +560,7 @@ int term_compare(const term_t* t1, const term_t* t2)
 			break;
 
 		case prolite_compound:
-			if ((r = predicate_compare(t1,t2)))
+			if ((r = functor_compare(t1,t2)))
 			{
 				size_t arity;
 				const term_t* p1 = get_first_arg(t1,&arity);

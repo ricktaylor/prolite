@@ -285,17 +285,8 @@ static void assert_term(consult_context_t* context, const term_t* t)
 {
 	int is_current_pred = 0;
 	if (context->m_current_predicate)
-	{
-		prolite_type_t type = get_term_type(context->m_current_predicate->m_base.m_functor);
-		if (get_term_type(t) == type)
-		{
-			if (type == prolite_atom)
-				is_current_pred = atom_compare(context->m_current_predicate->m_base.m_functor,t);
-			else
-				is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_functor,t);
-		}
-	}
-
+		is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_functor,t);
+	
 	if (!is_current_pred)
 	{
 		int new_pred = 0;
