@@ -4,16 +4,12 @@
 #include <string.h>
 #include <assert.h>
 
-static const size_t c_page_size = 0x1000;
-static const size_t c_data_count = (c_page_size - sizeof(struct btree_page)) / (sizeof(uint64_t) + sizeof(void*));
-static const size_t c_max_degree = c_data_count - 1;
-
-static const size_t c_leaf_min = (c_max_degree + 1) / 2;
-static const size_t c_internal_min = c_leaf_min - 1;
+static const size_t c_page_size = 0x100;
+static const size_t c_max_items = (c_page_size - sizeof(struct btree_page)) / (sizeof(uint64_t) + sizeof(void*));
 
 static inline void** values(struct btree_page* page)
 {
-	return (void**)(page->m_keys + c_data_count);
+	return (void**)(page->m_keys + c_max_items);
 }
 
 static size_t binary_search(struct btree_page* page, uint64_t key)
@@ -66,31 +62,14 @@ void* btree_lookup(btree_t* bt, uint64_t key)
 	}
 }
 
-static struct btree_page* new_root(btree_t* bt, struct btree_page* left, struct btree_page* right, uint64_t key)
-{
-	struct btree_page* new_root = (*bt->m_fn_malloc)(c_page_size);
-	if (new_root)
-	{
-		new_root->m_internal = 1;
-		new_root->m_count = 1;
-		new_root->m_keys[0] = key;
-
-		values(new_root)[0] = left;
-		values(new_root)[1] = right;
-
-		bt->m_root = new_root;
-	}
-	return new_root;
-}
-
 static struct btree_page* split_leaf(btree_t* bt, struct btree_page* left)
 {
 	struct btree_page* right = (*bt->m_fn_malloc)(c_page_size);
 	if (right)
 	{
 		right->m_internal = 0;
-		right->m_count = (c_max_degree / 2) + 1;
-		left->m_count = c_max_degree + 1 - right->m_count;
+		right->m_count = ((c_max_items - 1) / 2) + 1;
+		left->m_count = c_max_items - right->m_count;
 
 		memcpy(right->m_keys,left->m_keys + left->m_count,right->m_count * sizeof(uint64_t));
 		memcpy(values(right),values(left) + left->m_count,right->m_count * sizeof(void*));
@@ -104,8 +83,8 @@ static struct btree_page* split_internal(btree_t* bt, struct btree_page* left)
 	if (right)
 	{
 		right->m_internal = 1;
-		right->m_count = c_max_degree / 2;
-		left->m_count = c_max_degree - right->m_count;
+		right->m_count = (c_max_items - 1) / 2;
+		left->m_count = c_max_items - 1 - right->m_count;
 
 		memcpy(right->m_keys,left->m_keys + left->m_count,right->m_count * sizeof(uint64_t));
 		memcpy(values(right),values(left) + left->m_count,(right->m_count + 1) * sizeof(void*));
@@ -115,32 +94,76 @@ static struct btree_page* split_internal(btree_t* bt, struct btree_page* left)
 	return right;
 }
 
-static struct btree_page* split_root(btree_t* bt, struct btree_page* page)
+static void copy_page(struct btree_page* dst, const struct btree_page* src)
 {
-	struct btree_page* right = split_internal(bt,page);
-	if (right)
+	void** src_values = (void**)(src->m_keys + c_max_items);
+
+	memcpy(dst->m_keys,src->m_keys,src->m_count * sizeof(uint64_t));
+	memcpy(values(dst),src_values,src->m_count * sizeof(void*));
+
+	if (src->m_internal)
+		values(dst)[src->m_count] = src_values[src->m_count];
+	
+	dst->m_internal = src->m_internal;
+	dst->m_count = src->m_count;
+}
+
+static struct btree_page* split_root(btree_t* bt, uint64_t key)
+{
+	// We need to keep bt->m_root stable
+	struct btree_page* left = (*bt->m_fn_malloc)(c_page_size);
+	if (!left)
+		return NULL;
+
+	struct btree_page* right = (*bt->m_fn_malloc)(c_page_size);
+	if (!right)
 	{
-		if (!new_root(bt,page,right,page->m_keys[page->m_count]))
-		{
-			(*bt->m_fn_free)(right);
-			right = NULL;
-		}
-		else
-			page->m_internal = 1;
+		(*bt->m_fn_free)(left);
+		return NULL;
 	}
-	return right;
+
+	right->m_internal = left->m_internal = bt->m_root->m_internal;
+
+	if (bt->m_root->m_internal)
+	{
+		right->m_count = (c_max_items - 1) / 2;
+		left->m_count = c_max_items - 1 - right->m_count;
+
+		memcpy(right->m_keys,bt->m_root->m_keys + left->m_count,right->m_count * sizeof(uint64_t));
+		memcpy(values(left),values(bt->m_root),left->m_count * sizeof(void*));
+		memcpy(values(right),values(bt->m_root) + left->m_count,(right->m_count + 1) * sizeof(void*));
+
+		--left->m_count;
+	}
+	else
+	{
+		right->m_count = ((c_max_items - 1) / 2) + 1;
+		left->m_count = c_max_items - right->m_count;
+		
+		memcpy(right->m_keys,bt->m_root->m_keys + left->m_count,right->m_count * sizeof(uint64_t));
+		memcpy(values(left),values(bt->m_root),left->m_count * sizeof(void*));
+		memcpy(values(right),values(bt->m_root) + left->m_count,right->m_count * sizeof(void*));
+	}
+
+	memcpy(left->m_keys,bt->m_root->m_keys,left->m_count * sizeof(uint64_t));
+
+	bt->m_root->m_keys[0] = bt->m_root->m_keys[left->m_count];
+	bt->m_root->m_internal = 1;
+	bt->m_root->m_count = 1;
+
+	values(bt->m_root)[0] = left;
+	values(bt->m_root)[1] = right;
+
+	return (key >= bt->m_root->m_keys[0]) ? right : left;
 }
 
 static int insert_internal(btree_t* bt, struct btree_page* page, struct btree_page* sub_page, uint64_t key)
 {
-	if (page->m_count == c_max_degree && page == bt->m_root)
+	if (page->m_count == c_max_items - 1 && page == bt->m_root)
 	{
-		struct btree_page* right = split_root(bt,page);
-		if (!right)
+		page = split_root(bt,key);
+		if (!page)
 			return 0;
-
-		if (key >= page->m_keys[page->m_count])
-			page = right;
 	}
 
 	size_t i = binary_search(page,key);
@@ -164,7 +187,7 @@ static void* kv_insert(btree_t* bt, struct btree_page** page, uint64_t key, void
 		if (i < (*page)->m_count && (*page)->m_keys[i] == key)
 			return values(*page)[i];
 
-		if ((*page)->m_count == c_max_degree + 1)
+		if ((*page)->m_count == c_max_items)
 		{
 			// We're full, a previous alloc must have failed
 			return NULL;
@@ -180,21 +203,11 @@ static void* kv_insert(btree_t* bt, struct btree_page** page, uint64_t key, void
 		values(*page)[i] = val;
 		++(*page)->m_count;
 
-		if ((*page)->m_count == c_max_degree + 1 && *page == bt->m_root)
+		if ((*page)->m_count == c_max_items && *page == bt->m_root)
 		{
-			struct btree_page* right = split_leaf(bt,*page);
-			if (!right)
+			*page = split_root(bt,key);
+			if (!*page)
 				return NULL;
-
-			if (!new_root(bt,*page,right,right->m_keys[0]))
-			{
-				(*bt->m_fn_free)(right);
-				(*page)->m_count = c_max_degree + 1;
-				return NULL;
-			}
-
-			if (i >= (*page)->m_count)
-				*page = right;
 		}
 	}
 	else
@@ -203,21 +216,18 @@ static void* kv_insert(btree_t* bt, struct btree_page** page, uint64_t key, void
 		val = kv_insert(bt,&sub_page,key,val);
 		if (val)
 		{
+			uint32_t prev_count = sub_page->m_count;
+			struct btree_page* sub_right = NULL;
 			if (!sub_page->m_internal)
 			{
-				if (sub_page->m_count == c_max_degree + 1)
-				{
-					struct btree_page* sub_right = split_leaf(bt,sub_page);
-					if (sub_right && !insert_internal(bt,*page,sub_right,sub_right->m_keys[0]))
-						sub_page->m_count = c_max_degree + 1;
-				}
+				if (sub_page->m_count == c_max_items)
+					sub_right = split_leaf(bt,sub_page);
 			}
-			else if (sub_page->m_count == c_max_degree)
-			{
-				struct btree_page* sub_right = split_internal(bt,sub_page);
-				if (sub_right && !insert_internal(bt,*page,sub_right,sub_page->m_keys[sub_page->m_count]))
-					sub_page->m_count = c_max_degree + 1;
-			}
+			else if (sub_page->m_count == c_max_items - 1)
+				sub_right = split_internal(bt,sub_page);
+
+			if (sub_right && !insert_internal(bt,*page,sub_right,sub_page->m_keys[sub_page->m_count]))
+				sub_page->m_count = prev_count;
 		}
 	}
 
@@ -268,9 +278,9 @@ static void* kv_remove(btree_t* bt, struct btree_page* page, uint64_t key)
 		{
 			if (!sub_page->m_internal)
 			{
-				if (sub_page->m_count < c_leaf_min)
+				if (sub_page->m_count < c_max_items / 2)
 				{
-					if (i > 0 && ((struct btree_page*)values(page)[i-1])->m_count > c_leaf_min)
+					if (i > 0 && ((struct btree_page*)values(page)[i-1])->m_count > c_max_items / 2)
 					{
 						struct btree_page* left = values(page)[i-1];
 						size_t t = (left->m_count - sub_page->m_count) / 2;
@@ -282,7 +292,7 @@ static void* kv_remove(btree_t* bt, struct btree_page* page, uint64_t key)
 						left->m_count -= t;
 						page->m_keys[i-1] = sub_page->m_keys[0];
 					}
-					else if (i < page->m_count && ((struct btree_page*)values(page)[i+1])->m_count > c_leaf_min)
+					else if (i < page->m_count && ((struct btree_page*)values(page)[i+1])->m_count > c_max_items / 2)
 					{
 						struct btree_page* right = values(page)[i+1];
 						size_t t = (right->m_count - sub_page->m_count) / 2;
@@ -325,17 +335,18 @@ static void* kv_remove(btree_t* bt, struct btree_page* page, uint64_t key)
 
 						if (page == bt->m_root && page->m_count == 0)
 						{
-							bt->m_root = values(page)[0];
-							(*bt->m_fn_free)(page);
+							sub_page = values(page)[0];
+							copy_page(bt->m_root,sub_page);
+							(*bt->m_fn_free)(sub_page);
 						}
 					}
 				}
 				else if (i > 0)
 					page->m_keys[i-1] = sub_page->m_keys[0];
 			}
-			else if (sub_page->m_count < c_internal_min)
+			else if (sub_page->m_count < (c_max_items / 2) - 1)
 			{
-				if (i > 0 && ((struct btree_page*)values(page)[i-1])->m_count > c_internal_min)
+				if (i > 0 && ((struct btree_page*)values(page)[i-1])->m_count > (c_max_items / 2) - 1)
 				{
 					struct btree_page* left = values(page)[i-1];
 					size_t t = (left->m_count - sub_page->m_count) / 2;
@@ -348,7 +359,7 @@ static void* kv_remove(btree_t* bt, struct btree_page* page, uint64_t key)
 					sub_page->m_count += t;
 					left->m_count -= t;
 				}
-				else if (i < page->m_count && ((struct btree_page*)values(page)[i+1])->m_count > c_internal_min)
+				else if (i < page->m_count && ((struct btree_page*)values(page)[i+1])->m_count > (c_max_items / 2) - 1)
 				{
 					struct btree_page* right = values(page)[i+1];
 					size_t t = (right->m_count - sub_page->m_count) / 2;
@@ -394,8 +405,9 @@ static void* kv_remove(btree_t* bt, struct btree_page* page, uint64_t key)
 
 					if (page == bt->m_root && page->m_count == 0)
 					{
-						bt->m_root = values(page)[0];
-						(*bt->m_fn_free)(page);
+						sub_page = values(page)[0];
+						copy_page(bt->m_root,sub_page);
+						(*bt->m_fn_free)(sub_page);
 					}
 				}
 			}
