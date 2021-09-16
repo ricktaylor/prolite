@@ -113,47 +113,25 @@ struct callback_param
 	btree_t* m_bt;
 };
 
-static void clear_callback2(void* p, uint64_t k, void* v)
-{
-	struct callback_param* cp = p;
-	(*cp->m_callback)(cp->m_param,v);
-}
-
 static void clear_callback(void* p, uint64_t k, void* v)
 {
-	struct callback_param* cp = p;
-
-	predicate_base_t* pred = v;
-	int is_sub_tree = 0;
-	predicate_key(pred->m_functor,&is_sub_tree);
-	if (is_sub_tree)
+	unsigned int sub_type = get_term_subtype(&(term_t){ .m_u64val = k });
+	if (sub_type == 0 || sub_type == 3)
 	{
+		btree_t* bt = p;
 		btree_t sub_tree = 
 		{
-			.m_fn_malloc = cp->m_bt->m_fn_malloc,
-			.m_fn_free = cp->m_bt->m_fn_free,
-			.m_root = p
+			.m_fn_malloc = bt->m_fn_malloc,
+			.m_fn_free = bt->m_fn_free,
+			.m_root = v
 		};
-		struct callback_param cp2 =
-		{
-			.m_callback = cp->m_callback,
-			.m_param = cp->m_param
-		};
-		btree_clear(&sub_tree,&clear_callback2,&cp2);
+		btree_clear(&sub_tree,NULL,NULL);
 	}
-	else
-		(*cp->m_callback)(cp->m_param,pred);
 }
 
-void predicate_map_clear(predicate_map_t* pm, void (*callback)(void* param, predicate_base_t* pred), void* param)
+void predicate_map_clear(predicate_map_t* pm)
 {
-	struct callback_param cp =
-	{
-		.m_bt = pm,
-		.m_callback = callback,
-		.m_param = param
-	};
-	btree_clear(pm,&clear_callback,&cp);
+	btree_clear(pm,&clear_callback,&pm);
 }
 
 int predicate_is_builtin(const term_t* functor)

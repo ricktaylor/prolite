@@ -495,11 +495,7 @@ void consult(context_t* context, const term_t* filename, stream_resolver_t* reso
 		.m_resolver = resolver,
 		.m_predicates.m_fn_malloc = context->m_heap->m_fn_malloc,
 		.m_predicates.m_fn_free = context->m_heap->m_fn_free,
-		.m_modules = &(consult_module_t){
-				.m_module.m_name = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('u','s','e','r') },
-				.m_module.m_flags.char_conversion = 1,
-				.m_module.m_flags.back_quotes = 1
-			},
+		.m_modules = &(consult_module_t){ .m_module = *context->m_module },
 		.m_files = &(consult_file_t){
 				.m_filename = filename 
 			}
@@ -514,7 +510,7 @@ void consult(context_t* context, const term_t* filename, stream_resolver_t* reso
 	}
 	
 	// Clear the predicate map
-	predicate_map_clear(&cc.m_predicates,NULL,NULL);
+	predicate_map_clear(&cc.m_predicates);
 
 	// Reset heap
 	heap_reset(cc.m_context->m_heap,heap_start);
