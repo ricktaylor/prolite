@@ -35,7 +35,8 @@ typedef struct module
 		unsigned colon_sets_calling_context : 1;
 	} m_flags;
 
-	operator_t* m_operators;
+	operator_t*   m_operators;
+	const term_t* m_name;
 
 } module_t;
 

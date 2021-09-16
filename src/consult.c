@@ -8,9 +8,18 @@ typedef struct consult_clause
 {
 	struct consult_clause* m_next;
 
-	const term_t*   m_term;
+	const term_t*          m_term;
+	size_t                 m_varcount;
+	const term_t*          m_varinfo;
 
 } consult_clause_t;
+
+typedef struct consult_file
+{
+	struct consult_file* m_next;
+	const term_t*        m_filename;
+	
+} consult_file_t;
 
 typedef struct consult_predicate
 {
@@ -21,24 +30,35 @@ typedef struct consult_predicate
 	unsigned          m_multifile : 1;
 	unsigned          m_discontiguous : 1;
 
-	consult_clause_t* m_clauses;
-
+	const consult_file_t* m_file;
+	consult_clause_t*     m_clauses;
+	
 } consult_predicate_t;
+
+typedef struct consult_module
+{
+	struct consult_module* m_next;
+	module_t               m_module;
+
+} consult_module_t;
 
 typedef struct consult_context
 {
 	unsigned                m_failed : 1;
+	unsigned                m_critical_failure : 1;
 
 	context_t*              m_context;
 	exception_handler_fn_t* m_eh;
 	stream_resolver_t*      m_resolver;
+	consult_file_t*         m_files;
 
 	predicate_map_t         m_predicates;
 	consult_predicate_t*    m_current_predicate;
+	consult_module_t*       m_modules;
 
 } consult_context_t;
 
-static int catch_exception(consult_context_t* context)
+/*static int catch_exception(consult_context_t* context)
 {
 	if (context->m_context->m_flags & FLAG_THROW)
 	{
@@ -53,7 +73,7 @@ static int catch_exception(consult_context_t* context)
 	}
 
 	return 0;
-}
+}*/
 
 static void report_exception(consult_context_t* context)
 {
@@ -71,6 +91,8 @@ static void report_out_of_memory_error(consult_context_t* context, const term_t*
 
 	// TODO
 	report_exception(context);
+
+	context->m_critical_failure = 1;
 }
 
 static void report_permission_error(consult_context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
@@ -99,27 +121,25 @@ static void report_representation_error(consult_context_t* context, uint64_t p1,
 
 static consult_predicate_t* new_predicate(consult_context_t* context, const term_t* t, int public, int dynamic, int multifile, int discontiguous, int* is_new_pred)
 {
-	consult_predicate_t new_pred =
-	{
+	consult_predicate_t* new_pred = heap_malloc(context->m_context->m_heap,sizeof(consult_predicate_t));
+	if (!new_pred)
+		return NULL;
+	
+	*new_pred = (consult_predicate_t){ 
 		.m_base.m_functor = t,
 		.m_dynamic = dynamic,
 		.m_multifile = multifile,
-		.m_discontiguous = discontiguous
+		.m_discontiguous = discontiguous,
+		.m_file = context->m_files
 	};
 
-	term_t* sp = context->m_context->m_stack;
-	sp -= bytes_to_cells(sizeof(consult_predicate_t),sizeof(term_t));
-	memcpy(sp,&new_pred,sizeof(consult_predicate_t));
-
-	predicate_base_t* pred = predicate_map_insert(&context->m_predicates,(predicate_base_t*)sp);
-	if (!pred)
-		report_out_of_memory_error(context,t);
-
+	predicate_base_t* pred = predicate_map_insert(&context->m_predicates,&new_pred->m_base);
+	
 	if (is_new_pred)
-		*is_new_pred = (pred == (predicate_base_t*)sp);
+		*is_new_pred = (pred == &new_pred->m_base);
 
-	if (!pred || pred != (predicate_base_t*)sp)
-		context->m_context->m_stack = sp;
+	if (!pred || pred != &new_pred->m_base)
+		heap_free(context->m_context->m_heap,new_pred,sizeof(consult_predicate_t));
 	
 	return (consult_predicate_t*)pred;
 }
@@ -263,6 +283,21 @@ static void pi_directive(consult_context_t* context, const term_t* directive, vo
 	}
 }
 
+static void append_clause(consult_context_t* context, consult_predicate_t* pred, const consult_clause_t* c)
+{
+	// Push a clause frame on the stack, and add to linked list
+	consult_clause_t** tail = &pred->m_clauses;
+	while (*tail)
+		tail = &(*tail)->m_next;
+
+	consult_clause_t* new_clause = heap_malloc(context->m_context->m_heap,sizeof(consult_clause_t));
+	if (!new_clause)
+		return report_out_of_memory_error(context,c->m_term);
+
+	*new_clause = *c;
+	*tail = new_clause;
+}
+
 static void assert_initializer(consult_context_t* context, const term_t* goal)
 {
 	// Initializer clears the current predicate
@@ -272,174 +307,186 @@ static void assert_initializer(consult_context_t* context, const term_t* goal)
 	if (!context->m_failed)
 	{
 		term_t atom_null = { .m_u64val = PACK_ATOM_NUL };
+		
 		consult_predicate_t* pred = new_predicate(context,&atom_null,0,0,0,0,NULL);
 		if (!pred)
 			return report_out_of_memory_error(context,goal);
 
-		// TODO - Add the goal to the predicate
-		assert(0);
+		append_clause(context,pred,&(consult_clause_t){ .m_term = goal });
 	}
 }
 
-static void assert_term(consult_context_t* context, const term_t* t)
+static void include(consult_context_t* context, const term_t* t);
+static void ensure_loaded(consult_context_t* context, const term_t* t);
+
+static void directive(consult_context_t* context, const term_t* term)
+{
+	switch (term->m_u64val)
+	{
+	case PACK_COMPOUND_BUILTIN(include,1):
+		include(context,get_first_arg(term,NULL));
+		break;
+
+	case PACK_COMPOUND_BUILTIN(ensure_loaded,1):
+		ensure_loaded(context,get_first_arg(term,NULL));
+		break;
+
+	case PACK_COMPOUND_BUILTIN(initialization,1):
+		assert_initializer(context,get_first_arg(term,NULL));
+		break;
+
+	case PACK_COMPOUND_BUILTIN(public,1):
+		pi_directive(context,term,&public);
+		break;
+
+	case PACK_COMPOUND_BUILTIN(dynamic,1):
+		pi_directive(context,term,&dynamic);
+		break;
+
+	case PACK_COMPOUND_BUILTIN(multifile,1):
+		pi_directive(context,term,&multifile);
+		break;
+
+	case PACK_COMPOUND_BUILTIN(discontiguous,1):
+		pi_directive(context,term,&discontiguous);
+		break;
+
+	default:
+		if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(public,0))
+			pi_directive(context,term,&public);
+		else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(dynamic,0))
+			pi_directive(context,term,&dynamic);
+		else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(multifile,0))
+			pi_directive(context,term,&multifile);
+		else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(discontiguous,0))
+			pi_directive(context,term,&discontiguous);
+		else if (get_term_type(term) == prolite_compound)
+		{
+			if (term[1].m_u64val == PACK_ATOM_BUILTIN(public))
+				pi_directive(context,term,&public);
+			else if (term[1].m_u64val == PACK_ATOM_BUILTIN(dynamic))
+				pi_directive(context,term,&dynamic);
+			else if (term[1].m_u64val == PACK_ATOM_BUILTIN(multifile))
+				pi_directive(context,term,&multifile);
+			else if (term[1].m_u64val == PACK_ATOM_BUILTIN(discontiguous))
+				pi_directive(context,term,&discontiguous);
+			else
+				assert(0);
+		}
+		else
+		{
+			assert(0);
+		}
+		break;
+	}
+}
+
+static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 {
 	int is_current_pred = 0;
 	if (context->m_current_predicate)
-		is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_functor,t);
+		is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_functor,c->m_term);
 	
 	if (!is_current_pred)
 	{
-		int new_pred = 0;
-		consult_predicate_t* pred = new_predicate(context,t,0,0,0,0,&new_pred);
+		int is_new_pred = 0;
+		consult_predicate_t* pred = new_predicate(context,c->m_term,0,0,0,0,&is_new_pred);
 		if (!pred)
-			return report_out_of_memory_error(context,t);
+			return report_out_of_memory_error(context,c->m_term);
 
-		if (!new_pred)
+		if (!is_new_pred)
 		{
 			if (!pred->m_discontiguous)
 			{
 				// TODO: Some kind of discontiguous warning
 			}
 
-			// TODO: Multifile check
+			if (!pred->m_multifile && !term_compare(pred->m_file->m_filename,context->m_files->m_filename))
+			{
+				// TODO: Some kind of multifile warning
+			}
 		}
 
 		context->m_current_predicate = pred;
 	}
 
-	//clause_t clause = {0};
-	//term_to_clause(context->m_context,t,&clause);
-	if (!catch_exception(context))
-	{
-
-
-
-
-
-		if (!context->m_failed)
-		{
-			// Actually assert the clause if everything looks good so far
-			assert(0);
-		}
-	}
+	append_clause(context,context->m_current_predicate,c);
 }
 
-static void include(consult_context_t* context, const term_t* t);
-
-static void ensure_loaded(consult_context_t* context, const term_t* t)
+static void load_file(consult_context_t* context, const term_t* filename)
 {
-	assert(0);
-}
-
-static void load_file_inner(consult_context_t* context, stream_t* input)
-{
-	for (parser_t parser = { .m_s = input, .m_line_info.m_end_line = 1, .m_multiterm = 1 };;)
+	parser_t parser = { .m_line_info.m_end_line = 1, .m_multiterm = 1 };
+	parser.m_s = stream_resolver_open(context->m_resolver,context->m_eh,filename);
+	if (!parser.m_s)
+		context->m_failed = 1;
+	else
 	{
-		term_t* sp = context->m_context->m_stack;
-
-		parse_status_t status = consult_term(context->m_context,&parser);
-		if (status == PARSE_EOF)
-			break;
-
-		const term_t* term = context->m_context->m_stack;
-
-		if (status == PARSE_THROW)
+		while (!context->m_critical_failure)
 		{
-			(*context->m_eh)(context->m_context,term);
-			context->m_failed = 1;
+			term_t* sp = context->m_context->m_stack;
 
-			// Reset stack
-			context->m_context->m_stack = sp;
-		}
-		else
-		{
-			if (term->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
+			parse_status_t status = consult_term(context->m_context,&parser);
+			if (status == PARSE_EOF)
+				break;
+
+			// Unpack clause term
+			consult_clause_t clause = { .m_term = context->m_context->m_stack };
+			clause.m_varcount = (clause.m_term++)->m_u64val;
+			if (clause.m_varcount)
 			{
-				term = get_first_arg(term,NULL);
-				switch (term->m_u64val)
-				{
-				case PACK_COMPOUND_BUILTIN(include,1):
-					include(context,get_first_arg(term,NULL));
-					break;
-
-				case PACK_COMPOUND_BUILTIN(ensure_loaded,1):
-					ensure_loaded(context,get_first_arg(term,NULL));
-					break;
-
-				case PACK_COMPOUND_BUILTIN(initialization,1):
-					assert_initializer(context,get_first_arg(term,NULL));
-					break;
-
-				case PACK_COMPOUND_BUILTIN(public,1):
-					pi_directive(context,term,&public);
-					break;
-
-				case PACK_COMPOUND_BUILTIN(dynamic,1):
-					pi_directive(context,term,&dynamic);
-					break;
-
-				case PACK_COMPOUND_BUILTIN(multifile,1):
-					pi_directive(context,term,&multifile);
-					break;
-
-				case PACK_COMPOUND_BUILTIN(discontiguous,1):
-					pi_directive(context,term,&discontiguous);
-					break;
-
-				default:
-					if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(public,0))
-						pi_directive(context,term,&public);
-					else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(dynamic,0))
-						pi_directive(context,term,&dynamic);
-					else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(multifile,0))
-						pi_directive(context,term,&multifile);
-					else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(discontiguous,0))
-						pi_directive(context,term,&discontiguous);
-					else if (get_term_type(term) == prolite_compound)
-					{
-						if (term[1].m_u64val == PACK_ATOM_BUILTIN(public))
-							pi_directive(context,term,&public);
-						else if (term[1].m_u64val == PACK_ATOM_BUILTIN(dynamic))
-							pi_directive(context,term,&dynamic);
-						else if (term[1].m_u64val == PACK_ATOM_BUILTIN(multifile))
-							pi_directive(context,term,&multifile);
-						else if (term[1].m_u64val == PACK_ATOM_BUILTIN(discontiguous))
-							pi_directive(context,term,&discontiguous);
-						else
-							assert(0);
-					}
-					else
-					{
-						assert(0);
-					}
-					break;
-				}
+				clause.m_varinfo = clause.m_term;
+				for (size_t i = 0; i < clause.m_varcount; ++i)
+					clause.m_term = get_next_arg(clause.m_term) + 1;
 			}
+						
+			if (status == PARSE_THROW)
+			{
+				//(*context->m_eh)(context->m_context,clause.m_term);
+				context->m_failed = 1;
+
+				// Reset stack
+				context->m_context->m_stack = sp;
+			}
+			else if (clause.m_term->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
+				directive(context,get_first_arg(clause.m_term,NULL));
 			else
-			{
-				/* Assert the term */
-				assert_term(context,term);
-			}
+				assert_clause(context,&clause);
 		}
+
+		stream_close(parser.m_s);
 	}
 }
 
 static void include(consult_context_t* context, const term_t* t)
 {
-	stream_t* s = stream_resolver_open(context->m_resolver,context->m_eh,t);
-	if (s)
+	load_file(context,t);
+}
+
+static void ensure_loaded(consult_context_t* context, const term_t* t)
+{
+	// Check if we have attempted to load it already
+	for (consult_file_t* f = context->m_files;f != NULL; f = f->m_next)
 	{
-		/* TODO: Twiddle with context */
+		if (term_compare(f->m_filename,t))
+			return;
+	}
 
-		load_file_inner(context,s);
+	consult_file_t* new_file = heap_malloc(context->m_context->m_heap,sizeof(consult_file_t));
+	if (!new_file)
+		report_out_of_memory_error(context,t);
+	else
+	{
+		*new_file = (consult_file_t){ .m_filename = t, .m_next = context->m_files };
+		context->m_files = new_file;
 
-		/* TODO: Untwiddle context */
+		load_file(context,t);
 
-		stream_close(s);
+		// Reset current file
+		context->m_files = new_file->m_next;
 	}
 }
 
-void consult(context_t* context, stream_t* input, exception_handler_fn_t* eh, stream_resolver_t* resolver)
+void consult(context_t* context, const term_t* filename, stream_resolver_t* resolver, exception_handler_fn_t* eh)
 {
 	consult_context_t cc =
 	{
@@ -447,15 +494,31 @@ void consult(context_t* context, stream_t* input, exception_handler_fn_t* eh, st
 		.m_eh = eh,
 		.m_resolver = resolver,
 		.m_predicates.m_fn_malloc = context->m_heap->m_fn_malloc,
-		.m_predicates.m_fn_free = context->m_heap->m_fn_free
+		.m_predicates.m_fn_free = context->m_heap->m_fn_free,
+		.m_modules = &(consult_module_t){
+				.m_module.m_name = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('u','s','e','r') },
+				.m_module.m_flags.char_conversion = 1,
+				.m_module.m_flags.back_quotes = 1
+			},
+		.m_files = &(consult_file_t){
+				.m_filename = filename 
+			}
 	};
 
-	load_file_inner(&cc,input);
+	size_t heap_start = heap_top(cc.m_context->m_heap);
+
+	load_file(&cc,filename);
 	if (!cc.m_failed)
 	{
-		// TODO: Call initializers
+		// TODO: We now have a btree of predicates...
 	}
+	
+	// Clear the predicate map
+	predicate_map_clear(&cc.m_predicates,NULL,NULL);
+
+	// Reset heap
+	heap_reset(cc.m_context->m_heap,heap_start);
 
 	// We have just done a load of heap allocation
-	heap_compact(context->m_heap);
+	heap_compact(cc.m_context->m_heap);
 }
