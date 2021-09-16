@@ -425,26 +425,55 @@ void* btree_remove(btree_t* bt, uint64_t key)
 	return kv_remove(bt,bt->m_root,key);
 }
 
-static void page_clear(btree_t* bt, struct btree_page* page)
+static void page_clear(btree_t* bt, struct btree_page* page, void (*callback)(void* param, uint64_t key, void* val), void* param)
 {
 	if (page->m_internal)
 	{
 		size_t i;
 		for (i=0; i < page->m_count; ++i)
-			page_clear(bt,values(page)[i]);
-		page_clear(bt,values(page)[i]);
+			page_clear(bt,values(page)[i],callback,param);
+		page_clear(bt,values(page)[i],callback,param);
+	}
+	else if (callback)
+	{
+		for (size_t i=0; i < page->m_count; ++i)
+			(*callback)(param,page->m_keys[i],values(page)[i]);
 	}
 	
 	(*bt->m_fn_free)(page);
 }
 
-void btree_clear(btree_t* bt)
+void btree_clear(btree_t* bt, void (*callback)(void* param, uint64_t key, void* val), void* param)
 {
 	if (bt && bt->m_root)
 	{
-		page_clear(bt,bt->m_root);
+		page_clear(bt,bt->m_root,callback,param);
 		bt->m_root = NULL;
 	}
+}
+
+static void page_enum(btree_t* bt, struct btree_page* page, void (*callback)(void* param, uint64_t key, void* val), void* param)
+{
+	if (page->m_internal)
+	{
+		size_t i;
+		for (i=0; i < page->m_count; ++i)
+			page_enum(bt,values(page)[i],callback,param);
+		page_enum(bt,values(page)[i],callback,param);
+	}
+	else
+	{
+		for (size_t i=0; i < page->m_count; ++i)
+			(*callback)(param,page->m_keys[i],values(page)[i]);
+	}
+}
+
+void btree_enum(btree_t* bt, void (*callback)(void* param, uint64_t key, void* val), void* param)
+{
+	assert(callback);
+
+	if (bt && bt->m_root)
+		page_enum(bt,bt->m_root,callback,param);
 }
 
 #if ENABLE_TESTS
@@ -527,6 +556,6 @@ void btree_tests(void)
 		dump_btree(&bt,"./btree.dot");
 	}
 
-	btree_clear(&bt);
+	btree_clear(&bt,NULL,NULL);
 }
 #endif // ENABLE_TESTS
