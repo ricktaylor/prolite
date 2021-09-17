@@ -67,8 +67,6 @@ typedef struct context
 
 typedef void (*builtin_fn_t)(context_t* context);
 
-typedef void (*exception_handler_fn_t)(context_t* context, const term_t* term);
-
 const term_t* deref_local_var(context_t* context, const term_t* t);
 
 const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* var_count);
