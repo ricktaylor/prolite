@@ -5,14 +5,16 @@
  *      Author: taylorr
  */
 
-#include "../lib/parser.h"
-#include "../lib/btree.h"
+#include "settings.h"
 
-void compile_term(context_t* context, const term_t* goal, size_t var_count);
+#include "../lib/stream.h"
+
+void consult(context_t* context, const term_t* filename, stream_resolver_t* resolver, exception_handler_fn_t* eh);
 
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 // TODO: Move these around later...
 
@@ -68,35 +70,16 @@ void context_delete(context_t* c)
 	
 }
 
-struct text_stream
-{
-	stream_t m_proto;
-
-	const char** m_str;
-	const char*  m_end;
-};
-
-static int64_t text_stream_read(stream_t* s, void* dest, size_t len)
-{
-	struct text_stream* ts = (struct text_stream*)s;
-	size_t r = (ts->m_end - *ts->m_str);
-	if (r > len)
-		r = len;
-
-	memcpy(dest,*ts->m_str,r);
-	*ts->m_str += r;
-	return r;
-}
-
 int main(int argc, char* argv[])
 {
-	const char* cmd = argc > 1 ? argv[1] : "true.";
+	settings_t settings = {0};
+	argc = parse_cmd_args(argc,argv,&settings);
 
-	heap_t h = { .m_fn_malloc = &malloc, .m_fn_free = &free };
+	heap_t h = {0};
 	context_t* context = context_new(&h);
 	if (context)
 	{
-		struct text_stream ts = {
+		/*struct text_stream ts = {
 			.m_proto.m_fn_read = &text_stream_read,
 			.m_str = &cmd,
 			.m_end = *ts.m_str + strlen(*ts.m_str)
@@ -118,7 +101,7 @@ int main(int argc, char* argv[])
 			}
 
 			compile_term(context,context->m_stack,varcount);
-		}
+		}*/
 		
 		context_delete(context);
 	}

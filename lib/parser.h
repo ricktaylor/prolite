@@ -36,7 +36,6 @@ typedef enum parse_status
 	PARSE_THROW
 } parse_status_t;
 
-parse_status_t read_term(context_t* context, stream_t* s);
-parse_status_t consult_term(context_t* context, parser_t* parser);
+parse_status_t read_term(context_t* context, parser_t* parser);
 
 #endif // PARSER_H_

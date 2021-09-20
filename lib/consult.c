@@ -1,5 +1,6 @@
-#include "../lib/parser.h"
-#include "../lib/predicates.h"
+#include "parser.h"
+#include "predicates.h"
+#include "export.h"
 
 #include <assert.h>
 #include <string.h>
@@ -7,7 +8,6 @@
 typedef struct consult_clause
 {
 	struct consult_clause* m_next;
-
 	const term_t*          m_term;
 	size_t                 m_varcount;
 	const term_t*          m_varinfo;
@@ -32,8 +32,15 @@ typedef struct consult_predicate
 
 	const consult_file_t* m_file;
 	consult_clause_t*     m_clauses;
-	
+		
 } consult_predicate_t;
+
+typedef struct consult_initializer
+{
+	struct consult_initializer* m_next;
+	const term_t*               m_term;
+	
+} consult_initializer_t;
 
 typedef struct consult_module
 {
@@ -54,6 +61,7 @@ typedef struct consult_context
 
 	predicate_map_t         m_predicates;
 	consult_predicate_t*    m_current_predicate;
+	consult_initializer_t*  m_initializers;
 	consult_module_t*       m_modules;
 
 } consult_context_t;
@@ -79,9 +87,8 @@ static void report_exception(consult_context_t* context)
 {
 	// TODO
 	assert(0);
-	const term_t* t = NULL;
-	(*context->m_eh)(context->m_context,t);
-
+	
+	(*context->m_eh)(context->m_context);
 	context->m_failed = 1;
 }
 
@@ -306,13 +313,17 @@ static void assert_initializer(consult_context_t* context, const term_t* goal)
 	// Only add if we are actually going to do something about it
 	if (!context->m_failed)
 	{
-		term_t atom_null = { .m_u64val = PACK_ATOM_NUL };
-		
-		consult_predicate_t* pred = new_predicate(context,&atom_null,0,0,0,0,NULL);
-		if (!pred)
+		// Push an initializer frame on the stack, and add to linked list
+		consult_initializer_t** tail = &context->m_initializers;
+		while (*tail)
+			tail = &(*tail)->m_next;
+
+		consult_initializer_t* new_init = heap_malloc(context->m_context->m_heap,sizeof(consult_initializer_t));
+		if (!new_init)
 			return report_out_of_memory_error(context,goal);
 
-		append_clause(context,pred,&(consult_clause_t){ .m_term = goal });
+		*new_init = (consult_initializer_t){ .m_term = goal };
+		*tail = new_init;
 	}
 }
 
@@ -394,9 +405,12 @@ static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 		if (!pred)
 			return report_out_of_memory_error(context,c->m_term);
 
+		// The current predicate changes, no matter what happens next
+		context->m_current_predicate = pred;
+
 		if (!is_new_pred)
 		{
-			if (!pred->m_discontiguous)
+			if (!pred->m_discontiguous && pred->m_clauses)
 			{
 				// TODO: Some kind of discontiguous warning
 			}
@@ -406,8 +420,6 @@ static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 				// TODO: Some kind of multifile warning
 			}
 		}
-
-		context->m_current_predicate = pred;
 	}
 
 	append_clause(context,context->m_current_predicate,c);
@@ -425,32 +437,34 @@ static void load_file(consult_context_t* context, const term_t* filename)
 		{
 			term_t* sp = context->m_context->m_stack;
 
-			parse_status_t status = consult_term(context->m_context,&parser);
+			parse_status_t status = read_term(context->m_context,&parser);
 			if (status == PARSE_EOF)
 				break;
 
-			// Unpack clause term
-			consult_clause_t clause = { .m_term = context->m_context->m_stack };
-			clause.m_varcount = (clause.m_term++)->m_u64val;
-			if (clause.m_varcount)
-			{
-				clause.m_varinfo = clause.m_term;
-				for (size_t i = 0; i < clause.m_varcount; ++i)
-					clause.m_term = get_next_arg(clause.m_term) + 1;
-			}
-						
 			if (status == PARSE_THROW)
 			{
-				//(*context->m_eh)(context->m_context,clause.m_term);
-				context->m_failed = 1;
+				report_exception(context);
 
 				// Reset stack
 				context->m_context->m_stack = sp;
 			}
-			else if (clause.m_term->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
-				directive(context,get_first_arg(clause.m_term,NULL));
 			else
-				assert_clause(context,&clause);
+			{
+				// Unpack clause term
+				consult_clause_t clause = { .m_term = context->m_context->m_stack };
+				clause.m_varcount = (clause.m_term++)->m_u64val;
+				if (clause.m_varcount)
+				{
+					clause.m_varinfo = clause.m_term;
+					for (size_t i = 0; i < clause.m_varcount; ++i)
+						clause.m_term = get_next_arg(clause.m_term) + 1;
+				}
+			
+				if (clause.m_term->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
+					directive(context,get_first_arg(clause.m_term,NULL));
+				else
+					assert_clause(context,&clause);
+			}
 		}
 
 		stream_close(parser.m_s);
@@ -486,19 +500,38 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	}
 }
 
-void consult(context_t* context, const term_t* filename, stream_resolver_t* resolver, exception_handler_fn_t* eh)
+static void* heap_allocator_malloc(void* param, size_t bytes)
+{
+	uint64_t* p = heap_malloc((heap_t*)param,bytes + sizeof(uint64_t));
+	if (p)
+		*p++ = bytes;
+	
+	return p;
+}
+
+static void heap_allocator_free(void* param, void* ptr)
+{
+	if (ptr)
+	{
+		size_t bytes = *(((uint64_t*)ptr) - 1);
+		heap_free((heap_t*)param,ptr,bytes);
+	}
+}
+
+int consult(context_t* context, const term_t* filename, stream_resolver_t* resolver, exception_handler_fn_t* eh)
 {
 	consult_context_t cc =
 	{
 		.m_context = context,
 		.m_eh = eh,
 		.m_resolver = resolver,
-		.m_predicates.m_fn_malloc = context->m_heap->m_fn_malloc,
-		.m_predicates.m_fn_free = context->m_heap->m_fn_free,
+		.m_predicates.m_allocator = &(prolite_allocator_t){
+			.m_fn_malloc = &heap_allocator_malloc,
+			.m_fn_free = &heap_allocator_free,
+			.m_param = context->m_heap
+		},
 		.m_modules = &(consult_module_t){ .m_module = *context->m_module },
-		.m_files = &(consult_file_t){
-				.m_filename = filename 
-			}
+		.m_files = &(consult_file_t){ .m_filename = filename }
 	};
 
 	size_t heap_start = heap_top(cc.m_context->m_heap);
@@ -506,15 +539,17 @@ void consult(context_t* context, const term_t* filename, stream_resolver_t* reso
 	load_file(&cc,filename);
 	if (!cc.m_failed)
 	{
-		// TODO: We now have a btree of predicates...
+		// TODO: We now have a map of predicates...
 	}
 	
-	// Clear the predicate map
-	predicate_map_clear(&cc.m_predicates);
+	// Clear the predicate map - not needed if using local heap
+	//predicate_map_clear(&cc.m_predicates);
 
 	// Reset heap
 	heap_reset(cc.m_context->m_heap,heap_start);
 
 	// We have just done a load of heap allocation
 	heap_compact(cc.m_context->m_heap);
+
+	return cc.m_failed;
 }

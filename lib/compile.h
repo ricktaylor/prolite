@@ -71,14 +71,13 @@ typedef struct compile_context
 } compile_context_t;
 
 const term_t* deref_var(compile_context_t* context, const term_t* goal);
-continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, size_t arity, const term_t* g1);
 
 static inline continuation_t* compile_true(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
 	return cont;
 }
 continuation_t* compile_false(compile_context_t* context, continuation_t* cont, const term_t* goal);
-
+continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, size_t arity, const term_t* g1);
 continuation_t* compile_type_test(compile_context_t* context, continuation_t* cont, prolite_type_flags_t types, int negate, const term_t* goal);
 
 typedef struct cfg_block_info

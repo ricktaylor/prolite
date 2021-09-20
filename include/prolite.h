@@ -1,15 +1,18 @@
 #ifndef PROLITE_H_INCLUDED
 #define PROLITE_H_INCLUDED
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#if __GNUC__ >= 4
-#define PROLITE_EXPORT __attribute__((visibility("default")))
-#else
-#define PROLITE_EXPORT
-#endif
+typedef struct prolite_allocator
+{
+    void*  m_param;
+    void* (*m_fn_malloc)(void* param, size_t bytes);
+	void  (*m_fn_free)(void* param, void* ptr);
+} prolite_allocator_t;
 
 #ifdef __cplusplus
 }

@@ -2206,7 +2206,7 @@ static parse_status_t collate_var_info(context_t* context, parser_t* parser, var
 	return status;
 }
 
-parse_status_t consult_term(context_t* context, parser_t* parser)
+parse_status_t read_term(context_t* context, parser_t* parser)
 {
 	parse_status_t status = PARSE_OK;
 	size_t heap_start = heap_top(context->m_heap);
@@ -2277,7 +2277,7 @@ parse_status_t consult_term(context_t* context, parser_t* parser)
 	return status;
 }
 
-parse_status_t read_term(context_t* context, stream_t* s)
+parse_status_t read_term_todo(context_t* context, stream_t* s)
 {
 	parser_t parser = 
 	{
@@ -2285,7 +2285,7 @@ parse_status_t read_term(context_t* context, stream_t* s)
 		.m_line_info.m_end_line = 1
 	};
 
-	parse_status_t status = consult_term(context,&parser);
+	parse_status_t status = read_term(context,&parser);
 	if (status == PARSE_EOF)
 		status = emit_eof_error(&context->m_stack,&parser.m_line_info);
 		

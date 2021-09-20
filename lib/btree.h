@@ -1,8 +1,7 @@
 #ifndef BTREE_H_
 #define BTREE_H_
 
-#include <stdint.h>
-#include <stddef.h>
+#include "heap.h"
 
 // This isn't a 'btree', it's a b+tree
 
@@ -15,9 +14,8 @@ struct btree_page
 
 typedef struct btree
 {
-	struct btree_page* m_root;
-	void*            (*m_fn_malloc)(size_t);
-	void             (*m_fn_free)(void*);
+	struct btree_page*   m_root;
+	prolite_allocator_t* m_allocator;
 } btree_t;
 
 void* btree_lookup(btree_t* bt, uint64_t key);

@@ -64,7 +64,7 @@ void* btree_lookup(btree_t* bt, uint64_t key)
 
 static struct btree_page* split_leaf(btree_t* bt, struct btree_page* left)
 {
-	struct btree_page* right = (*bt->m_fn_malloc)(c_page_size);
+	struct btree_page* right = allocator_malloc(bt->m_allocator,c_page_size);
 	if (right)
 	{
 		right->m_internal = 0;
@@ -79,7 +79,7 @@ static struct btree_page* split_leaf(btree_t* bt, struct btree_page* left)
 
 static struct btree_page* split_internal(btree_t* bt, struct btree_page* left)
 {
-	struct btree_page* right = (*bt->m_fn_malloc)(c_page_size);
+	struct btree_page* right = allocator_malloc(bt->m_allocator,c_page_size);
 	if (right)
 	{
 		right->m_internal = 1;
@@ -111,14 +111,14 @@ static void copy_page(struct btree_page* dst, const struct btree_page* src)
 static struct btree_page* split_root(btree_t* bt, uint64_t key)
 {
 	// We need to keep bt->m_root stable
-	struct btree_page* left = (*bt->m_fn_malloc)(c_page_size);
+	struct btree_page* left = allocator_malloc(bt->m_allocator,c_page_size);
 	if (!left)
 		return NULL;
 
-	struct btree_page* right = (*bt->m_fn_malloc)(c_page_size);
+	struct btree_page* right = allocator_malloc(bt->m_allocator,c_page_size);
 	if (!right)
 	{
-		(*bt->m_fn_free)(left);
+		allocator_free(bt->m_allocator,left);
 		return NULL;
 	}
 
@@ -241,7 +241,7 @@ void* btree_insert(btree_t* bt, uint64_t key, void* val)
 
 	if (!bt->m_root)
 	{
-		bt->m_root = (*bt->m_fn_malloc)(c_page_size);
+		bt->m_root = allocator_malloc(bt->m_allocator,c_page_size);
 		if (!bt->m_root)
 			return NULL;
 
@@ -331,13 +331,13 @@ static void* kv_remove(btree_t* bt, struct btree_page* page, uint64_t key)
 						}
 						--page->m_count;
 
-						(*bt->m_fn_free)(sub_page);
+						allocator_free(bt->m_allocator,sub_page);
 
 						if (page == bt->m_root && page->m_count == 0)
 						{
 							sub_page = values(page)[0];
 							copy_page(bt->m_root,sub_page);
-							(*bt->m_fn_free)(sub_page);
+							allocator_free(bt->m_allocator,sub_page);
 						}
 					}
 				}
@@ -401,13 +401,13 @@ static void* kv_remove(btree_t* bt, struct btree_page* page, uint64_t key)
 					}
 					--page->m_count;
 
-					(*bt->m_fn_free)(sub_page);
+					allocator_free(bt->m_allocator,sub_page);
 
 					if (page == bt->m_root && page->m_count == 0)
 					{
 						sub_page = values(page)[0];
 						copy_page(bt->m_root,sub_page);
-						(*bt->m_fn_free)(sub_page);
+						allocator_free(bt->m_allocator,sub_page);
 					}
 				}
 			}
@@ -440,7 +440,7 @@ static void page_clear(btree_t* bt, struct btree_page* page, void (*callback)(vo
 			(*callback)(param,page->m_keys[i],values(page)[i]);
 	}
 	
-	(*bt->m_fn_free)(page);
+	allocator_free(bt->m_allocator,page);
 }
 
 void btree_clear(btree_t* bt, void (*callback)(void* param, uint64_t key, void* val), void* param)
@@ -542,7 +542,7 @@ static void dump_btree(const btree_t* bt, const char* filename)
 
 void btree_tests(void)
 {
-	btree_t bt = { .m_fn_malloc = &malloc, .m_fn_free = &free };
+	btree_t bt = {0};
 
 	int v = 12;
 	for (size_t i=0; i < 5000; ++i)

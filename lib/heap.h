@@ -1,10 +1,12 @@
 #ifndef HEAP_H_
 #define HEAP_H_
 
-#include <stdint.h>
-#include <stddef.h>
+#include "../include/prolite.h"
 
-// This isn't a 'heap', it's just an arena allocator
+#include <stdint.h>
+#include <stdlib.h>
+
+// This is a bump allocated 'fast' heap
 
 struct heap;
 
@@ -20,10 +22,22 @@ struct heap_page
 
 typedef struct heap
 {
-	struct heap_page* m_page;
-	void*           (*m_fn_malloc)(size_t);
-	void            (*m_fn_free)(void*);
+	struct heap_page*    m_page;
+	prolite_allocator_t* m_allocator;
 } heap_t;
+
+static inline void* allocator_malloc(prolite_allocator_t* a, size_t bytes)
+{
+	return a ? (*a->m_fn_malloc)(a->m_param,bytes) : malloc(bytes);
+}
+
+static inline void allocator_free(prolite_allocator_t* a, void* ptr)
+{
+	if (a)
+		(*a->m_fn_free)(a->m_param,ptr);
+	else
+		free(ptr);
+}
 
 void heap_destroy(heap_t* s);
 

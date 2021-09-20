@@ -20,7 +20,7 @@ static inline int64_t stream_read(stream_t* s, void* dest, size_t len)
 	return (s && s->m_fn_read ? (*s->m_fn_read)(s,dest,len) : -1);
 }
 
-typedef void (*exception_handler_fn_t)(context_t* context, const term_t* term);
+typedef void (*exception_handler_fn_t)(context_t* context);
 
 typedef struct stream_resolver
 {

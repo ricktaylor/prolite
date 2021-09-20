@@ -31,7 +31,7 @@ void heap_destroy(heap_t* heap)
 		while (heap->m_page)
 		{
 			struct heap_page* p = heap->m_page->m_prev;
-			(*heap->m_fn_free)(heap->m_page);
+			allocator_free(heap->m_allocator,heap->m_page);
 			heap->m_page = p;
 		}
 	}
@@ -58,7 +58,7 @@ void heap_compact(heap_t* heap)
 		while (heap->m_page->m_next)
 		{
 			struct heap_page* n = heap->m_page->m_next->m_next;
-			(*heap->m_fn_free)(heap->m_page->m_next);
+			allocator_free(heap->m_allocator,heap->m_page->m_next);
 			heap->m_page->m_next = n;
 		}
 	}
@@ -82,7 +82,7 @@ void* heap_malloc(heap_t* heap, size_t len)
 			if (alloc_size < c_page_size)
 				alloc_size = c_page_size;
 
-			struct heap_page* new_page = (*heap->m_fn_malloc)(alloc_size);
+			struct heap_page* new_page = allocator_malloc(heap->m_allocator,alloc_size);
 			if (!new_page)
 				return NULL;
 			

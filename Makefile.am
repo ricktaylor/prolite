@@ -21,6 +21,7 @@ libprolite_la_SOURCES = \
 	lib/context.c \
 	lib/compile.c \
 	lib/predicates.c \
+	lib/consult.c \
 	lib/exceptions.c
 
 if ENABLE_TESTS
@@ -33,7 +34,7 @@ libprolite_la_LDFLAGS = -version-number $(shell echo $(VERSION) | grep -oP '^\d+
 bin_PROGRAMS = prolite 
 
 prolite_SOURCES = \
-	src/consult.c \
+	src/settings.c \
 	src/main.c
 	
 prolite_LDADD = libprolite.la

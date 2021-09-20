@@ -48,16 +48,8 @@ predicate_base_t* predicate_map_lookup(predicate_map_t* pm, const term_t* functo
 
 	void* p = btree_lookup(pm,functor->m_u64val);
 	if (p && is_sub_tree)
-	{
-		btree_t sub_tree = 
-		{
-			.m_fn_malloc = pm->m_fn_malloc,
-			.m_fn_free = pm->m_fn_free,
-			.m_root = p
-		};
-		p = btree_lookup(&sub_tree,key);
-	}
-
+		p = btree_lookup(&(btree_t){ .m_allocator = pm->m_allocator, .m_root = p},key);
+	
 	return p;
 }
 
@@ -69,13 +61,8 @@ predicate_base_t* predicate_map_insert(predicate_map_t* pm, predicate_base_t* pr
 	if (is_sub_tree)
 	{
 		// Get sub-tree
-		btree_t sub_tree = 
-		{
-			.m_fn_malloc = pm->m_fn_malloc,
-			.m_fn_free = pm->m_fn_free
-		};
+		btree_t sub_tree = { .m_allocator = pm->m_allocator };
 		sub_tree.m_root = btree_lookup(pm,pred->m_functor->m_u64val);
-
 		if (!sub_tree.m_root)
 		{
 			curr_pred = btree_insert(&sub_tree,key,pred);
@@ -119,13 +106,7 @@ static void clear_callback(void* p, uint64_t k, void* v)
 	if (sub_type == 0 || sub_type == 3)
 	{
 		btree_t* bt = p;
-		btree_t sub_tree = 
-		{
-			.m_fn_malloc = bt->m_fn_malloc,
-			.m_fn_free = bt->m_fn_free,
-			.m_root = v
-		};
-		btree_clear(&sub_tree,NULL,NULL);
+		btree_clear(&(btree_t){ .m_allocator = bt->m_allocator, .m_root = v},NULL,NULL);
 	}
 }
 
