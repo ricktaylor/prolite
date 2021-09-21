@@ -1,6 +1,5 @@
 #include "parser.h"
 #include "predicates.h"
-#include "export.h"
 
 #include <assert.h>
 #include <string.h>
@@ -55,9 +54,10 @@ typedef struct consult_context
 	unsigned                m_critical_failure : 1;
 
 	context_t*              m_context;
-	exception_handler_fn_t* m_eh;
-	stream_resolver_t*      m_resolver;
 	consult_file_t*         m_files;
+
+	prolite_exception_handler_fn_t* m_eh;
+	prolite_stream_resolver_t*      m_resolver;
 
 	predicate_map_t         m_predicates;
 	consult_predicate_t*    m_current_predicate;
@@ -88,7 +88,7 @@ static void report_exception(consult_context_t* context)
 	// TODO
 	assert(0);
 	
-	(*context->m_eh)(context->m_context);
+	//(*context->m_eh)(context->m_context);
 	context->m_failed = 1;
 }
 
@@ -425,10 +425,21 @@ static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 	append_clause(context,context->m_current_predicate,c);
 }
 
+static prolite_stream_t* stream_resolver_open(context_t* context, struct prolite_stream_resolver* r, prolite_exception_handler_fn_t* eh, const term_t* t)
+{
+	prolite_stream_t* s = NULL;
+	if (r && r->m_fn_open)
+	{
+		string_t str = get_string(t,NULL);
+		s = (*r->m_fn_open)(r,(prolite_context_t)context,eh,(const char*)str.m_str);
+	}		
+	return s;
+}
+
 static void load_file(consult_context_t* context, const term_t* filename)
 {
 	parser_t parser = { .m_line_info.m_end_line = 1, .m_multiterm = 1 };
-	parser.m_s = stream_resolver_open(context->m_resolver,context->m_eh,filename);
+	parser.m_s = stream_resolver_open(context->m_context,context->m_resolver,context->m_eh,filename);
 	if (!parser.m_s)
 		context->m_failed = 1;
 	else
@@ -467,7 +478,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 			}
 		}
 
-		stream_close(parser.m_s);
+		(*parser.m_s->m_fn_close)(parser.m_s);
 	}
 }
 
@@ -518,8 +529,10 @@ static void heap_allocator_free(void* param, void* ptr)
 	}
 }
 
-int consult(context_t* context, const term_t* filename, stream_resolver_t* resolver, exception_handler_fn_t* eh)
+static int consult(context_t* context, const term_t* filename, prolite_stream_resolver_t* resolver, prolite_exception_handler_fn_t* eh)
 {
+	size_t heap_start = heap_top(context->m_heap);
+
 	consult_context_t cc =
 	{
 		.m_context = context,
@@ -534,8 +547,6 @@ int consult(context_t* context, const term_t* filename, stream_resolver_t* resol
 		.m_files = &(consult_file_t){ .m_filename = filename }
 	};
 
-	size_t heap_start = heap_top(cc.m_context->m_heap);
-
 	load_file(&cc,filename);
 	if (!cc.m_failed)
 	{
@@ -546,10 +557,25 @@ int consult(context_t* context, const term_t* filename, stream_resolver_t* resol
 	//predicate_map_clear(&cc.m_predicates);
 
 	// Reset heap
-	heap_reset(cc.m_context->m_heap,heap_start);
+	heap_reset(context->m_heap,heap_start);
 
 	// We have just done a load of heap allocation
-	heap_compact(cc.m_context->m_heap);
+	heap_compact(context->m_heap);
 
 	return cc.m_failed;
+}
+
+PROLITE_EXPORT prolite_context_t prolite_context_load(/* optional */ prolite_environment_t* env, const char* source)
+{
+	context_t* context = context_new(env);
+	if (context)
+	{
+		term_t* filename = push_string(context->m_stack,prolite_atom,(const unsigned char*)source,strlen(source),1);
+		if (consult(context,filename,env->m_resolver,env->m_handler))
+		{
+			context_delete(context);
+			context = NULL;
+		}
+	}
+	return (prolite_context_t)context;
 }

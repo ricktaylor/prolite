@@ -2,7 +2,6 @@
 #define PARSER_H_
 
 #include "context.h"
-#include "stream.h"
 
 typedef struct token
 {
@@ -21,12 +20,12 @@ typedef struct line_info
 
 typedef struct parser
 {
-	stream_t*    m_s;
-	token_t      m_buffer;
-	line_info_t  m_line_info;
-	jmp_buf      m_jmp;
-	unsigned     m_eof : 1;
-	unsigned     m_multiterm : 1;
+	prolite_stream_t* m_s;
+	token_t           m_buffer;
+	line_info_t       m_line_info;
+	jmp_buf           m_jmp;
+	unsigned          m_eof : 1;
+	unsigned          m_multiterm : 1;
 } parser_t;
 
 typedef enum parse_status

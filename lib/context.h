@@ -1,8 +1,8 @@
 #ifndef CONTEXT_H_
 #define CONTEXT_H_
 
-#include "types.h"
 #include "heap.h"
+#include "types.h"
 #include "setjmp.h"
 
 typedef enum operator_specifier
@@ -70,5 +70,8 @@ typedef void (*builtin_fn_t)(context_t* context);
 const term_t* deref_local_var(context_t* context, const term_t* t);
 
 const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* var_count);
+
+context_t* context_new(prolite_environment_t* env);
+void context_delete(context_t* c);
 
 #endif // CONTEXT_H_

@@ -1371,9 +1371,12 @@ static token_type_t token_next(context_t* context, parser_t* parser, token_t* to
 		if (!parser->m_eof)
 		{
 			unsigned char c;
-			int64_t i = stream_read(parser->m_s,&c,1);
-			if (i == 0)
+			int64_t i = (*parser->m_s->m_fn_read)(parser->m_s,&c,1);
+			if (i <= 0)
+			{
+				// TODO: File I/O error?
 				parser->m_eof = 1;
+			}
 			else
 				token_append_char(context,parser,&parser->m_buffer,c);
 		}
@@ -2277,7 +2280,7 @@ parse_status_t read_term(context_t* context, parser_t* parser)
 	return status;
 }
 
-parse_status_t read_term_todo(context_t* context, stream_t* s)
+parse_status_t read_term_todo(context_t* context, prolite_stream_t* s)
 {
 	parser_t parser = 
 	{

@@ -371,3 +371,86 @@ void builtin_op(context_t* context)
 void builtin_current_op(context_t* context)
 {
 }
+
+
+module_t* module_new(context_t* context, const term_t* name)
+{
+	// TODO: Much more here!!
+
+	module_t* module = heap_malloc(context->m_heap,sizeof(module_t));
+	if (module)
+	{
+		memset(module,0,sizeof(module_t));
+		module->m_flags.char_conversion = 1;
+		module->m_flags.back_quotes = 1;
+	}
+
+	/* &(consult_module_t){
+				.m_module.m_name = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('u','s','e','r') },
+				.m_module.m_flags.char_conversion = 1,
+				.m_module.m_flags.back_quotes = 1
+			}, */
+
+	return module;
+}
+
+void module_delete(module_t* module)
+{
+	// TODO
+}
+
+context_t* context_new(prolite_environment_t* env)
+{
+	if (!env)
+	{
+		env = &(prolite_environment_t)
+		{
+			.m_stack_size = 0x10000
+		};
+	}
+
+	heap_t heap = { .m_allocator = env->m_allocator };
+
+	context_t* c = heap_malloc(&heap,sizeof(context_t));
+	if (c)
+	{
+		*c = (context_t){ .m_heap = &heap };
+
+		size_t stack_size = bytes_to_cells(env->m_stack_size,sizeof(term_t));
+		
+		c->m_stack = allocator_malloc(env->m_allocator,stack_size * sizeof(term_t));
+		if (!c->m_stack)
+		{
+			heap_destroy(&heap);
+			return NULL;
+		}		
+		c->m_stack += (stack_size - 1);
+
+		term_t user = { .m_u64val = PACK_ATOM_EMBED_4('u','s','e','r') };
+		c->m_module = module_new(c,&user);
+	}
+
+	return c;
+}
+
+void context_delete(context_t* c)
+{
+	module_delete(c->m_module);
+	//stack_delete(c->m_call_stack);
+}
+
+PROLITE_EXPORT prolite_context_t prolite_context_new(/* optional */ prolite_environment_t* env)
+{
+	context_t* c = context_new(env);
+	if (!c && env && env->m_handler)
+	{
+		// TODO: Report an error!
+	}
+
+	return (prolite_context_t)c;
+}
+
+PROLITE_EXPORT void prolite_context_destroy(prolite_context_t context)
+{
+	context_delete((context_t*)context);
+}
