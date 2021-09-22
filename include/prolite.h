@@ -18,14 +18,14 @@ extern "C" {
 
 typedef struct prolite_context
 {
-    int opaque;
+    void* m_user_data;
 }* prolite_context_t;
 
 typedef struct prolite_allocator
 {
     void*  m_param;
-    void* (*m_fn_malloc)(void* param, size_t bytes);
-	void  (*m_fn_free)(void* param, void* ptr);
+    void* (*m_fn_malloc)(void* user_data, size_t bytes);
+	void  (*m_fn_free)(void* user_data, void* ptr);
 } prolite_allocator_t;
 
 typedef void (*prolite_exception_handler_fn_t)(prolite_context_t context);
@@ -50,8 +50,8 @@ typedef struct prolite_environment
 
 } prolite_environment_t;
 
-PROLITE_EXPORT prolite_context_t prolite_context_new(/* optional */ prolite_environment_t* env);
-PROLITE_EXPORT prolite_context_t prolite_context_load(/* optional */ prolite_environment_t* env, const char* source);
+PROLITE_EXPORT prolite_context_t prolite_context_new(/* optional */ void* user_data, /* optional */ const prolite_environment_t* env);
+PROLITE_EXPORT prolite_context_t prolite_context_load(/* optional */ void* user_data, /* optional */ const prolite_environment_t* env, const char* source);
 PROLITE_EXPORT void prolite_context_destroy(prolite_context_t context);
 
 #ifdef __cplusplus

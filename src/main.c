@@ -19,7 +19,7 @@ int main(int argc, char* argv[])
 	settings_t settings = {0};
 	argc = parse_cmd_args(argc,argv,&settings);
 
-	prolite_context_t context = prolite_context_load(NULL,argv[0]);
+	prolite_context_t context = prolite_context_load(NULL,NULL,argv[0]);
 	if (context)
 	{
 		/*struct text_stream ts = {

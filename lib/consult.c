@@ -128,7 +128,7 @@ static void report_representation_error(consult_context_t* context, uint64_t p1,
 
 static consult_predicate_t* new_predicate(consult_context_t* context, const term_t* t, int public, int dynamic, int multifile, int discontiguous, int* is_new_pred)
 {
-	consult_predicate_t* new_pred = heap_malloc(context->m_context->m_heap,sizeof(consult_predicate_t));
+	consult_predicate_t* new_pred = heap_malloc(&context->m_context->m_heap,sizeof(consult_predicate_t));
 	if (!new_pred)
 		return NULL;
 	
@@ -146,7 +146,7 @@ static consult_predicate_t* new_predicate(consult_context_t* context, const term
 		*is_new_pred = (pred == &new_pred->m_base);
 
 	if (!pred || pred != &new_pred->m_base)
-		heap_free(context->m_context->m_heap,new_pred,sizeof(consult_predicate_t));
+		heap_free(&context->m_context->m_heap,new_pred,sizeof(consult_predicate_t));
 	
 	return (consult_predicate_t*)pred;
 }
@@ -297,7 +297,7 @@ static void append_clause(consult_context_t* context, consult_predicate_t* pred,
 	while (*tail)
 		tail = &(*tail)->m_next;
 
-	consult_clause_t* new_clause = heap_malloc(context->m_context->m_heap,sizeof(consult_clause_t));
+	consult_clause_t* new_clause = heap_malloc(&context->m_context->m_heap,sizeof(consult_clause_t));
 	if (!new_clause)
 		return report_out_of_memory_error(context,c->m_term);
 
@@ -318,7 +318,7 @@ static void assert_initializer(consult_context_t* context, const term_t* goal)
 		while (*tail)
 			tail = &(*tail)->m_next;
 
-		consult_initializer_t* new_init = heap_malloc(context->m_context->m_heap,sizeof(consult_initializer_t));
+		consult_initializer_t* new_init = heap_malloc(&context->m_context->m_heap,sizeof(consult_initializer_t));
 		if (!new_init)
 			return report_out_of_memory_error(context,goal);
 
@@ -496,7 +496,7 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 			return;
 	}
 
-	consult_file_t* new_file = heap_malloc(context->m_context->m_heap,sizeof(consult_file_t));
+	consult_file_t* new_file = heap_malloc(&context->m_context->m_heap,sizeof(consult_file_t));
 	if (!new_file)
 		report_out_of_memory_error(context,t);
 	else
@@ -531,7 +531,7 @@ static void heap_allocator_free(void* param, void* ptr)
 
 static int consult(context_t* context, const term_t* filename, prolite_stream_resolver_t* resolver, prolite_exception_handler_fn_t* eh)
 {
-	size_t heap_start = heap_top(context->m_heap);
+	size_t heap_start = heap_top(&context->m_heap);
 
 	consult_context_t cc =
 	{
@@ -541,7 +541,7 @@ static int consult(context_t* context, const term_t* filename, prolite_stream_re
 		.m_predicates.m_allocator = &(prolite_allocator_t){
 			.m_fn_malloc = &heap_allocator_malloc,
 			.m_fn_free = &heap_allocator_free,
-			.m_param = context->m_heap
+			.m_param = &context->m_heap
 		},
 		.m_modules = &(consult_module_t){ .m_module = *context->m_module },
 		.m_files = &(consult_file_t){ .m_filename = filename }
@@ -557,17 +557,20 @@ static int consult(context_t* context, const term_t* filename, prolite_stream_re
 	//predicate_map_clear(&cc.m_predicates);
 
 	// Reset heap
-	heap_reset(context->m_heap,heap_start);
+	heap_reset(&context->m_heap,heap_start);
 
 	// We have just done a load of heap allocation
-	heap_compact(context->m_heap);
+	heap_compact(&context->m_heap);
 
 	return cc.m_failed;
 }
 
-PROLITE_EXPORT prolite_context_t prolite_context_load(/* optional */ prolite_environment_t* env, const char* source)
+PROLITE_EXPORT prolite_context_t prolite_context_load(void* user_data, const prolite_environment_t* env, const char* source)
 {
-	context_t* context = context_new(env);
+	if (!env)
+		env = &g_default_env;
+
+	context_t* context = context_new(user_data,env);
 	if (context)
 	{
 		term_t* filename = push_string(context->m_stack,prolite_atom,(const unsigned char*)source,strlen(source),1);

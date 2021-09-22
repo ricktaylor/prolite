@@ -661,7 +661,7 @@ int term_precedes(const term_t* t1, const term_t* t2)
 
 static void append_term_to_heap(context_t* context, const term_t* src, term_t** dst, size_t* old_len, size_t count, jmp_buf* jmp)
 {
-	*dst = heap_realloc(context->m_heap,*dst,*old_len,*old_len + (count * sizeof(term_t)));
+	*dst = heap_realloc(&context->m_heap,*dst,*old_len,*old_len + (count * sizeof(term_t)));
 	if (!*dst)
 		longjmp(*jmp,1);
 
@@ -773,7 +773,7 @@ const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* var
 {
 	term_t* sp = context->m_stack;
 	term_t* dst = NULL;
-	size_t top = heap_top(context->m_heap);
+	size_t top = heap_top(&context->m_heap);
 
 	jmp_buf jmp;
 	if (!setjmp(jmp))
@@ -783,7 +783,7 @@ const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* var
 	}
 	else
 	{
-		heap_reset(context->m_heap,top);
+		heap_reset(&context->m_heap,top);
 
 		*var_count = 0;
 		dst = NULL;

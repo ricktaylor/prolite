@@ -1257,13 +1257,13 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 
 void compile_term(context_t* context, const term_t* goal, size_t var_count)
 {
-	size_t heap_start = heap_top(context->m_heap);
-	compile_context_t cc = { .m_heap = context->m_heap };
+	size_t heap_start = heap_top(&context->m_heap);
+	compile_context_t cc = { .m_heap = &context->m_heap };
 	if (!setjmp(cc.m_jmp))
 	{
 		if (var_count)
 		{
-			cc.m_substs = heap_malloc(cc.m_heap,sizeof(substitutions_t) + (sizeof(term_t) * var_count));
+			cc.m_substs = heap_malloc(&context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * var_count));
 			if (!cc.m_substs)
 				longjmp(cc.m_jmp,1);
 
@@ -1288,7 +1288,7 @@ void compile_term(context_t* context, const term_t* goal, size_t var_count)
 
 		if (blks.m_total)
 		{
-			opcode_t* code = heap_malloc(cc.m_heap,blks.m_total * sizeof(opcode_t));
+			opcode_t* code = heap_malloc(&context->m_heap,blks.m_total * sizeof(opcode_t));
 			if (!code)
 				longjmp(cc.m_jmp,1);
 
@@ -1306,5 +1306,5 @@ void compile_term(context_t* context, const term_t* goal, size_t var_count)
 	}
 		
 	/* Bulk free all heap allocs */
-	heap_reset(cc.m_heap,heap_start);
+	heap_reset(&context->m_heap,heap_start);
 }

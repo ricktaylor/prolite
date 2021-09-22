@@ -377,7 +377,7 @@ module_t* module_new(context_t* context, const term_t* name)
 {
 	// TODO: Much more here!!
 
-	module_t* module = heap_malloc(context->m_heap,sizeof(module_t));
+	module_t* module = heap_malloc(&context->m_heap,sizeof(module_t));
 	if (module)
 	{
 		memset(module,0,sizeof(module_t));
@@ -399,25 +399,17 @@ void module_delete(module_t* module)
 	// TODO
 }
 
-context_t* context_new(prolite_environment_t* env)
+context_t* context_new(void* user_data, const prolite_environment_t* env)
 {
-	if (!env)
-	{
-		env = &(prolite_environment_t)
-		{
-			.m_stack_size = 0x10000
-		};
-	}
-
 	heap_t heap = { .m_allocator = env->m_allocator };
 
 	context_t* c = heap_malloc(&heap,sizeof(context_t));
 	if (c)
 	{
-		*c = (context_t){ .m_heap = &heap };
+		*c = (context_t){ .m_user_data = user_data, .m_heap = heap };
 
 		size_t stack_size = bytes_to_cells(env->m_stack_size,sizeof(term_t));
-		
+
 		c->m_stack = allocator_malloc(env->m_allocator,stack_size * sizeof(term_t));
 		if (!c->m_stack)
 		{
@@ -439,13 +431,23 @@ void context_delete(context_t* c)
 	//stack_delete(c->m_call_stack);
 }
 
-PROLITE_EXPORT prolite_context_t prolite_context_new(/* optional */ prolite_environment_t* env)
+const prolite_environment_t g_default_env = 
 {
-	context_t* c = context_new(env);
+	.m_stack_size = 0x10000
+};
+
+PROLITE_EXPORT prolite_context_t prolite_context_new(void* user_data, const prolite_environment_t* env)
+{
+	if (!env)
+		env = &g_default_env;
+
+	context_t* c = context_new(user_data,env);
 	if (!c && env && env->m_handler)
 	{
 		// TODO: Report an error!
 	}
+
+	assert(c == (void*)&c->m_user_data);
 
 	return (prolite_context_t)c;
 }

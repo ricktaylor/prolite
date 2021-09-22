@@ -56,14 +56,17 @@ typedef struct substitutions
 
 typedef struct context
 {
-	heap_t*          m_heap;
-	term_t*          m_stack;
-	exec_flags_t     m_flags;
-	substitutions_t* m_locals;
-	substitutions_t* m_params;
-	module_t*        m_module;
+	void*             m_user_data;
+	heap_t            m_heap;
+	term_t*           m_stack;
+	exec_flags_t      m_flags;
+	substitutions_t*  m_locals;
+	substitutions_t*  m_params;
+	module_t*         m_module;
 	
 } context_t;
+
+extern const prolite_environment_t g_default_env;
 
 typedef void (*builtin_fn_t)(context_t* context);
 
@@ -71,7 +74,7 @@ const term_t* deref_local_var(context_t* context, const term_t* t);
 
 const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* var_count);
 
-context_t* context_new(prolite_environment_t* env);
+context_t* context_new(void* user_data, const prolite_environment_t* env);
 void context_delete(context_t* c);
 
 #endif // CONTEXT_H_
