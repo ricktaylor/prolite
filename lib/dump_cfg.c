@@ -96,7 +96,8 @@ static void dumpTerm(const term_t* t, FILE* f, int ref)
 	{
 	case prolite_atom:
 		{
-			string_t s = get_string(t,NULL);
+			string_t s;
+			get_string(t,&s,NULL);
 			fprintf(f,"%.*s",(int)s.m_len,s.m_str);
 		}
 		break;
@@ -104,7 +105,8 @@ static void dumpTerm(const term_t* t, FILE* f, int ref)
 	case prolite_compound:
 		{
 			size_t arity;
-			string_t s = get_predicate(t,&arity,NULL);
+			string_t s;
+			get_predicate(t,&s,&arity,NULL);
 			fprintf(f,"%s%.*s(",ref ? "&" : "",(int)s.m_len,s.m_str);
 
 			t = get_first_arg(t,NULL);

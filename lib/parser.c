@@ -3,7 +3,6 @@
 #include <string.h>
 #include <errno.h>
 #include <math.h>
-#include <assert.h>
 #include <stdlib.h>
 
 #ifdef _MSC_VER
@@ -106,6 +105,13 @@ enum char_max
 	CHAR_ILLEGAL_SEQ
 };
 
+static void token_reset(token_t* token)
+{
+	token->m_alloc = 0;
+	token->m_len = 0;
+	token->m_str = NULL;
+}
+
 static void token_append_char(context_t* context, parser_t* parser, token_t* token, unsigned char c)
 {
 	if (token->m_alloc == token->m_len)
@@ -160,7 +166,7 @@ static void token_append_unicode_char(context_t* context, parser_t* parser, toke
 
 static uint32_t token_skip_ilseq(const unsigned char** p, const unsigned char* pe, int eof, size_t* col, unsigned int i)
 {
-	for (;;)
+	while (i < 4)
 	{
 		if ((*p)+i == pe)
 		{
@@ -281,7 +287,7 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 	if (val == '\n')
 	{
 		++(*line);
-		*col = 0;
+		*col = 1;
 	}
 	else
 		++(*col);
@@ -1378,20 +1384,20 @@ static token_type_t token_next(context_t* context, parser_t* parser, token_t* to
 				parser->m_eof = 1;
 			}
 			else
-				token_append_char(context,parser,&parser->m_buffer,c);
+				parser->m_buffer[parser->m_buffer_len++] = c;
 		}
 
-		p = start = parser->m_buffer.m_str;
-		pe = start + parser->m_buffer.m_len;
+		p = start = parser->m_buffer;
+		pe = start + parser->m_buffer_len;
 
 		tok = parse_token(context,parser,&state,&p,pe,token);
 
 		if (p == pe)
-			parser->m_buffer.m_len = 0;
+			parser->m_buffer_len = 0;
 		else if (p > start)
 		{
-			memmove(parser->m_buffer.m_str,parser->m_buffer.m_str + (p - start),pe - p);
-			parser->m_buffer.m_len = pe - p;
+			memmove(parser->m_buffer,parser->m_buffer + (p - start),pe - p);
+			parser->m_buffer_len = pe - p;
 		}
 	}
 	while (tok == tokNeedMore);
@@ -1523,47 +1529,35 @@ static ast_node_t* parse_compound_term(context_t* context, parser_t* parser, ast
 
 static ast_node_t* parse_arg(context_t* context, parser_t* parser, token_type_t* next_type, token_t* next, ast_error_t* ast_err)
 {
-	ast_node_t* node;
-	operator_t* op;
-
-	if (*next_type != tokName)
-		return parse_term(context,parser,999,next_type,next,ast_err);
-
-	node = heap_malloc(&context->m_heap,sizeof(ast_node_t));
-	if (!node)
-		longjmp(parser->m_jmp,1);
-
-	node->m_arity = 0;
-	node->m_type = AST_TYPE_ATOM;
-	node->m_str = next->m_str;
-	node->m_str_len = next->m_len;
-	next->m_alloc = next->m_len = 0;
-
-	if (node->m_str_len > MAX_ATOM_LEN)
-		return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
-
-	*next_type = token_next(context,parser,next);
-
-	if (*next_type == tokOpenCt)
-		return parse_compound_term(context,parser,node,next_type,next,ast_err);
-
-	if (node->m_str_len == 1 && node->m_str[0] == '-')
+	if (*next_type == tokName)
 	{
-		if (*next_type >= tokInt && *next_type <= tokFloat)
-			return parse_negative(context,parser,node,next_type,next,ast_err);
+		operator_t* op = lookup_op(context,next->m_str,next->m_len);
+		if (op && op->m_precedence > 999)
+		{
+			ast_node_t* node = heap_malloc(&context->m_heap,sizeof(ast_node_t));
+			if (!node)
+				longjmp(parser->m_jmp,1);
+
+			node->m_arity = 0;
+			node->m_type = AST_TYPE_ATOM;
+			node->m_str = next->m_str;
+			node->m_str_len = next->m_len;
+			token_reset(next);
+
+			if (node->m_str_len > MAX_ATOM_LEN)
+				return syntax_error(AST_ERR_OUTOFMEMORY,ast_err);
+
+			if (node->m_str_len == 1 && node->m_str[0] == '-')
+			{
+				if (*next_type >= tokInt && *next_type <= tokFloat)
+					return parse_negative(context,parser,node,next_type,next,ast_err);
+			}
+
+			return node;
+		}
 	}
 
-	op = lookup_prefix_op(context,node->m_str,node->m_str_len);
-	if (op && op->m_precedence <= 999 && (op->m_specifier == eFX || op->m_specifier == eFY))
-	{
-		node = atom_to_compound(context,parser,node,ast_err);
-		node->m_arity = 1;
-		node->m_params[0] = parse_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
-		if (!node->m_params[0])
-			node = NULL;
-	}
-
-	return node;
+	return parse_term(context,parser,999,next_type,next,ast_err);
 }
 
 static ast_node_t* parse_compound_term(context_t* context, parser_t* parser, ast_node_t* node, token_type_t* next_type, token_t* next, ast_error_t* ast_err)
@@ -1608,54 +1602,54 @@ static ast_node_t* parse_list_term(context_t* context, parser_t* parser, token_t
 	ast_node_t* node = NULL;
 	ast_node_t** tail = &node;
 
-	do
-	{
-		*tail = heap_malloc(&context->m_heap,sizeof(ast_node_t) + (2*sizeof(ast_node_t*)));
-		if (!(*tail))
-			longjmp(parser->m_jmp,1);
-
-		(*tail)->m_type = AST_TYPE_COMPOUND;
-		(*tail)->m_str = (const unsigned char*)".";
-		(*tail)->m_str_len = 1;
-		(*tail)->m_arity = 2;
-		(*tail)->m_params[1] = NULL;
-
-		*next_type = token_next(context,parser,next);
-
-		(*tail)->m_params[0] = parse_arg(context,parser,next_type,next,ast_err);
-		if (!(*tail)->m_params[0])
-			return NULL;
-
-		tail = &((*tail)->m_params[1]);
-	}
-	while (*next_type == tokComma);
-
-	if (*next_type == tokBar)
-	{
-		*next_type = token_next(context,parser,next);
-
-		*tail = parse_arg(context,parser,next_type,next,ast_err);
-		if (!(*tail))
-			return NULL;
-
-		*next_type = token_next(context,parser,next);
-	}
-	else if (*next_type == tokCloseL)
-	{
-		/* Append [] */
-		*tail = heap_malloc(&context->m_heap,sizeof(ast_node_t));
-		if (!(*tail))
-			longjmp(parser->m_jmp,1);
-
-		(*tail)->m_type = AST_TYPE_ATOM;
-		(*tail)->m_str = (const unsigned char*)"[]";
-		(*tail)->m_str_len = 2;
-		(*tail)->m_arity = 0;
-	}
-
 	if (*next_type != tokCloseL)
-		return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_L,ast_err);
+	{
+		for (;;)
+		{
+			*tail = heap_malloc(&context->m_heap,sizeof(ast_node_t) + (2*sizeof(ast_node_t*)));
+			if (!(*tail))
+				longjmp(parser->m_jmp,1);
 
+			(*tail)->m_type = AST_TYPE_COMPOUND;
+			(*tail)->m_str = (const unsigned char*)".";
+			(*tail)->m_str_len = 1;
+			(*tail)->m_arity = 2;
+			(*tail)->m_params[1] = NULL;
+			(*tail)->m_params[0] = parse_arg(context,parser,next_type,next,ast_err);
+			if (!(*tail)->m_params[0])
+				return NULL;
+
+			tail = &((*tail)->m_params[1]);
+
+			if (*next_type != tokComma)
+				break;
+
+			*next_type = token_next(context,parser,next);
+		}
+				
+		if (*next_type == tokBar)
+		{
+			*next_type = token_next(context,parser,next);
+
+			*tail = parse_arg(context,parser,next_type,next,ast_err);
+			if (!(*tail))
+				return NULL;	
+		}
+	
+		if (*next_type != tokCloseL)
+			return syntax_error(AST_SYNTAX_ERR_MISSING_CLOSE_L,ast_err);
+	}
+	
+	(*tail) = heap_malloc(&context->m_heap,sizeof(ast_node_t));
+	if (!(*tail))
+		longjmp(parser->m_jmp,1);
+
+	(*tail)->m_type = AST_TYPE_ATOM;
+	(*tail)->m_str = (const unsigned char*)"[]";
+	(*tail)->m_str_len = 2;
+	(*tail)->m_arity = 0;
+	
+	*next_type = token_next(context,parser,next);
 	return node;
 }
 
@@ -1670,7 +1664,7 @@ static ast_node_t* parse_name(context_t* context, parser_t* parser, unsigned int
 	node->m_type = AST_TYPE_ATOM;
 	node->m_str = next->m_str;
 	node->m_str_len = next->m_len;
-	next->m_alloc = next->m_len = 0;
+	token_reset(next);
 
 	*next_type = token_next(context,parser,next);
 	*max_prec = 0;
@@ -1690,6 +1684,7 @@ static ast_node_t* parse_name(context_t* context, parser_t* parser, unsigned int
 		if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
 		{
 			node = atom_to_compound(context,parser,node,ast_err);
+			node->m_arity = 1;
 			node->m_params[0] = parse_term(context,parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next,ast_err);
 			if (!node->m_params[0])
 				node = NULL;
@@ -1719,7 +1714,7 @@ static ast_node_t* parse_chars_and_codes(context_t* context, parser_t* parser, i
 	node->m_arity = 0;
 	node->m_str = token->m_str;
 	node->m_str_len = token->m_len;
-	token->m_alloc = token->m_len = 0;
+	token_reset(token);
 
 	return node;
 }
@@ -1742,7 +1737,7 @@ static ast_node_t* parse_term_base(context_t* context, parser_t* parser, unsigne
 		node->m_arity = UINT64_C(-1);
 		node->m_str = next->m_str;
 		node->m_str_len = next->m_len;
-		next->m_alloc = next->m_len = 0;
+		token_reset(next);
 		break;
 
 	case tokInt:
@@ -1781,21 +1776,8 @@ static ast_node_t* parse_term_base(context_t* context, parser_t* parser, unsigne
 
 	case tokOpenL:
 		*next_type = token_next(context,parser,next);
-		if (*next_type != tokCloseL)
-		{
-			*max_prec = 0;
-			return parse_list_term(context,parser,next_type,next,ast_err);
-		}
-
-		node = heap_malloc(&context->m_heap,sizeof(ast_node_t));
-		if (!node)
-			longjmp(parser->m_jmp,1);
-
-		node->m_type = AST_TYPE_ATOM;
-		node->m_str = (const unsigned char*)"[]";
-		node->m_str_len = 2;
-		node->m_arity = 0;
-		break;
+		*max_prec = 0;
+		return parse_list_term(context,parser,next_type,next,ast_err);
 
 	case tokOpenC:
 		node = heap_malloc(&context->m_heap,sizeof(ast_node_t) + sizeof(ast_node_t*));
@@ -1977,7 +1959,7 @@ static ast_node_t* parse_term(context_t* context, parser_t* parser, unsigned int
 			next_node->m_params[0] = node;
 
 			if (*next_type == tokName)
-				next->m_alloc = next->m_len = 0;
+				token_reset(next);
 
 			*next_type = token_next(context,parser,next);
 
@@ -2240,7 +2222,7 @@ parse_status_t read_term(context_t* context, parser_t* parser)
 				do
 				{
 					heap_reset(&context->m_heap,heap_start);
-					next.m_len = next.m_alloc = 0;
+					token_reset(&next);
 
 					next_type = token_next(context,parser,&next);			
 
@@ -2249,6 +2231,8 @@ parse_status_t read_term(context_t* context, parser_t* parser)
 		}
 		else
 		{
+			parser->m_line_info.m_start_col = parser->m_line_info.m_end_col;
+
 			var_info_t* varinfo = NULL;
 			size_t varcount = 0;
 			status = collate_var_info(context,parser,&varinfo,&varcount,node);
@@ -2285,6 +2269,9 @@ parse_status_t read_term_todo(context_t* context, prolite_stream_t* s)
 	parser_t parser = 
 	{
 		.m_s = s,
+		.m_line_info.m_start_col = 1,
+		.m_line_info.m_end_col = 1,
+		.m_line_info.m_start_line = 1,
 		.m_line_info.m_end_line = 1
 	};
 

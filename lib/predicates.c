@@ -2,7 +2,6 @@
 #include "fnv1a.h"
 
 #include <string.h>
-#include <assert.h>
 
 static uint64_t predicate_key(const term_t* functor, int* is_sub_tree)
 {
@@ -15,9 +14,9 @@ static uint64_t predicate_key(const term_t* functor, int* is_sub_tree)
 	{
 		string_t s;
 		if (type == prolite_atom)
-			s = get_string(functor,NULL);
+			get_string(functor,&s,NULL);
 		else
-			s = get_predicate(functor,NULL,NULL);
+			get_predicate(functor,&s,NULL,NULL);
 
 		if (s.m_len <= 8)
 		{

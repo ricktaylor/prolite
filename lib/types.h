@@ -108,8 +108,8 @@ static inline int has_debug_info(const term_t* t)
 
 const term_t* get_first_arg(const term_t* compound, size_t* arity);
 const term_t* get_next_arg(const term_t* t);
-string_t get_predicate(const term_t* t, size_t* arity, const debug_info_t** debug_info);
-string_t get_string(const term_t* t, const debug_info_t** debug_info);
+void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_info_t** debug_info);
+void get_string(const term_t* t, string_t* str, const debug_info_t** debug_info);
 
 int predicate_compare(const term_t* c1, const term_t* c2);
 int term_compare(const term_t* t1, const term_t* t2);

@@ -2,7 +2,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #undef DECLARE_BUILTIN_STRING
 #define DECLARE_BUILTIN_STRING(s) { sizeof(#s)-1,(const unsigned char*)(#s) },
@@ -137,11 +136,10 @@ term_t* push_predicate(term_t* stack, uint64_t arity, const unsigned char* funct
 	return stack;
 }
 
-string_t get_string(const term_t* t, const debug_info_t** debug_info)
+void get_string(const term_t* t, string_t* str, const debug_info_t** debug_info)
 {
 	assert(get_term_type(t) == prolite_atom);
 	
-	string_t ret;
 	uint64_t all48 = (t++)->m_u64val;
 	int have_debug_info = (UNPACK_TYPE(all48) & prolite_debug_info);
 	all48 = UNPACK_MANT_48(all48);
@@ -150,42 +148,39 @@ string_t get_string(const term_t* t, const debug_info_t** debug_info)
 	switch (hi16 >> 14)
 	{
 	case 3:
-		ret.m_len = (size_t)(all48 & MAX_ATOM_LEN);
-		ret.m_str = (t++)->m_pval;
+		str->m_len = (size_t)(all48 & MAX_ATOM_LEN);
+		str->m_str = (t++)->m_pval;
 		break;
 
 	case 2:
-		ret.m_len = (hi16 & 0x0700) >> 8;
-		ret.m_data[0] = all48 >> 32;
-		ret.m_data[1] = all48 >> 24;
-		ret.m_data[2] = all48 >> 16;
-		ret.m_data[3] = all48 >> 8;
-		ret.m_data[4] = all48;
-		ret.m_str = ret.m_data;
+		str->m_len = (hi16 & 0x0700) >> 8;
+		str->m_data[0] = all48 >> 32;
+		str->m_data[1] = all48 >> 24;
+		str->m_data[2] = all48 >> 16;
+		str->m_data[3] = all48 >> 8;
+		str->m_data[4] = all48;
+		str->m_str = str->m_data;
 		break;
 	
 	case 1:
-		ret = s_builtin_strings[(uint32_t)all48];
+		*str = s_builtin_strings[(uint32_t)all48];
 		break;
 	
 	case 0:
-		ret.m_len = (size_t)(all48 & MAX_ATOM_LEN);
-		ret.m_str = (const unsigned char*)t;
-		t += bytes_to_cells(ret.m_len,sizeof(term_t));
+		str->m_len = (size_t)(all48 & MAX_ATOM_LEN);
+		str->m_str = (const unsigned char*)t;
+		t += bytes_to_cells(str->m_len,sizeof(term_t));
 		break;
 	}
 
 	if (debug_info && have_debug_info)
 		*debug_info = (const debug_info_t*)t;
-
-	return ret;
 }
 
-string_t get_predicate(const term_t* t, size_t* arity, const debug_info_t** debug_info)
+void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_info_t** debug_info)
 {
 	assert(get_term_type(t) == prolite_compound);
 
-	string_t ret;
 	uint64_t all48 = (t++)->m_u64val;
 	int have_debug_info = (UNPACK_TYPE(all48) & prolite_debug_info);
 	all48 = UNPACK_MANT_48(all48);
@@ -201,13 +196,13 @@ string_t get_predicate(const term_t* t, size_t* arity, const debug_info_t** debu
 		if (arity)
 			*arity = (hi16 & 0x7800) >> 11;
 
-		ret.m_len = (hi16 & 0x0700) >> 8;
-		ret.m_data[0] = all48 >> 32;
-		ret.m_data[1] = all48 >> 24;
-		ret.m_data[2] = all48 >> 16;
-		ret.m_data[3] = all48 >> 8;
-		ret.m_data[4] = all48;
-		ret.m_str = ret.m_data;
+		str->m_len = (hi16 & 0x0700) >> 8;
+		str->m_data[0] = all48 >> 32;
+		str->m_data[1] = all48 >> 24;
+		str->m_data[2] = all48 >> 16;
+		str->m_data[3] = all48 >> 8;
+		str->m_data[4] = all48;
+		str->m_str = str->m_data;
 
 		if (debug_info && have_debug_info)
 			*debug_info = (const debug_info_t*)t;
@@ -217,7 +212,7 @@ string_t get_predicate(const term_t* t, size_t* arity, const debug_info_t** debu
 		if (arity)
 			*arity = hi16 & MAX_ARITY_BUILTIN;
 
-		ret = s_builtin_strings[(uint32_t)all48];
+		*str = s_builtin_strings[(uint32_t)all48];
 
 		if (debug_info && have_debug_info)
 			*debug_info = (const debug_info_t*)t;
@@ -227,11 +222,9 @@ string_t get_predicate(const term_t* t, size_t* arity, const debug_info_t** debu
 		if (arity)
 			*arity = (all48 & MAX_ARITY);
 
-		ret = get_string(t,debug_info);
+		get_string(t,str,debug_info);
 		break;
 	}
-
-	return ret;
 }
 
 static const term_t* skip_debug_info(const term_t* t, const debug_info_t** debug_info)
@@ -417,30 +410,30 @@ const debug_info_t* get_debug_info(const term_t* t)
 
 static int atom_compare(const term_t* a1, const term_t* a2)
 {
-	int r = (a1->m_u64val == a2->m_u64val);
-	if (!r)
-	{
-		unsigned int t1 = get_term_subtype(a1);
-		if (t1 == 3 || t1 == 0)
-		{
-			unsigned int t2 = get_term_subtype(a2);
-			if (t2 == 3 || t2 == 0)
-			{
-				string_t s1 = get_string(a1,NULL);
-				string_t s2 = get_string(a2,NULL);
+	unsigned int t1 = get_term_subtype(a1);
+	unsigned int t2 = get_term_subtype(a2);
 
-				if (s1.m_len == s2.m_len && memcmp(s1.m_str,s2.m_str,s1.m_len) == 0)
-					r = 1;
-			}
-		}
+	int r = 0;
+	if (t1 == 3 || t1 == 0 || t2 == 3 || t2 == 0)
+	{
+		string_t s1,s2;
+		get_string(a1,&s1,NULL);
+		get_string(a2,&s2,NULL);
+
+		if (s1.m_len == s2.m_len && memcmp(s1.m_str,s2.m_str,s1.m_len) == 0)
+			r = 1;
 	}
+	else
+		r = (a1->m_u64val == a2->m_u64val);
+
 	return r;
 }
 
 static int atom_precedes(const term_t* a1, const term_t* a2)
 {
-	string_t s1 = get_string(a1,NULL);
-	string_t s2 = get_string(a2,NULL);
+	string_t s1,s2;
+	get_string(a1,&s1,NULL);
+	get_string(a2,&s2,NULL);
 
 	int r = memcmp(s1.m_str,s2.m_str,s1.m_len < s2.m_len ? s1.m_len : s2.m_len);
 	if (r == 0)
@@ -492,8 +485,9 @@ int predicate_compare(const term_t* c1, const term_t* c2)
 static int compound_precedes(const term_t* c1, const term_t* c2)
 {
 	size_t a1,a2;
-	string_t s1 = get_predicate(c1,&a1,NULL);
-	string_t s2 = get_predicate(c2,&a2,NULL);
+	string_t s1,s2;
+	get_predicate(c1,&s1,&a1,NULL);
+	get_predicate(c2,&s2,&a2,NULL);
 
 	int r = (a1 - a2);
 	if (r == 0)

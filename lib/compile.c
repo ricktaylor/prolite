@@ -4,7 +4,6 @@
 
 #include <string.h>
 #include <stdarg.h>
-#include <assert.h>
 
 // TEMP
 

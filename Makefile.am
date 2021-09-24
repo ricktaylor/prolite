@@ -35,6 +35,7 @@ bin_PROGRAMS = prolite
 
 prolite_SOURCES = \
 	src/settings.c \
+	src/fs_resolver.c \
 	src/main.c
 	
 prolite_LDADD = libprolite.la

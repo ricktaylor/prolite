@@ -7,9 +7,9 @@
 
 #include "context.h"
 
-#include <assert.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 uint32_t convert_char(context_t* context, uint32_t in_char)
 {
@@ -399,6 +399,15 @@ void module_delete(module_t* module)
 	// TODO
 }
 
+static void default_exception_handler(prolite_context_t context)
+{
+	// TODO - Print error?
+
+	fprintf(stderr,"Unhandled prolite exception\n");
+	assert(0);
+	exit(EXIT_FAILURE);
+}
+
 context_t* context_new(void* user_data, const prolite_environment_t* env)
 {
 	heap_t heap = { .m_allocator = env->m_allocator };
@@ -406,9 +415,20 @@ context_t* context_new(void* user_data, const prolite_environment_t* env)
 	context_t* c = heap_malloc(&heap,sizeof(context_t));
 	if (c)
 	{
-		*c = (context_t){ .m_user_data = user_data, .m_heap = heap };
+		*c = (context_t){
+			.m_user_data = user_data,
+			.m_heap = heap,
+			.m_eh = env->m_handler,
+			.m_resolver = env->m_resolver
+		};
+		if (!c->m_eh)
+			c->m_eh = &default_exception_handler;
 
-		size_t stack_size = bytes_to_cells(env->m_stack_size,sizeof(term_t));
+		size_t stack_size = env->m_stack_size;
+		if (!stack_size)
+			stack_size = g_default_env.m_stack_size;
+
+		stack_size = bytes_to_cells(stack_size,sizeof(term_t));
 
 		c->m_stack = allocator_malloc(env->m_allocator,stack_size * sizeof(term_t));
 		if (!c->m_stack)
@@ -440,7 +460,7 @@ PROLITE_EXPORT prolite_context_t prolite_context_new(void* user_data, const prol
 {
 	if (!env)
 		env = &g_default_env;
-
+	
 	context_t* c = context_new(user_data,env);
 	if (!c && env && env->m_handler)
 	{

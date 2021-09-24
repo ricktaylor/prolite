@@ -5,6 +5,8 @@
 #include "types.h"
 #include "setjmp.h"
 
+#include <assert.h>
+
 typedef enum operator_specifier
 {
 	eFX,
@@ -56,15 +58,19 @@ typedef struct substitutions
 
 typedef struct context
 {
-	void*             m_user_data;
-	heap_t            m_heap;
-	term_t*           m_stack;
-	exec_flags_t      m_flags;
-	substitutions_t*  m_locals;
-	substitutions_t*  m_params;
-	module_t*         m_module;
+	void*                           m_user_data;
+	heap_t                          m_heap;
+	term_t*                         m_stack;
+	prolite_exception_handler_fn_t  m_eh;
+	prolite_stream_resolver_t*      m_resolver;
+	exec_flags_t                    m_flags;
+	substitutions_t*                m_locals;
+	substitutions_t*                m_params;
+	module_t*                       m_module;
 	
 } context_t;
+
+static_assert(offsetof(context_t,m_user_data) == 0,"structure members reorganised");
 
 extern const prolite_environment_t g_default_env;
 

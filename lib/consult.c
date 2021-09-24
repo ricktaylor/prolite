@@ -1,7 +1,6 @@
 #include "parser.h"
 #include "predicates.h"
 
-#include <assert.h>
 #include <string.h>
 
 typedef struct consult_clause
@@ -29,8 +28,8 @@ typedef struct consult_predicate
 	unsigned          m_multifile : 1;
 	unsigned          m_discontiguous : 1;
 
-	const consult_file_t* m_file;
-	consult_clause_t*     m_clauses;
+	const term_t*     m_filename;
+	consult_clause_t* m_clauses;
 		
 } consult_predicate_t;
 
@@ -54,34 +53,15 @@ typedef struct consult_context
 	unsigned                m_critical_failure : 1;
 
 	context_t*              m_context;
-	consult_file_t*         m_files;
-
-	prolite_exception_handler_fn_t* m_eh;
-	prolite_stream_resolver_t*      m_resolver;
-
+	parser_t*               m_parser;
+	consult_file_t*         m_includes;
+	consult_file_t*         m_loaded_files;
 	predicate_map_t         m_predicates;
 	consult_predicate_t*    m_current_predicate;
 	consult_initializer_t*  m_initializers;
 	consult_module_t*       m_modules;
 
 } consult_context_t;
-
-/*static int catch_exception(consult_context_t* context)
-{
-	if (context->m_context->m_flags & FLAG_THROW)
-	{
-		// TODO
-		assert(0);
-		const term_t* t = NULL;
-		(*context->m_eh)(context->m_context,t);
-
-		context->m_context->m_flags &= ~FLAG_THROW;
-		context->m_failed = 1;
-		return 1;
-	}
-
-	return 0;
-}*/
 
 static void report_exception(consult_context_t* context)
 {
@@ -92,6 +72,12 @@ static void report_exception(consult_context_t* context)
 	context->m_failed = 1;
 }
 
+static void report_parse_exception(consult_context_t* context)
+{
+	// TODO
+	report_exception(context);
+}
+
 static void report_out_of_memory_error(consult_context_t* context, const term_t* t)
 {
     // 't' just gives us debug info
@@ -100,6 +86,14 @@ static void report_out_of_memory_error(consult_context_t* context, const term_t*
 	report_exception(context);
 
 	context->m_critical_failure = 1;
+}
+
+static void report_instantiation_error(consult_context_t* context, const term_t* t)
+{
+    // 't' just gives us debug info
+
+	// TODO
+	report_exception(context);
 }
 
 static void report_permission_error(consult_context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
@@ -137,7 +131,7 @@ static consult_predicate_t* new_predicate(consult_context_t* context, const term
 		.m_dynamic = dynamic,
 		.m_multifile = multifile,
 		.m_discontiguous = discontiguous,
-		.m_file = context->m_files
+		.m_filename = context->m_includes->m_filename
 	};
 
 	predicate_base_t* pred = predicate_map_insert(&context->m_predicates,&new_pred->m_base);
@@ -241,7 +235,8 @@ static void pi_directive_inner(consult_context_t* context, const term_t* pi, voi
 				term_t* sp = context->m_context->m_stack;
 				if (a > 0)
 				{
-					string_t f = get_string(functor,NULL);
+					string_t f;
+					get_string(functor,&f,NULL);
 					context->m_context->m_stack = push_predicate(context->m_context->m_stack,a,f.m_str,f.m_len,1);
 					functor = context->m_context->m_stack;
 				}
@@ -327,6 +322,163 @@ static void assert_initializer(consult_context_t* context, const term_t* goal)
 	}
 }
 
+static void report_flag_value_error(consult_context_t* context, const term_t* flag, const term_t* value)
+{
+	// TODO
+	report_exception(context);
+}
+
+static void set_prolog_flag(consult_context_t* context, const term_t* flag)
+{
+	const term_t* value = get_next_arg(flag);
+	switch (flag->m_u64val)
+	{
+	case PACK_ATOM_BUILTIN(char_conversion):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_2('o','n'):
+			context->m_context->m_module->m_flags.char_conversion = 1;
+			break;
+
+		case PACK_ATOM_EMBED_3('o','f','f'):
+			context->m_context->m_module->m_flags.char_conversion = 0;
+			break;
+
+		default:
+			report_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	case PACK_ATOM_EMBED_5('d','e','b','u','g'):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_2('o','n'):
+			context->m_context->m_module->m_flags.debug = 1;
+			break;
+
+		case PACK_ATOM_EMBED_3('o','f','f'):
+			context->m_context->m_module->m_flags.debug = 0;
+			break;
+
+		default:
+			report_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	case PACK_ATOM_BUILTIN(unknown):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_5('e','r','r','o','r'):
+			context->m_context->m_module->m_flags.unknown = 0;
+			break;
+
+		case PACK_ATOM_EMBED_4('f','a','i','l'):
+			context->m_context->m_module->m_flags.unknown = 1;
+			break;
+
+		case PACK_ATOM_BUILTIN(warning):
+			context->m_context->m_module->m_flags.unknown = 2;
+			break;
+
+		default:
+			report_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	case PACK_ATOM_BUILTIN(double_quotes):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_5('c','h','a','r','s'):
+			context->m_context->m_module->m_flags.double_quotes = 0;
+			break;
+
+		case PACK_ATOM_EMBED_5('c','o','d','e','s'):
+			context->m_context->m_module->m_flags.double_quotes = 1;
+			break;
+
+		case PACK_ATOM_EMBED_4('a','t','o','m'):
+			context->m_context->m_module->m_flags.double_quotes = 2;
+			break;
+		
+		default:
+			report_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	case PACK_ATOM_BUILTIN(back_quotes):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_5('c','h','a','r','s'):
+			context->m_context->m_module->m_flags.double_quotes = 0;
+			break;
+
+		case PACK_ATOM_EMBED_5('c','o','d','e','s'):
+			context->m_context->m_module->m_flags.double_quotes = 1;
+			break;
+
+		case PACK_ATOM_EMBED_4('a','t','o','m'):
+			context->m_context->m_module->m_flags.double_quotes = 2;
+			break;
+		
+		default:
+			report_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	default:
+		if (get_term_type(flag) == prolite_var)
+			report_instantiation_error(context,flag);
+		else if (get_term_type(flag) != prolite_atom)
+			report_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),flag);
+		else
+			report_domain_error(context,PACK_ATOM_BUILTIN(prolog_flag),flag);
+		break;
+	}	
+}
+
+static void set_op(consult_context_t* context, const term_t* goal)
+{
+	const term_t* priority = get_first_arg(goal,NULL);
+	
+	int64_t pri = 0;
+	switch (get_term_type(priority))
+	{
+	case prolite_var:
+		return report_instantiation_error(context,priority);
+
+	case prolite_integer:
+		pri = get_integer(priority);
+		if (pri < 0 || pri > 1200)
+			return report_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),priority);
+		break;
+
+	default:
+		return report_type_error(context,PACK_ATOM_BUILTIN(integer),priority);
+	}
+	
+	const term_t* specifier = get_next_arg(priority);
+	switch (get_term_type(specifier))
+	{
+	case prolite_var:
+		return report_instantiation_error(context,specifier);
+
+	case prolite_atom:
+		break;
+
+	default:
+		return report_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),specifier);
+	}
+
+	// TODO: Something!!
+	//const term_t* op = get_next_arg(specifier);
+
+}
+
 static void include(consult_context_t* context, const term_t* t);
 static void ensure_loaded(consult_context_t* context, const term_t* t);
 
@@ -344,6 +496,14 @@ static void directive(consult_context_t* context, const term_t* term)
 
 	case PACK_COMPOUND_BUILTIN(initialization,1):
 		assert_initializer(context,get_first_arg(term,NULL));
+		break;
+
+	case PACK_COMPOUND_BUILTIN(set_prolog_flag,2):
+		set_prolog_flag(context,get_first_arg(term,NULL));
+		break;
+
+	case PACK_COMPOUND_EMBED_2(3,'o','p'):
+		set_op(context,term);
 		break;
 
 	case PACK_COMPOUND_BUILTIN(public,1):
@@ -415,7 +575,7 @@ static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 				// TODO: Some kind of discontiguous warning
 			}
 
-			if (!pred->m_multifile && !term_compare(pred->m_file->m_filename,context->m_files->m_filename))
+			if (!pred->m_multifile && !term_compare(pred->m_filename,context->m_includes->m_filename))
 			{
 				// TODO: Some kind of multifile warning
 			}
@@ -425,25 +585,65 @@ static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 	append_clause(context,context->m_current_predicate,c);
 }
 
-static prolite_stream_t* stream_resolver_open(context_t* context, struct prolite_stream_resolver* r, prolite_exception_handler_fn_t* eh, const term_t* t)
+static prolite_stream_t* stream_open(consult_context_t* context, const term_t* t)
 {
 	prolite_stream_t* s = NULL;
-	if (r && r->m_fn_open)
+	if (context->m_parser && context->m_parser->m_s && context->m_parser->m_s->m_fn_open_relative)
 	{
-		string_t str = get_string(t,NULL);
-		s = (*r->m_fn_open)(r,(prolite_context_t)context,eh,(const char*)str.m_str);
-	}		
+		string_t str;
+		get_string(t,&str,NULL);
+		s = (*context->m_parser->m_s->m_fn_open_relative)(context->m_parser->m_s,(prolite_context_t)context->m_context,context->m_context->m_eh,(const char*)str.m_str,str.m_len);
+		if (!s)
+			context->m_failed = 1;
+	}
+	else if (context->m_context->m_resolver && context->m_context->m_resolver->m_fn_open)
+	{
+		string_t str;
+		get_string(t,&str,NULL);
+		s = (*context->m_context->m_resolver->m_fn_open)(context->m_context->m_resolver,(prolite_context_t)context->m_context,context->m_context->m_eh,(const char*)str.m_str,str.m_len);
+		if (!s)
+			context->m_failed = 1;
+	}
+	else
+		report_permission_error(context,PACK_ATOM_EMBED_4('o','p','e','n'),PACK_ATOM_BUILTIN(source_sink),t);
+	
 	return s;
 }
 
 static void load_file(consult_context_t* context, const term_t* filename)
 {
-	parser_t parser = { .m_line_info.m_end_line = 1, .m_multiterm = 1 };
-	parser.m_s = stream_resolver_open(context->m_context,context->m_resolver,context->m_eh,filename);
-	if (!parser.m_s)
-		context->m_failed = 1;
-	else
+	// Check for recursive inclusion
+	for (consult_file_t* f = context->m_includes;f != NULL; f = f->m_next)
 	{
+		if (term_compare(f->m_filename,filename))
+		{
+			// TODO - Some kind of error?
+			assert(0);
+			return;
+		}			
+	}
+
+	parser_t parser = 
+	{
+		.m_multiterm = 1,
+		.m_line_info.m_start_col = 1,
+		.m_line_info.m_end_col = 1,
+		.m_line_info.m_start_line = 1,
+		.m_line_info.m_end_line = 1,
+		.m_s = stream_open(context,filename)
+	};
+
+	if (parser.m_s)
+	{
+		parser_t* prev_parser = context->m_parser;
+		context->m_parser = &parser;
+
+		consult_file_t include = { 
+			.m_filename = filename,
+			.m_next = context->m_includes
+		};
+		context->m_includes = &include;
+
 		while (!context->m_critical_failure)
 		{
 			term_t* sp = context->m_context->m_stack;
@@ -454,7 +654,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 
 			if (status == PARSE_THROW)
 			{
-				report_exception(context);
+				report_parse_exception(context);
 
 				// Reset stack
 				context->m_context->m_stack = sp;
@@ -478,6 +678,9 @@ static void load_file(consult_context_t* context, const term_t* filename)
 			}
 		}
 
+		context->m_includes = include.m_next;
+		context->m_parser = prev_parser;
+
 		(*parser.m_s->m_fn_close)(parser.m_s);
 	}
 }
@@ -490,25 +693,23 @@ static void include(consult_context_t* context, const term_t* t)
 static void ensure_loaded(consult_context_t* context, const term_t* t)
 {
 	// Check if we have attempted to load it already
-	for (consult_file_t* f = context->m_files;f != NULL; f = f->m_next)
+	for (consult_file_t* f = context->m_loaded_files;f != NULL; f = f->m_next)
 	{
 		if (term_compare(f->m_filename,t))
 			return;
 	}
 
-	consult_file_t* new_file = heap_malloc(&context->m_context->m_heap,sizeof(consult_file_t));
-	if (!new_file)
-		report_out_of_memory_error(context,t);
-	else
-	{
-		*new_file = (consult_file_t){ .m_filename = t, .m_next = context->m_files };
-		context->m_files = new_file;
+	consult_file_t* f = heap_malloc(&context->m_context->m_heap,sizeof(consult_file_t));
+	if (!f)
+		return report_out_of_memory_error(context,t);
+	
+	*f = (consult_file_t){ 
+		.m_filename = t,
+		.m_next = context->m_loaded_files
+	};
+	context->m_loaded_files = f;
 
-		load_file(context,t);
-
-		// Reset current file
-		context->m_files = new_file->m_next;
-	}
+	load_file(context,t);
 }
 
 static void* heap_allocator_malloc(void* param, size_t bytes)
@@ -529,22 +730,19 @@ static void heap_allocator_free(void* param, void* ptr)
 	}
 }
 
-static int consult(context_t* context, const term_t* filename, prolite_stream_resolver_t* resolver, prolite_exception_handler_fn_t* eh)
+static int consult(context_t* context, const term_t* filename)
 {
 	size_t heap_start = heap_top(&context->m_heap);
 
 	consult_context_t cc =
 	{
 		.m_context = context,
-		.m_eh = eh,
-		.m_resolver = resolver,
 		.m_predicates.m_allocator = &(prolite_allocator_t){
 			.m_fn_malloc = &heap_allocator_malloc,
 			.m_fn_free = &heap_allocator_free,
 			.m_param = &context->m_heap
 		},
-		.m_modules = &(consult_module_t){ .m_module = *context->m_module },
-		.m_files = &(consult_file_t){ .m_filename = filename }
+		.m_modules = &(consult_module_t){ .m_module = *context->m_module }
 	};
 
 	load_file(&cc,filename);
@@ -573,8 +771,8 @@ PROLITE_EXPORT prolite_context_t prolite_context_load(void* user_data, const pro
 	context_t* context = context_new(user_data,env);
 	if (context)
 	{
-		term_t* filename = push_string(context->m_stack,prolite_atom,(const unsigned char*)source,strlen(source),1);
-		if (consult(context,filename,env->m_resolver,env->m_handler))
+		term_t* filename = context->m_stack = push_string(context->m_stack,prolite_atom,(const unsigned char*)source,strlen(source),1);
+		if (consult(context,filename))
 		{
 			context_delete(context);
 			context = NULL;

@@ -21,7 +21,8 @@ typedef struct line_info
 typedef struct parser
 {
 	prolite_stream_t* m_s;
-	token_t           m_buffer;
+	unsigned char     m_buffer[4];
+	unsigned int      m_buffer_len;
 	line_info_t       m_line_info;
 	jmp_buf           m_jmp;
 	unsigned          m_eof : 1;
