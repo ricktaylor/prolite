@@ -18,10 +18,10 @@ typedef struct btree
 	prolite_allocator_t* m_allocator;
 } btree_t;
 
-void* btree_lookup(btree_t* bt, uint64_t key);
+void* btree_lookup(const btree_t* bt, uint64_t key);
 void* btree_insert(btree_t* bt, uint64_t key, void* val);
 void* btree_remove(btree_t* bt, uint64_t key);
-void btree_enum(btree_t* bt, void (*callback)(void* param, uint64_t key, void* val), void* param);
+void btree_enum(const btree_t* bt, void (*callback)(void* param, uint64_t key, void* val), void* param);
 void btree_clear(btree_t* bt, void (*callback)(void* param, uint64_t key, void* val), void* param);
 
 #endif // BTREE_H_

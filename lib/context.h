@@ -1,7 +1,7 @@
 #ifndef CONTEXT_H_
 #define CONTEXT_H_
 
-#include "heap.h"
+#include "btree.h"
 #include "types.h"
 #include "setjmp.h"
 
@@ -20,25 +20,31 @@ typedef enum operator_specifier
 
 typedef struct operator_defn
 {
-	struct operator_defn* m_prev;
 	operator_specifier_t  m_specifier;
 	unsigned int          m_precedence;
 } operator_t;
 
+typedef btree_t operator_table_t;
+
+typedef struct prolog_flags
+{
+	unsigned char_conversion : 1;
+	unsigned double_quotes : 2;
+	unsigned back_quotes : 2;
+	unsigned debug : 1;
+	unsigned unknown : 2;
+	unsigned colon_sets_calling_context : 1;
+} prolog_flags_t;
+
+extern const prolog_flags_t g_default_prolog_flags;
+
 typedef struct module
 {
-	struct module_flags
-	{
-		unsigned char_conversion : 1;
-		unsigned double_quotes : 2;
-		unsigned back_quotes : 2;
-		unsigned debug : 1;
-		unsigned unknown : 2;
-		unsigned colon_sets_calling_context : 1;
-	} m_flags;
+	prolog_flags_t   m_flags;
+	operator_table_t m_operators;
+	btree_t          m_char_conversion;
 
-	operator_t*   m_operators;
-	const term_t* m_name;
+	const term_t*  m_name;
 
 } module_t;
 

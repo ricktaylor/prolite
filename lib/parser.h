@@ -20,6 +20,7 @@ typedef struct line_info
 
 typedef struct parser
 {
+	context_t*        m_context;
 	prolite_stream_t* m_s;
 	unsigned char     m_buffer[4];
 	unsigned int      m_buffer_len;
@@ -27,6 +28,10 @@ typedef struct parser
 	jmp_buf           m_jmp;
 	unsigned          m_eof : 1;
 	unsigned          m_multiterm : 1;
+	prolog_flags_t    m_flags;
+	
+	const operator_table_t* m_operators;
+	const btree_t*          m_char_conversion;
 } parser_t;
 
 typedef enum parse_status
@@ -36,6 +41,6 @@ typedef enum parse_status
 	PARSE_THROW
 } parse_status_t;
 
-parse_status_t read_term(context_t* context, parser_t* parser);
+parse_status_t read_term(parser_t* parser);
 
 #endif // PARSER_H_

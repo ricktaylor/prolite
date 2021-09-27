@@ -54,6 +54,7 @@ typedef struct consult_context
 
 	context_t*              m_context;
 	parser_t*               m_parser;
+	operator_table_t        m_operators;
 	consult_file_t*         m_includes;
 	consult_file_t*         m_loaded_files;
 	predicate_map_t         m_predicates;
@@ -62,6 +63,8 @@ typedef struct consult_context
 	consult_module_t*       m_modules;
 
 } consult_context_t;
+
+int update_operator(operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name);
 
 static void report_exception(consult_context_t* context)
 {
@@ -441,42 +444,113 @@ static void set_prolog_flag(consult_context_t* context, const term_t* flag)
 	}	
 }
 
+static void set_op_inner(consult_context_t* context, int64_t precendence, operator_specifier_t specifier, const term_t* op)
+{
+	if (get_term_type(op) != prolite_atom)
+		report_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),op);
+	else if (op->m_u64val == PACK_ATOM_EMBED_1(','))
+		report_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(operator),op);
+	else
+	{
+		int i = update_operator(&context->m_operators,precendence,specifier,op);
+		if (i == 0)
+			report_permission_error(context,PACK_ATOM_BUILTIN(create),PACK_ATOM_BUILTIN(operator),op);
+		else if (i == -1)
+			report_out_of_memory_error(context,op);
+	}
+}
+
 static void set_op(consult_context_t* context, const term_t* goal)
 {
-	const term_t* priority = get_first_arg(goal,NULL);
+	const term_t* arg = get_first_arg(goal,NULL);
 	
-	int64_t pri = 0;
-	switch (get_term_type(priority))
+	int64_t precendence = 0;
+	switch (get_term_type(arg))
 	{
 	case prolite_var:
-		return report_instantiation_error(context,priority);
+		return report_instantiation_error(context,arg);
 
 	case prolite_integer:
-		pri = get_integer(priority);
-		if (pri < 0 || pri > 1200)
-			return report_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),priority);
+		precendence = get_integer(arg);
+		if (precendence < 0 || precendence > 1200)
+			return report_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),arg);
 		break;
 
 	default:
-		return report_type_error(context,PACK_ATOM_BUILTIN(integer),priority);
+		return report_type_error(context,PACK_ATOM_BUILTIN(integer),arg);
 	}
 	
-	const term_t* specifier = get_next_arg(priority);
-	switch (get_term_type(specifier))
+	arg = get_next_arg(arg);
+	operator_specifier_t specifier;
+	switch (get_term_type(arg))
 	{
 	case prolite_var:
-		return report_instantiation_error(context,specifier);
+		return report_instantiation_error(context,arg);
 
 	case prolite_atom:
+		switch (arg->m_u64val)
+		{
+		case PACK_ATOM_EMBED_2('x','f'):
+			specifier = eXF;
+			break;
+
+		case PACK_ATOM_EMBED_2('y','f'):
+			specifier = eYF;
+			break;
+
+		case PACK_ATOM_EMBED_2('f','x'):
+			specifier = eFX;
+			break;
+
+		case PACK_ATOM_EMBED_2('f','y'):
+			specifier = eFY;
+			break;
+
+		case PACK_ATOM_EMBED_3('x','f','x'):
+			specifier = eXFX;
+			break;
+
+		case PACK_ATOM_EMBED_3('x','f','y'):
+			specifier = eXFY;
+			break;
+
+		case PACK_ATOM_EMBED_3('y','f','x'):
+			specifier = eYFX;
+			break;
+
+		default:
+			return report_domain_error(context,PACK_ATOM_BUILTIN(operator_specifier),arg);
+		}
 		break;
 
 	default:
-		return report_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),specifier);
+		return report_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),arg);
 	}
 
-	// TODO: Something!!
-	//const term_t* op = get_next_arg(specifier);
+	arg = get_next_arg(arg);
+	switch (get_term_type(arg))
+	{
+	case prolite_var:
+		return report_instantiation_error(context,arg);
 
+	case prolite_atom:
+		return set_op_inner(context,precendence,specifier,arg);
+
+	case prolite_compound:
+		while (arg->m_u64val == PACK_COMPOUND_EMBED_1(2,'.'))
+		{
+			arg = get_first_arg(arg,NULL);
+			set_op_inner(context,precendence,specifier,arg);
+			arg = get_next_arg(arg);
+		}
+
+		if (arg->m_u64val != PACK_ATOM_EMBED_2('[',']'))
+			set_op_inner(context,precendence,specifier,arg);
+		break;
+
+	default:
+		return report_type_error(context,PACK_ATOM_EMBED_4('l','i','s','t'),arg);
+	}
 }
 
 static void include(consult_context_t* context, const term_t* t);
@@ -504,6 +578,10 @@ static void directive(consult_context_t* context, const term_t* term)
 
 	case PACK_COMPOUND_EMBED_2(3,'o','p'):
 		set_op(context,term);
+		break;
+
+	case PACK_COMPOUND_BUILTIN(char_conversion,2):
+		// TODO
 		break;
 
 	case PACK_COMPOUND_BUILTIN(public,1):
@@ -625,6 +703,9 @@ static void load_file(consult_context_t* context, const term_t* filename)
 
 	parser_t parser = 
 	{
+		.m_context = context->m_context,
+		.m_flags = context->m_parser->m_flags,
+		.m_operators = context->m_parser->m_operators,
 		.m_multiterm = 1,
 		.m_line_info.m_start_col = 1,
 		.m_line_info.m_end_col = 1,
@@ -648,7 +729,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 		{
 			term_t* sp = context->m_context->m_stack;
 
-			parse_status_t status = read_term(context->m_context,&parser);
+			parse_status_t status = read_term(&parser);
 			if (status == PARSE_EOF)
 				break;
 
@@ -699,6 +780,7 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 			return;
 	}
 
+	// Remember that we have loaded the file
 	consult_file_t* f = heap_malloc(&context->m_context->m_heap,sizeof(consult_file_t));
 	if (!f)
 		return report_out_of_memory_error(context,t);
@@ -709,41 +791,37 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	};
 	context->m_loaded_files = f;
 
-	load_file(context,t);
-}
+	// Stash the parse context, as this is a different "prolog text" being prepared for execution
+	prolog_flags_t old_flags = context->m_parser->m_flags;
+	context->m_parser->m_flags = g_default_prolog_flags;
 
-static void* heap_allocator_malloc(void* param, size_t bytes)
-{
-	uint64_t* p = heap_malloc((heap_t*)param,bytes + sizeof(uint64_t));
-	if (p)
-		*p++ = bytes;
+	operator_table_t old_ops = context->m_operators;
+	context->m_operators.m_root = NULL;
+	context->m_parser->m_operators = &context->m_operators;
 	
-	return p;
-}
+	load_file(context,t);
 
-static void heap_allocator_free(void* param, void* ptr)
-{
-	if (ptr)
-	{
-		size_t bytes = *(((uint64_t*)ptr) - 1);
-		heap_free((heap_t*)param,ptr,bytes);
-	}
+	context->m_operators = old_ops;
+	context->m_parser->m_operators = &context->m_operators;
+	context->m_parser->m_flags = old_flags;	
 }
 
 static int consult(context_t* context, const term_t* filename)
 {
 	size_t heap_start = heap_top(&context->m_heap);
 
+	prolite_allocator_t local_allocator = heap_allocator(&context->m_heap);
+
 	consult_context_t cc =
 	{
 		.m_context = context,
-		.m_predicates.m_allocator = &(prolite_allocator_t){
-			.m_fn_malloc = &heap_allocator_malloc,
-			.m_fn_free = &heap_allocator_free,
-			.m_param = &context->m_heap
-		},
-		.m_modules = &(consult_module_t){ .m_module = *context->m_module }
+		.m_predicates.m_allocator = &local_allocator,
+		.m_operators.m_allocator = &local_allocator,
+		.m_parser = &(parser_t){
+			.m_flags = g_default_prolog_flags
+		}
 	};
+	cc.m_parser->m_operators = &cc.m_operators;
 
 	load_file(&cc,filename);
 	if (!cc.m_failed)

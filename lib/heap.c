@@ -158,3 +158,30 @@ void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len)
 
 	return ptr;
 }
+
+static void* heap_allocator_malloc(void* param, size_t bytes)
+{
+	uint64_t* p = heap_malloc((heap_t*)param,bytes + sizeof(uint64_t));
+	if (p)
+		*p++ = bytes;
+	
+	return p;
+}
+
+static void heap_allocator_free(void* param, void* ptr)
+{
+	if (ptr)
+	{
+		size_t bytes = *(((uint64_t*)ptr) - 1);
+		heap_free((heap_t*)param,ptr,bytes);
+	}
+}
+
+prolite_allocator_t heap_allocator(heap_t* h)
+{
+	return (prolite_allocator_t){
+		.m_fn_malloc = &heap_allocator_malloc,
+		.m_fn_free = &heap_allocator_free,
+		.m_param = h
+	};
+}

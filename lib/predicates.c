@@ -2,6 +2,7 @@
 #include "fnv1a.h"
 
 #include <string.h>
+#include <assert.h>
 
 static uint64_t predicate_key(const term_t* functor, int* is_sub_tree)
 {
@@ -133,6 +134,24 @@ int predicate_is_builtin(const term_t* functor)
 
 	return 0;
 }
+
+#include "context.h"
+
+typedef struct clause
+{
+	size_t              m_locals_count;
+	const term_t*       m_head;
+	const term_t*       m_body;
+
+} clause_t;
+
+typedef struct predicate
+{
+	predicate_base_t m_base;
+	unsigned         m_dynamic : 1;
+	size_t           m_clause_count;
+	clause_t*        m_clauses;
+} predicate_t;
 
 /*static int assert_is_callable(context_t* context, const term_t* goal)
 {

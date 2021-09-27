@@ -62,4 +62,6 @@ void heap_free(heap_t* heap, void* ptr, size_t len);
 
 void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len);
 
+prolite_allocator_t heap_allocator(heap_t* h);
+
 #endif /* HEAP_H_ */

@@ -21,6 +21,7 @@ libprolite_la_SOURCES = \
 	lib/context.c \
 	lib/compile.c \
 	lib/predicates.c \
+	lib/operators.c \
 	lib/consult.c \
 	lib/exceptions.c
 

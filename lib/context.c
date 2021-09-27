@@ -11,6 +11,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+const prolog_flags_t g_default_prolog_flags =
+{
+	.char_conversion = 1,
+	.back_quotes = 1
+};
+
 uint32_t convert_char(context_t* context, uint32_t in_char)
 {
 	/* TODO */
@@ -104,254 +110,6 @@ const term_t* deref_local_var(context_t* context, const term_t* t)
 	return t;
 }
 
-static operator_t* find_op(context_t* context, const unsigned char* name, size_t name_len)
-{
-	static operator_t s_builtins[] =
-	{
-		/* 0 */ { NULL, eXFX, 1200 },
-		/* 1 */ { NULL, eXFY, 1100 },
-		/* 2 */ { NULL, eXFY, 1050 },
-		/* 3 */ { NULL, eXFY, 1000 },
-		/* 4 */ { NULL, eXFX, 700 },
-		/* 5 */ { NULL, eXFY, 600 },
-		/* 6 */ { NULL, eYFX, 500 },
-		/* 7 */ { NULL, eYFX, 400 },
-		/* 8 */ { NULL, eXFX, 200 },
-		/* 9 */ { NULL, eXFY, 200 },
-	};
-
-	if (context->m_module->m_operators)
-	{
-		// TODO: Use the module table
-		assert(0);
-	}
-
-	switch (name_len)
-	{
-	case 1:
-		switch (name[0])
-		{
-		case ';':
-			return &s_builtins[1];
-
-		case ',':
-			return &s_builtins[3];
-
-		case '=':
-		case '<':
-		case '>':
-			return &s_builtins[4];
-
-		case ':':
-			return &s_builtins[5];
-
-		case '+':
-		case '-':
-			return &s_builtins[6];
-
-		case '*':
-		case '/':
-			return &s_builtins[7];
-	
-		case '^':
-			return &s_builtins[9];
-
-		default:
-			break;
-		}
-		break;
-
-	case 2:
-		switch (name[0])
-		{
-		case ':':
-			if (name[1] == '-')
-				return &s_builtins[0];
-			break;
-
-		case '-':
-			if (name[1] == '>')
-				return &s_builtins[2];
-			break;
-
-		case '\\':
-			if (name[1] == '=')
-				return &s_builtins[4];
-			if (name[1] == '/')
-				return &s_builtins[6];
-			break;
-
-		case '=':
-			if (name[1] == '=' || name[1] == '<')
-				return &s_builtins[4];
-			break;
-
-		case '@':
-			if (name[1] == '<' || name[1] == '>')
-				return &s_builtins[4];
-			break;
-
-		case 'i':
-			if (name[1] == 's')
-				return &s_builtins[4];
-			break;
-
-		case '>':
-			if (name[1] == '=')
-				return &s_builtins[4];
-			if (name[1] == '>')
-				return &s_builtins[7];
-			break;
-
-		case '/':
-			if (name[1] == '\\')
-				return &s_builtins[6];
-			if (name[1] == '/')
-				return &s_builtins[7];
-			break;
-
-		case '<':
-			if (name[1] == '<')
-				return &s_builtins[7];
-			break;
-
-		case '*':
-			if (name[1] == '*')
-				return &s_builtins[8];
-			break;
-
-		default:
-			break;
-		}
-		break;
-
-	case 3:
-		switch (name[0])
-		{
-		case '-':
-			if (name[1] == '-' && name[2] == '>')
-				return &s_builtins[0];
-			break;
-
-		case '\\':
-			if (name[1] == '=' && name[2] == '=')
-				return &s_builtins[4];
-			break;
-
-		case '@':
-			if ((name[1] == '=' && name[2] == '<') ||
-				(name[1] == '>' && name[2] == '='))
-					return &s_builtins[4];
-			break;
-
-		case '=':
-			if ((name[1] == '.' && name[2] == '.') ||
-				(name[1] == ':' && name[2] == '=') ||
-				(name[1] == '\\' && name[2] == '='))
-					return &s_builtins[4];
-			break;
-
-		case 'r':
-			if (name[1] == 'e' && name[2] == 'm')
-				return &s_builtins[7];
-			break;
-
-		case 'm':
-			if (name[1] == 'o' && name[2] == 'd')
-				return &s_builtins[7];
-			break;
-
-		case 'd':
-			if (name[1] == 'i' && name[2] == 'v')
-				return &s_builtins[7];
-			break;
-
-		default:
-			break;
-		}
-		break;
-
-	default:
-		break;
-	}
-
-	return NULL;
-}
-
-static operator_t* find_prefix_op(context_t* context, const unsigned char* name, size_t name_len)
-{
-	static operator_t s_builtins[] =
-	{
-		/* 0 */ { NULL, eFX, 1200 },
-		/* 1 */ { NULL, eFY, 900 },
-		/* 2 */ { NULL, eFY, 200 },
-	};
-
-	if (context->m_module->m_operators)
-	{
-		// TODO: Use the module table
-		assert(0);
-	}
-
-	switch (name_len)
-	{
-	case 1:
-		switch (name[0])
-		{
-		case '-':
-		case '\\':
-		case '+':
-			return &s_builtins[2];
-
-		default:
-			break;
-		}
-		break;
-
-	case 2:
-		switch (name[0])
-		{
-		case ':':
-		case '?':
-			if (name[1] == '-')
-				return &s_builtins[0];
-			break;
-
-		case '\\':
-			if (name[1] == '+')
-				return &s_builtins[1];
-			break;
-
-		default:
-			break;
-		}
-		break;
-
-	default:
-		break;
-	}
-
-	return NULL;
-}
-
-/* Try to find a infix/postfix op, otherwise find prefix */
-operator_t* lookup_op(context_t* context, const unsigned char* name, size_t name_len)
-{
-	operator_t* op = find_op(context,name,name_len);
-	if (!op)
-		op = find_prefix_op(context,name,name_len);
-	return op;
-}
-
-/* Try to find a prefix op, otherwise find infix/suffix */
-operator_t* lookup_prefix_op(context_t* context, const unsigned char* name, size_t name_len)
-{
-	operator_t* op = find_prefix_op(context,name,name_len);
-	if (!op)
-		op = find_op(context,name,name_len);
-	return op;
-}
-
 void builtin_set_prolog_flag(context_t* context)
 {
 }
@@ -380,16 +138,11 @@ module_t* module_new(context_t* context, const term_t* name)
 	module_t* module = heap_malloc(&context->m_heap,sizeof(module_t));
 	if (module)
 	{
-		memset(module,0,sizeof(module_t));
-		module->m_flags.char_conversion = 1;
-		module->m_flags.back_quotes = 1;
+		*module = (module_t){
+			.m_name = name,
+			.m_flags = g_default_prolog_flags
+		};
 	}
-
-	/* &(consult_module_t){
-				.m_module.m_name = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('u','s','e','r') },
-				.m_module.m_flags.char_conversion = 1,
-				.m_module.m_flags.back_quotes = 1
-			}, */
 
 	return module;
 }

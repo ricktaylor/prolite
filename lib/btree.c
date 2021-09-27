@@ -42,7 +42,7 @@ static size_t binary_search(struct btree_page* page, uint64_t key)
 	return l;
 }
 
-void* btree_lookup(btree_t* bt, uint64_t key)
+void* btree_lookup(const btree_t* bt, uint64_t key)
 {
 	if (!bt || !bt->m_root)
 		return NULL;
@@ -452,7 +452,7 @@ void btree_clear(btree_t* bt, void (*callback)(void* param, uint64_t key, void* 
 	}
 }
 
-static void page_enum(btree_t* bt, struct btree_page* page, void (*callback)(void* param, uint64_t key, void* val), void* param)
+static void page_enum(const btree_t* bt, struct btree_page* page, void (*callback)(void* param, uint64_t key, void* val), void* param)
 {
 	if (page->m_internal)
 	{
@@ -468,7 +468,7 @@ static void page_enum(btree_t* bt, struct btree_page* page, void (*callback)(voi
 	}
 }
 
-void btree_enum(btree_t* bt, void (*callback)(void* param, uint64_t key, void* val), void* param)
+void btree_enum(const btree_t* bt, void (*callback)(void* param, uint64_t key, void* val), void* param)
 {
 	assert(callback);
 
