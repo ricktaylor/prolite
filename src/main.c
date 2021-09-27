@@ -25,6 +25,7 @@ int main(int argc, char* argv[])
 	prolite_environment_t env =
 	{
 		.m_resolver = fs_resolver_new(),
+		.m_stack_size = 0x1000000
 	};
 	if (env.m_resolver)
 	{
