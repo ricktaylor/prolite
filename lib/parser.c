@@ -509,8 +509,8 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 					break;
 
 				case eaShortName:
-					*state = eStart;
 					token_append_char(parser,token,(unsigned char)c);
+					*state = eStart;
 					return tokName;
 
 				case eaSingleComment:
@@ -659,10 +659,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 		if (c == CHAR_NEED_MORE)
 			return tokNeedMore;
 
-		if (c == CHAR_EOF)
-			return tokEnd;
-
-		if (c == ' ' || c == '\n' || c == '\t')
+		if (c == CHAR_EOF || c == ' ' || c == '\n' || c == '\t')
 		{
 			*state = eLayout;
 			return tokEnd;
@@ -694,11 +691,17 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 				return tokNeedMore;
 
 			case CHAR_EOF:
-				*state = eStart;
 				if (*state == eSingleQuote)
+				{
+					*state = eStart;
 					return tokMissingSQ;
-				else if (*state == eDoubleQuote)
+				}		
+				if (*state == eDoubleQuote)
+				{
+					*state = eStart;
 					return tokMissingDQ;
+				}
+				*state = eStart;
 				return tokMissingBQ;
 
 			case CHAR_ILLEGAL_SEQ:
@@ -783,6 +786,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 						parser->m_line_info.m_end_line = peek_line;
 						parser->m_line_info.m_end_col = peek_col;
 						*p = peek;
+						*state = eStart;
 						return tokName;
 					}
 
@@ -808,6 +812,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 						parser->m_line_info.m_end_line = peek_line;
 						parser->m_line_info.m_end_col = peek_col;
 						*p = peek;
+						*state = eStart;
 						return tokDQL;
 					}
 
@@ -833,6 +838,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 						parser->m_line_info.m_end_line = peek_line;
 						parser->m_line_info.m_end_col = peek_col;
 						*p = peek;
+						*state = eStart;
 						return tokBackQuote;
 					}
 
@@ -970,8 +976,11 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 			}
 		}
 
-	case eZero:
 	zero:
+		peek = *p;
+		peek_col = parser->m_line_info.m_end_col;
+
+	case eZero:
 		c = token_get_char_conv(parser,&peek,pe,parser->m_eof,&peek_line,&peek_col);
 		if (c == CHAR_NEED_MORE)
 			return tokNeedMore;
@@ -995,6 +1004,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 					parser->m_line_info.m_end_line = peek_line;
 					parser->m_line_info.m_end_col = peek_col;
 					*p = peek;
+					*state = eStart;
 					return tokCharCode;
 				}
 			}
@@ -1009,6 +1019,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 					parser->m_line_info.m_end_line = peek_line;
 					parser->m_line_info.m_end_col = peek_col;
 					*p = peek;
+					*state = eStart;
 					return tokCharCode;
 				}
 				else if (c == 'o')
@@ -1045,6 +1056,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 				parser->m_line_info.m_end_line = peek_line;
 				parser->m_line_info.m_end_col = peek_col;
 				*p = peek;
+				*state = eStart;
 				return tokCharCode;
 			}
 		}
@@ -1454,9 +1466,7 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 	}
 	else if (*next_type == tokCharCode)
 	{
-		size_t i;
 		uint32_t v = next->m_str[0];
-
 		if ((next->m_str[0] & 0xE0) == 0xC0)
 			v = (next->m_str[0] & 0x1F);
 		else if ((next->m_str[0] & 0xF0) == 0xE0)
@@ -1464,7 +1474,7 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 		else
 			v = (next->m_str[0] & 0x7);
 
-		for (i=1;i<next->m_len;++i)
+		for (size_t i=1; i<next->m_len; ++i)
 		{
 			v = (v << 6) | (next->m_str[i] & 0x3F);
 		}
@@ -1475,8 +1485,7 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 	else
 	{
 		uint64_t v = 0;
-		size_t i;
-		for (i=0;i<next->m_len;++i)
+		for (size_t i=0; i<next->m_len; ++i)
 		{
 			if (*next_type == tokInt)
 				v = (v * 10) + (next->m_str[i] - '0');
@@ -1667,22 +1676,26 @@ static ast_node_t* parse_name(parser_t* parser, unsigned int* max_prec, token_ty
 	node->m_str_len = next->m_len;
 	token_reset(next);
 
-	*next_type = token_next(parser,next);
-	*max_prec = 0;
-
+	*next_type = token_next(parser,next);	
 	if (*next_type == tokOpenCt)
+	{
+		*max_prec = 0;
 		return parse_compound_term(parser,node,next_type,next,ast_err);
+	}
 
 	if (node->m_str_len == 1 && node->m_str[0] == '-')
 	{
 		if (*next_type >= tokInt && *next_type <= tokFloat)
+		{
+			*max_prec = 0;
 			return parse_negative(parser,node,next_type,next,ast_err);
+		}
 	}
 
-	const operator_t* op = lookup_prefix_op(parser->m_context,parser->m_operators,node->m_str,node->m_str_len);
-	if (op)
+	if (*next_type != tokClose && *next_type != tokComma)
 	{
-		if (op->m_precedence > *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
+		const operator_t* op = lookup_prefix_op(parser->m_context,parser->m_operators,node->m_str,node->m_str_len);
+		if (op && op->m_precedence <= *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
 		{
 			node = atom_to_compound(parser,node,ast_err);
 			node->m_arity = 1;
@@ -1693,13 +1706,9 @@ static ast_node_t* parse_name(parser_t* parser, unsigned int* max_prec, token_ty
 			*max_prec = op->m_precedence;
 			return node;
 		}
-
-		if (*max_prec < 1201)
-			return syntax_error(AST_SYNTAX_ERR_INVALID_ARG,ast_err);
-
-		*max_prec = 1201;
 	}
 
+	*max_prec = 0;
 	return node;
 }
 
@@ -1984,11 +1993,10 @@ static term_t* emit_ast_string(term_t* stack, prolite_type_t type, ast_node_t* n
 
 static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 {
-	size_t i;
 	switch (node->m_type)
 	{
 	case AST_TYPE_COMPOUND:
-		for (i = node->m_arity; i--;)
+		for (size_t i = node->m_arity; i--;)
 			stack = emit_ast_node(stack,node->m_params[i]);
 
 		// TODO: We could de-duplicate here...
@@ -2182,8 +2190,7 @@ static parse_status_t collate_var_info(parser_t* parser, var_info_t** varinfo, s
 	}
 	else if (node->m_type == AST_TYPE_COMPOUND)
 	{
-		size_t i;
-		for (i = 0; !status && i < node->m_arity; ++i)
+		for (size_t i = 0; status == PARSE_OK && i < node->m_arity; ++i)
 			status = collate_var_info(parser,varinfo,var_count,node->m_params[i]);
 	}
 

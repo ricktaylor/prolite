@@ -22,14 +22,14 @@ typedef struct parser
 {
 	context_t*        m_context;
 	prolite_stream_t* m_s;
-	unsigned char     m_buffer[4];
+	unsigned char     m_buffer[128];
 	unsigned int      m_buffer_len;
 	line_info_t       m_line_info;
 	jmp_buf           m_jmp;
 	unsigned          m_eof : 1;
 	unsigned          m_multiterm : 1;
 	prolog_flags_t    m_flags;
-	
+
 	const operator_table_t* m_operators;
 	const btree_t*          m_char_conversion;
 } parser_t;
