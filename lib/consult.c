@@ -6,9 +6,9 @@
 typedef struct consult_clause
 {
 	struct consult_clause* m_next;
-	const term_t*          m_term;
+	const term_t*          m_head;
+	const term_t*          m_body;
 	size_t                 m_varcount;
-	const term_t*          m_varinfo;
 
 } consult_clause_t;
 
@@ -297,7 +297,7 @@ static void append_clause(consult_context_t* context, consult_predicate_t* pred,
 
 	consult_clause_t* new_clause = heap_malloc(&context->m_context->m_heap,sizeof(consult_clause_t));
 	if (!new_clause)
-		return report_out_of_memory_error(context,c->m_term);
+		return report_out_of_memory_error(context,c->m_head);
 
 	*new_clause = *c;
 	*tail = new_clause;
@@ -632,20 +632,16 @@ static void directive(consult_context_t* context, const term_t* term)
 
 static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 {
-	const term_t* functor = c->m_term;
-	if (c->m_term->m_u64val == PACK_COMPOUND_EMBED_2(2,':','-'))
-		functor = get_first_arg(functor,NULL);
-	
 	int is_current_pred = 0;
 	if (context->m_current_predicate)
-		is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_functor,functor);
+		is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_functor,c->m_head);
 	
 	if (!is_current_pred)
 	{
 		int is_new_pred = 0;
-		consult_predicate_t* pred = new_predicate(context,functor,0,0,0,0,&is_new_pred);
+		consult_predicate_t* pred = new_predicate(context,c->m_head,0,0,0,0,&is_new_pred);
 		if (!pred)
-			return report_out_of_memory_error(context,c->m_term);
+			return report_out_of_memory_error(context,c->m_head);
 
 		if (!is_new_pred)
 		{
@@ -747,19 +743,23 @@ static void load_file(consult_context_t* context, const term_t* filename)
 			else
 			{
 				// Unpack clause term
-				consult_clause_t clause = { .m_term = context->m_context->m_stack };
-				clause.m_varcount = (clause.m_term++)->m_u64val;
-				if (clause.m_varcount)
-				{
-					clause.m_varinfo = clause.m_term;
-					for (size_t i = 0; i < clause.m_varcount; ++i)
-						clause.m_term = get_next_arg(clause.m_term) + 1;
-				}
-			
-				if (clause.m_term->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
-					directive(context,get_first_arg(clause.m_term,NULL));
+				consult_clause_t clause = { .m_head = context->m_context->m_stack };
+				clause.m_varcount = (clause.m_head++)->m_u64val;
+				for (size_t i = 0; i < clause.m_varcount; ++i)
+					clause.m_head = get_next_arg(clause.m_head) + 1;
+							
+				if (clause.m_head->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
+					directive(context,get_first_arg(clause.m_head,NULL));
 				else
+				{
+					if (clause.m_head->m_u64val == PACK_COMPOUND_EMBED_2(2,':','-'))
+					{
+						clause.m_head = get_first_arg(clause.m_head,NULL);
+						clause.m_body = get_next_arg(clause.m_head);
+					}
+					
 					assert_clause(context,&clause);
+				}
 			}
 		}
 
