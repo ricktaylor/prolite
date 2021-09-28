@@ -48,6 +48,7 @@ dis7_4(dis1).
 dis7_4_1(disa1).
 
 mf7_4(mf2).
+mf7_4_1(mf2).
 
 A and B :- A, B.
 

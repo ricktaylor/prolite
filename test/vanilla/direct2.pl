@@ -18,3 +18,4 @@
 :- multifile(mf7_4/1).
 
 mf7_4(mf1).
+mf7_4_1(mf2).  % should not compile.
