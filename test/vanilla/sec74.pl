@@ -36,7 +36,7 @@
 :- discontiguous(noclauses/1).   % test to see if it exists.
 :- op(25, xfx, and).
 :- char_conversion('&', '%').
-:- initialization(go7_4).
+:- initialization(go_74).
 :- include('include.pl').  % contains the predicate included(here).
 :- ensure_loaded(utils_so).       % error_test/2
 :- set_prolog_flag(unknown, error).

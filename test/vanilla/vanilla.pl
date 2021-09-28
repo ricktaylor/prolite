@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  haness for the validation
+%  harness for the validation
 %  suite for calypso
 %
 %  Jonathan Hodgson.

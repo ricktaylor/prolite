@@ -36,7 +36,8 @@ typedef struct consult_predicate
 typedef struct consult_initializer
 {
 	struct consult_initializer* m_next;
-	const term_t*               m_term;
+	const term_t*               m_goal;
+	size_t                      m_varcount;
 	
 } consult_initializer_t;
 
@@ -65,6 +66,7 @@ typedef struct consult_context
 } consult_context_t;
 
 int update_operator(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name);
+void compile_term(context_t* context, const term_t* goal, size_t var_count);
 
 static void report_exception(consult_context_t* context)
 {
@@ -303,7 +305,7 @@ static void append_clause(consult_context_t* context, consult_predicate_t* pred,
 	*tail = new_clause;
 }
 
-static void assert_initializer(consult_context_t* context, const term_t* goal)
+static void assert_initializer(consult_context_t* context, const term_t* goal, size_t varcount)
 {
 	// Initializer clears the current predicate
 	context->m_current_predicate = NULL;
@@ -320,7 +322,7 @@ static void assert_initializer(consult_context_t* context, const term_t* goal)
 		if (!new_init)
 			return report_out_of_memory_error(context,goal);
 
-		*new_init = (consult_initializer_t){ .m_term = goal };
+		*new_init = (consult_initializer_t){ .m_goal = goal, .m_varcount = varcount };
 		*tail = new_init;
 	}
 }
@@ -556,7 +558,7 @@ static void set_op(consult_context_t* context, const term_t* goal)
 static void include(consult_context_t* context, const term_t* t);
 static void ensure_loaded(consult_context_t* context, const term_t* t);
 
-static void directive(consult_context_t* context, const term_t* term)
+static void directive(consult_context_t* context, const term_t* term, size_t varcount)
 {
 	switch (term->m_u64val)
 	{
@@ -569,7 +571,7 @@ static void directive(consult_context_t* context, const term_t* term)
 		break;
 
 	case PACK_COMPOUND_BUILTIN(initialization,1):
-		assert_initializer(context,get_first_arg(term,NULL));
+		assert_initializer(context,get_first_arg(term,NULL),varcount);
 		break;
 
 	case PACK_COMPOUND_BUILTIN(set_prolog_flag,2):
@@ -749,7 +751,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 					clause.m_head = get_next_arg(clause.m_head) + 1;
 							
 				if (clause.m_head->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
-					directive(context,get_first_arg(clause.m_head,NULL));
+					directive(context,get_first_arg(clause.m_head,NULL),clause.m_varcount);
 				else
 				{
 					if (clause.m_head->m_u64val == PACK_COMPOUND_EMBED_2(2,':','-'))
@@ -831,6 +833,11 @@ static int consult(context_t* context, const term_t* filename)
 	if (!cc.m_failed)
 	{
 		// TODO: We now have a map of predicates...
+
+		for (consult_initializer_t* init = cc.m_initializers; init ; init = init->m_next)
+		{
+			compile_term(context,init->m_goal,init->m_varcount);
+		}
 	}
 	
 	// Clear the predicate map - not needed if using local heap
