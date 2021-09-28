@@ -448,8 +448,7 @@ static int functor_compare(const term_t* c1, const term_t* c2)
 
 	if (c1->m_u64val == c2->m_u64val)
 	{
-		uint16_t hi16 = (UNPACK_MANT_48(c1->m_u64val) >> 32);
-		if (!(hi16 & 0xC000))
+		if (get_term_subtype(c1) == 0)
 		{
 			// Check functors
 			r = atom_compare(c1+1,c2+1);
@@ -653,17 +652,18 @@ int term_precedes(const term_t* t1, const term_t* t2)
 	return r;
 }
 
-static void append_term_to_heap(context_t* context, const term_t* src, term_t** dst, size_t* old_len, size_t count, jmp_buf* jmp)
+static term_t* append_term(prolite_allocator_t* a, const term_t* src, term_t* dst, size_t* old_len, size_t count)
 {
-	*dst = heap_realloc(&context->m_heap,*dst,*old_len,*old_len + (count * sizeof(term_t)));
-	if (!*dst)
-		longjmp(*jmp,1);
-
-	memcpy(*dst + (*old_len / sizeof(term_t)),src,count * sizeof(term_t));
-	*old_len += count * sizeof(term_t);
+	term_t* new_dst = allocator_realloc(a,dst,*old_len + (count * sizeof(term_t)));
+	if (new_dst)
+	{
+		memcpy(new_dst + (*old_len / sizeof(term_t)),src,count * sizeof(term_t));
+		*old_len += count * sizeof(term_t);
+	}
+	return new_dst;
 }
 
-static void copy_term_to_heap_inner(context_t* context, const term_t* src, term_t** dst, size_t* dst_len, term_t* var_mapping, size_t* var_count, jmp_buf* jmp)
+static int copy_term_inner(prolite_allocator_t* a, context_t* context, const term_t* src, term_t** dst, size_t* dst_len, const term_t* var_mapping, size_t* var_count)
 {
 	const term_t* p = src;
 	uint64_t all48 = (p++)->m_u64val;
@@ -688,16 +688,22 @@ static void copy_term_to_heap_inner(context_t* context, const term_t* src, term_
 			}
 
 			term_t new_var = (term_t){ .m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(i) };
-			append_term_to_heap(context,&new_var,dst,dst_len,1,jmp);
+			term_t* new_dst = append_term(a,&new_var,*dst,dst_len,1);
+			if (!new_dst)
+				return 0;
+			*dst = new_dst;
 
 			if (have_debug_info)
 			{
 				src = p;
 				p = skip_debug_info(p,NULL);
-				append_term_to_heap(context,p,dst,dst_len,src - p,jmp);
+				new_dst = append_term(a,p,*dst,dst_len,src - p);
+				if (!new_dst)
+					return 0;
+				*dst = new_dst;
 			}
 		}
-		return;
+		return 1;
 
 	case prolite_atom:
 	case prolite_chars:
@@ -743,16 +749,20 @@ static void copy_term_to_heap_inner(context_t* context, const term_t* src, term_
 				break;
 			}
 
-			append_term_to_heap(context,src,dst,dst_len,p - src,jmp);
+			term_t* new_dst = append_term(a,src,*dst,dst_len,p - src);
+			if (!new_dst)
+				return 0;
+			*dst = new_dst;
 			
 			/* Skip args */
 			while (arity--)
 			{
 				p = get_next_arg(p);
-				copy_term_to_heap_inner(context,deref_local_var(context,p),dst,dst_len,var_mapping,var_count,jmp);
+				if (!copy_term_inner(a,context,deref_local_var(context,p),dst,dst_len,var_mapping,var_count))
+					return 0;
 			}
 		}
-		return;
+		return 1;
 
 	default:
 		if (have_debug_info)
@@ -760,28 +770,27 @@ static void copy_term_to_heap_inner(context_t* context, const term_t* src, term_
 		break;
 	}
 
-	append_term_to_heap(context,src,dst,dst_len,p - src,jmp);
+	term_t* new_dst = append_term(a,src,*dst,dst_len,p - src);
+	if (!new_dst)
+		return 0;
+	*dst = new_dst;
+	return 1;
 }
 
-const term_t* copy_term_to_heap(context_t* context, const term_t* t, size_t* var_count)
+term_t* copy_term(prolite_allocator_t* a, context_t* context, const term_t* t, size_t* var_count)
 {
 	term_t* sp = context->m_stack;
+
+	size_t vc = 0;
+	size_t dst_len = 0;
 	term_t* dst = NULL;
-	size_t top = heap_top(&context->m_heap);
-
-	jmp_buf jmp;
-	if (!setjmp(jmp))
+	if (!copy_term_inner(a,context,deref_local_var(context,t),&dst,&dst_len,context->m_stack,&vc))
 	{
-		size_t dst_len = 0;
-		copy_term_to_heap_inner(context,deref_local_var(context,t),&dst,&dst_len,context->m_stack,var_count,&jmp);
-	}
-	else
-	{
-		heap_reset(&context->m_heap,top);
-
-		*var_count = 0;
+		allocator_free(a,dst);
 		dst = NULL;
 	}
+	else if (var_count)
+		*var_count = vc;
 
 	context->m_stack = sp;
 

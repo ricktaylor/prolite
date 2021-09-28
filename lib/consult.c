@@ -64,7 +64,7 @@ typedef struct consult_context
 
 } consult_context_t;
 
-int update_operator(operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name);
+int update_operator(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name);
 
 static void report_exception(consult_context_t* context)
 {
@@ -452,7 +452,7 @@ static void set_op_inner(consult_context_t* context, int64_t precendence, operat
 		report_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(operator),op);
 	else
 	{
-		int i = update_operator(&context->m_operators,precendence,specifier,op);
+		int i = update_operator(context->m_context,&context->m_operators,precendence,specifier,op);
 		if (i == 0)
 			report_permission_error(context,PACK_ATOM_BUILTIN(create),PACK_ATOM_BUILTIN(operator),op);
 		else if (i == -1)
@@ -632,19 +632,20 @@ static void directive(consult_context_t* context, const term_t* term)
 
 static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 {
+	const term_t* functor = c->m_term;
+	if (c->m_term->m_u64val == PACK_COMPOUND_EMBED_2(2,':','-'))
+		functor = get_first_arg(functor,NULL);
+	
 	int is_current_pred = 0;
 	if (context->m_current_predicate)
-		is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_functor,c->m_term);
+		is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_functor,functor);
 	
 	if (!is_current_pred)
 	{
 		int is_new_pred = 0;
-		consult_predicate_t* pred = new_predicate(context,c->m_term,0,0,0,0,&is_new_pred);
+		consult_predicate_t* pred = new_predicate(context,functor,0,0,0,0,&is_new_pred);
 		if (!pred)
 			return report_out_of_memory_error(context,c->m_term);
-
-		// The current predicate changes, no matter what happens next
-		context->m_current_predicate = pred;
 
 		if (!is_new_pred)
 		{
@@ -658,6 +659,9 @@ static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 				// TODO: Some kind of multifile warning
 			}
 		}
+
+		// The current predicate changes, no matter what happens next
+		context->m_current_predicate = pred;
 	}
 
 	append_clause(context,context->m_current_predicate,c);

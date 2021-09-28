@@ -32,6 +32,11 @@ static inline void* allocator_malloc(prolite_allocator_t* a, size_t bytes)
 	return a ? (*a->m_fn_malloc)(a->m_param,bytes) : malloc(bytes);
 }
 
+static inline void* allocator_realloc(prolite_allocator_t* a, void* ptr, size_t bytes)
+{
+	return a ? (*a->m_fn_realloc)(a->m_param,ptr,bytes) : realloc(ptr,bytes);
+}
+
 static inline void allocator_free(prolite_allocator_t* a, void* ptr)
 {
 	if (a)

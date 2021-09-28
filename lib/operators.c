@@ -5,9 +5,9 @@
 
 typedef struct dynamic_operator
 {
-	const term_t* m_name;
-	operator_t    m_prefix;
-	operator_t    m_other;
+	term_t*    m_name;
+	operator_t m_prefix;
+	operator_t m_other;
 } dynamic_operator_t;
 
 static uint64_t operator_key(const term_t* name, int* is_sub_tree)
@@ -254,12 +254,13 @@ static void remove_operator(operator_table_t* ops, operator_specifier_t specifie
 			else
 				btree_remove(ops,name->m_u64val);
 
+			allocator_free(ops->m_allocator,curr_op->m_name);
 			allocator_free(ops->m_allocator,curr_op);
 		}
 	}
 }
 
-int update_operator(operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name)
+int update_operator(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name)
 {
 	// return -1 on OOM, 0 on failure, 1 on success
 
@@ -269,13 +270,19 @@ int update_operator(operator_table_t* ops, int64_t precendence, operator_specifi
 		return 1;
 	}
 
+	term_t* name_copy = copy_term(ops->m_allocator,context,name,NULL);
+	if (!name_copy)
+		return -1;
+
 	dynamic_operator_t* new_op = allocator_malloc(ops->m_allocator,sizeof(dynamic_operator_t));
 	if (!new_op)
+	{
+		allocator_free(ops->m_allocator,name_copy);
 		return -1;
+	}
 	
-	// TODO - Copy 'name' to persistent memory!!
-	
-	*new_op = (dynamic_operator_t){ .m_name = name };
+	*new_op = (dynamic_operator_t){ .m_name = name_copy };
+
 	if (specifier == eFX || specifier == eFY)
 	{
 		new_op->m_prefix.m_precedence = precendence;
@@ -300,6 +307,7 @@ int update_operator(operator_table_t* ops, int64_t precendence, operator_specifi
 			curr_op = btree_insert(&sub_tree,key,new_op);
 			if (!curr_op)
 			{
+				allocator_free(ops->m_allocator,new_op->m_name);
 				allocator_free(ops->m_allocator,new_op);
 				return -1;
 			}
@@ -307,6 +315,7 @@ int update_operator(operator_table_t* ops, int64_t precendence, operator_specifi
 			if (!btree_insert(ops,name->m_u64val,sub_tree.m_root))
 			{
 				btree_clear(&sub_tree,NULL,NULL);
+				allocator_free(ops->m_allocator,new_op->m_name);
 				allocator_free(ops->m_allocator,new_op);
 				return -1;
 			}
@@ -316,6 +325,7 @@ int update_operator(operator_table_t* ops, int64_t precendence, operator_specifi
 			curr_op = btree_insert(&sub_tree,key,new_op);
 			if (!curr_op)
 			{
+				allocator_free(ops->m_allocator,new_op->m_name);
 				allocator_free(ops->m_allocator,new_op);
 				return -1;
 			}
@@ -327,6 +337,12 @@ int update_operator(operator_table_t* ops, int64_t precendence, operator_specifi
 	else
 	{
 		curr_op = btree_insert(ops,name->m_u64val,new_op);
+		if (!curr_op)
+		{
+			allocator_free(ops->m_allocator,new_op->m_name);
+			allocator_free(ops->m_allocator,new_op);
+			return -1;
+		}
 	}
 
 	if (curr_op != new_op)
