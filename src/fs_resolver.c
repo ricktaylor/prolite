@@ -69,11 +69,11 @@ static int64_t fs_stream_read(struct prolite_stream* s, void* dest, size_t len)
 	if (r == 0 && ferror(f))
 		r = -1;
 
-	if (r > 0)
+	/*if (r > 0)
 	{
 		fwrite(dest,1,r,stdout);
 		fflush(stdout);
-	}
+	}*/
 
 	return r;
 }
