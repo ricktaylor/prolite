@@ -4,20 +4,20 @@
 #include <string.h>
 #include <assert.h>
 
-static uint64_t predicate_key(const term_t* functor, int* is_sub_tree)
+static uint64_t predicate_key(const term_t* pred, int* is_sub_tree)
 {
-	prolite_type_t type = get_term_type(functor);
+	prolite_type_t type = get_term_type(pred);
 	assert(type == prolite_atom || type == prolite_compound);
 
-	uint64_t key = functor->m_u64val;
-	unsigned int sub_type = get_term_subtype(functor);
+	uint64_t key = pred->m_u64val;
+	unsigned int sub_type = get_term_subtype(pred);
 	if (sub_type == 0 || sub_type == 3)
 	{
 		string_t s;
 		if (type == prolite_atom)
-			get_string(functor,&s,NULL);
+			get_string(pred,&s,NULL);
 		else
-			get_predicate(functor,&s,NULL,NULL);
+			get_predicate(pred,&s,NULL,NULL);
 
 		if (s.m_len <= 8)
 		{
@@ -41,12 +41,12 @@ static uint64_t predicate_key(const term_t* functor, int* is_sub_tree)
 	return key;
 }
 
-predicate_base_t* predicate_map_lookup(predicate_map_t* pm, const term_t* functor)
+predicate_base_t* predicate_map_lookup(predicate_map_t* pm, const term_t* pred)
 {
 	int is_sub_tree = 0;
-	uint64_t key = predicate_key(functor,&is_sub_tree);
+	uint64_t key = predicate_key(pred,&is_sub_tree);
 
-	void* p = btree_lookup(pm,functor->m_u64val);
+	void* p = btree_lookup(pm,pred->m_u64val);
 	if (p && is_sub_tree)
 		p = btree_lookup(&(btree_t){ .m_allocator = pm->m_allocator, .m_root = p},key);
 	
@@ -115,9 +115,9 @@ void predicate_map_clear(predicate_map_t* pm)
 	btree_clear(pm,&clear_callback,&pm);
 }
 
-int predicate_is_builtin(const term_t* functor)
+int predicate_is_builtin(const term_t* pred)
 {
-	switch (functor->m_u64val)
+	switch (pred->m_u64val)
 	{
 #define DECLARE_BUILTIN_INTRINSIC(f,n) \
 	case (n):
