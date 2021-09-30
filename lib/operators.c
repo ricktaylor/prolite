@@ -270,18 +270,24 @@ int update_operator(context_t* context, operator_table_t* ops, int64_t precenden
 		return 1;
 	}
 
-	term_t* name_copy = copy_term(ops->m_allocator,context,name,NULL);
-	if (!name_copy)
-		return -1;
-
 	dynamic_operator_t* new_op = allocator_malloc(ops->m_allocator,sizeof(dynamic_operator_t));
 	if (!new_op)
-	{
-		allocator_free(ops->m_allocator,name_copy);
 		return -1;
-	}
 	
-	*new_op = (dynamic_operator_t){ .m_name = name_copy };
+	*new_op = (dynamic_operator_t){ .m_name = (term_t*)name };
+
+	// Only copy the name if we need to
+	term_t* name_copy = NULL;
+	if (ops->m_allocator)
+	{
+		name_copy = copy_term(ops->m_allocator,context,name,NULL);
+		if (!name_copy)
+		{
+			allocator_free(ops->m_allocator,new_op);
+			return -1;
+		}
+		new_op->m_name = name_copy;
+	}	
 
 	if (specifier == eFX || specifier == eFY)
 	{
