@@ -11,7 +11,7 @@
 
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,p,a) \
-	{ &builtin_##f, #f },
+	{ &prolite_builtin_##f, #f },
 
 static const char* builtinName(const builtin_fn_t fn)
 {
@@ -23,15 +23,15 @@ static const char* builtinName(const builtin_fn_t fn)
 	{
 		#include "builtin_functions.h"
 
-		{ &builtin_call, "call" },
-		{ &builtin_callN, "call/N" },
-		{ &builtin_catch, "catch" },
-		{ &builtin_throw, "throw", },
-		{ &builtin_halt, "halt" },
-		{ &builtin_callable, "callable" },
-		{ &builtin_user_defined, "user_defined" },
-		{ &builtin_occurs_check, "occurs_check" },
-		{ &builtin_term_compare, "term_compare" }
+		{ &prolite_builtin_call, "call" },
+		{ &prolite_builtin_callN, "call/N" },
+		{ &prolite_builtin_catch, "catch" },
+		{ &prolite_builtin_throw, "throw", },
+		{ &prolite_builtin_halt, "halt" },
+		{ &prolite_builtin_callable, "callable" },
+		{ &prolite_builtin_user_defined, "user_defined" },
+		{ &prolite_builtin_occurs_check, "occurs_check" },
+		{ &prolite_builtin_term_compare, "term_compare" }
 	};
 
 	for (size_t i=0; i < sizeof(bns)/sizeof(bns[0]); ++i)

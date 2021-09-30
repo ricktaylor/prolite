@@ -142,7 +142,7 @@ void directive_set_prolog_flag(context_t* context, const term_t* flag)
 	set_prolog_flag_inner(context,flag,value);
 }
 
-PROLITE_EXPORT void prolite_builtin_set_prolog_flag(context_t* context, const term_t* arg1, const term_t* arg2)
+void builtin_set_prolog_flag(context_t* context, const term_t* arg1, const term_t* arg2)
 {
 	set_prolog_flag_inner(context,arg1,arg2);
 }
@@ -267,12 +267,12 @@ void builtin_user_defined(context_t* context)
 
 }
 
-PROLITE_EXPORT void prolite_builtin_asserta(context_t* context, const term_t* arg1)
+void builtin_asserta(context_t* context, const term_t* arg1)
 {
 	
 }
 
-PROLITE_EXPORT void prolite_builtin_assertz(context_t* context, const term_t* arg1)
+void builtin_assertz(context_t* context, const term_t* arg1)
 {
 	
 }

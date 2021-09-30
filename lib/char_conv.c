@@ -127,11 +127,11 @@ void directive_char_conversion(context_t* context, char_conv_table_t* cc, const 
 	set_char_conversion(context,cc,in_char,out_char);
 }
 
-PROLITE_EXPORT void prolite_builtin_char_conversion(context_t* context, const term_t* arg1, const term_t* arg2)
+void builtin_char_conversion(context_t* context, const term_t* arg1, const term_t* arg2)
 {
 	set_char_conversion(context,&context->m_module->m_char_conversion,arg1,arg2);
 }
 
-PROLITE_EXPORT void prolite_builtin_current_char_conversion(context_t* context, const term_t* arg1, const term_t* arg2)
+void builtin_current_char_conversion(context_t* context, const term_t* arg1, const term_t* arg2)
 {
 }

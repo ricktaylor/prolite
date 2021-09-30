@@ -150,7 +150,7 @@ static continuation_t* add_branch(compile_context_t* context, continuation_t* c,
 	ops->m_opcode.m_op = branch;
 	(ops++)->m_opcode.m_arg = flags;
 	(ops++)->m_term.m_pval = next->m_entry_point;
-	
+
 	return c;
 }
 
@@ -394,7 +394,7 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 		else
 		{
 			c_then = compile_subgoal(context,cont,get_next_arg(g_if));
-			
+
 			if (!(c_if->m_always_flags & FLAG_CUT))
 			{
 				context->m_substs = s_orig;
@@ -451,7 +451,7 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 	{
 		cont->m_entry_point = (void*)cont->m_entry_point->m_ops[1].m_term.m_pval;
 	}
-	
+
 	continuation_t* c = new_continuation(context);
 	for (size_t i = 0; i < arity; ++i)
 	{
@@ -460,12 +460,12 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 		ops->m_term.m_pval = deref_var(context,goal);
 		goal = get_next_arg(goal);
 	}
-	
+
 	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
 	(ops++)->m_term.m_pval = fn;
 	ops->m_term.m_pval = cont->m_entry_point;
-	
+
 	c->m_always_flags = (cont->m_always_flags & (FLAG_FAIL | FLAG_THROW));
 
 	return c;
@@ -473,16 +473,14 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 
 static continuation_t* compile_user_defined(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	return compile_builtin(context,cont,&builtin_user_defined,1,goal);
+	return compile_builtin(context,cont,&prolite_builtin_user_defined,1,goal);
 }
 
 static continuation_t* compile_throw(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	goal = deref_var(context,get_first_arg(goal,NULL));
-
 	cont = set_flags(context,new_continuation(context),FLAG_THROW);
 
-	return compile_builtin(context,cont,&builtin_throw,1,goal);
+	return compile_builtin(context,cont,&prolite_builtin_throw,1,get_first_arg(goal,NULL));
 }
 
 static continuation_t* compile_halt(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -490,11 +488,7 @@ static continuation_t* compile_halt(compile_context_t* context, continuation_t* 
 	cont = set_flags(context,new_continuation(context),FLAG_HALT);
 
 	if (get_term_type(goal) != prolite_atom)
-	{
-		goal = deref_var(context,get_first_arg(goal,NULL));
-
-		cont = compile_builtin(context,cont,&builtin_halt,1,goal);
-	}
+		cont = compile_builtin(context,cont,&prolite_builtin_halt,1,get_first_arg(goal,NULL));
 
 	return cont;
 }
@@ -539,7 +533,7 @@ static continuation_t* compile_call_inner(compile_context_t* context, continuati
 	if (compile_is_callable(context,goal))
 		return compile_subgoal(context,cont,goal);
 
-	return compile_builtin(context,cont,&builtin_call,1,goal);
+	return compile_builtin(context,cont,&prolite_builtin_call,1,goal);
 }
 
 static continuation_t* compile_call(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -549,7 +543,7 @@ static continuation_t* compile_call(compile_context_t* context, continuation_t* 
 
 static continuation_t* compile_callN(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
-	return wrap_cut(context,compile_builtin(context,cont,&builtin_callN,1,goal));
+	return wrap_cut(context,compile_builtin(context,cont,&prolite_builtin_callN,1,goal));
 }
 
 static continuation_t* compile_catch(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -569,7 +563,7 @@ static continuation_t* compile_catch(compile_context_t* context, continuation_t*
 		else
 			c_resume = wrap_cut(context,compile_call_inner(context,convert_to_gosub(context,cont),g3));
 
-		continuation_t* c_catch = compile_builtin(context,c_resume,&builtin_catch,1,g2);
+		continuation_t* c_catch = compile_builtin(context,c_resume,&prolite_builtin_catch,1,g2);
 		c_catch = goto_next(context,c_catch,c_end);
 
 		if (c->m_always_flags & FLAG_THROW)
@@ -606,7 +600,7 @@ static continuation_t* compile_repeat(compile_context_t* context, continuation_t
 	opcode_t* ops = append_opcodes(context,cont->m_tail,2);
 	(ops++)->m_opcode.m_op = OP_JMP;
 	ops->m_term.m_pval = cont->m_entry_point;
-	
+
 	cont->m_tail = c_end->m_tail;
 
 	return cont;
@@ -632,7 +626,7 @@ static continuation_t* compile_unify_var(compile_context_t* context, continuatio
 	ops->m_term.m_u64val = idx;
 
 	if (with_occurs_check)
-		c_set = compile_builtin(context,c_set,&builtin_occurs_check,0,g1);
+		c_set = compile_builtin(context,c_set,&prolite_builtin_occurs_check,0,g1);
 
 	c_set = goto_next(context,c_set,c_end);
 
@@ -665,7 +659,7 @@ static continuation_t* compile_unify_var(compile_context_t* context, continuatio
 		ops->m_term.m_pval = g1;
 	}
 
-	continuation_t* c1 = compile_builtin(context,cont,&builtin_term_compare,0,g1);
+	continuation_t* c1 = compile_builtin(context,cont,&prolite_builtin_term_compare,0,g1);
 	c = goto_next(context,c,c1);
 	return goto_next(context,c,c_end);
 }
@@ -768,7 +762,7 @@ static continuation_t* compile_callable(compile_context_t* context, continuation
 		return compile_false(context,cont,g1);
 
 	default:
-		return compile_builtin(context,cont,&builtin_callable,1,g1);
+		return compile_builtin(context,cont,&prolite_builtin_callable,1,g1);
 	}
 }
 
@@ -936,7 +930,7 @@ static continuation_t* compile_ground(compile_context_t* context, continuation_t
 	if (compile_is_ground(context,g1))
 		return compile_true(context,cont,g1);
 
-	return compile_builtin(context,cont,&builtin_ground,1,g1);
+	return compile_builtin(context,cont,&prolite_builtin_ground,1,g1);
 }
 
 static continuation_t* compile_subgoal(compile_context_t* context, continuation_t* cont, const term_t* goal)
@@ -951,7 +945,7 @@ static continuation_t* compile_subgoal(compile_context_t* context, continuation_
 
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,p,a) \
-	case (p): c = compile_builtin(context,cont,&builtin_##f,a,get_first_arg(goal,NULL)); break;
+	case (p): c = compile_builtin(context,cont,&prolite_builtin_##f,a,get_first_arg(goal,NULL)); break;
 
 #include "builtin_functions.h"
 
@@ -1001,11 +995,11 @@ size_t inc_ip(optype_t op)
 	case OP_BRANCH_NOT:
 		++ip;
 		break;
-	
+
 	case OP_BUILTIN:
-    case OP_SET_VAR:
+	case OP_SET_VAR:
 		ip += 2;
-		break;	
+		break;
 
 	default:
 		break;
@@ -1076,7 +1070,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 
 		default:
 			break;
-		}	
+		}
 	}
 
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
@@ -1100,10 +1094,10 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 				move_cfg(blks,blk,next);
 			}
 			break;
-		
+
 		default:
 			break;
-		}			
+		}
 	}
 }
 
@@ -1155,7 +1149,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 
 					// Reduce BRANCH to BRANCH
 					const cfg_block_t* next = blk->m_ops[i+1].m_term.m_pval;
-					while (next->m_count >= 2 && next->m_ops[0].m_opcode.m_op == OP_BRANCH && 
+					while (next->m_count >= 2 && next->m_ops[0].m_opcode.m_op == OP_BRANCH &&
 						(next->m_ops[0].m_opcode.m_arg & blk->m_ops[i].m_opcode.m_arg) == blk->m_ops[i].m_opcode.m_arg)
 					{
 						next = next->m_ops[1].m_term.m_pval;
@@ -1170,7 +1164,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 				code += len;
 				break;
 			}
-			
+
 			i += len;
 		}
 	}
@@ -1193,7 +1187,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 				}
 			}
 			break;
-		
+
 		case OP_BUILTIN:
 			for (size_t j = 0; j < blks->m_count; ++j)
 			{
@@ -1204,7 +1198,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 				}
 			}
 			break;
-		
+
 		default:
 			break;
 		}
@@ -1236,7 +1230,7 @@ void compile_goal(context_t* context, const term_t* goal, size_t var_count)
 		c = compile_subgoal(&cc,c,goal);
 		ops = append_opcodes(&cc,c->m_tail,1);
 		ops->m_opcode.m_op = OP_END;
-		
+
 		cfg_vec_t blks = {0};
 		walk_cfgs(&cc,&blks,c->m_entry_point);
 
@@ -1259,10 +1253,10 @@ void compile_goal(context_t* context, const term_t* goal, size_t var_count)
 			// Put pcode on the stack... JIT later...
 			context->m_stack -= bytes_to_cells(blks.m_total * sizeof(opcode_t),sizeof(term_t));
 			memcpy(context->m_stack,code,blks.m_total * sizeof(opcode_t));
-		}			
+		}
 		(--context->m_stack)->m_u64val = blks.m_total;
 	}
-		
+
 	/* Bulk free all heap allocs */
 	heap_reset(&context->m_heap,heap_start);
 }
