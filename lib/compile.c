@@ -1,23 +1,8 @@
-#include "context.h"
 #include "compile.h"
 #include "builtins.h"
 
 #include <string.h>
 #include <stdarg.h>
-
-// TEMP
-
-void builtin_call(context_t* context) {  }
-void builtin_callN(context_t* context) {  }
-void builtin_catch(context_t* context) {  }
-void builtin_throw(context_t* context) {  }
-void builtin_halt(context_t* context) {  }
-void builtin_occurs_check(context_t* context) {  }
-void builtin_callable(context_t* context) {  }
-void builtin_ground(context_t* context) {  }
-void builtin_term_compare(context_t* context) {  }
-
-// END TEMP
 
 static cfg_block_t* new_cfg_block(compile_context_t* context)
 {
@@ -468,33 +453,14 @@ continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont
 	}
 	
 	continuation_t* c = new_continuation(context);
-	if (arity > 1)
-	{
-		// Reverse the arguments
-		const term_t** rev = heap_malloc(context->m_heap,arity * sizeof(term_t*));
-		if (!rev)
-			longjmp(context->m_jmp,1);
-
-		for (size_t i = 0; i < arity; ++i)
-		{
-			rev[i] = goal;
-			goal = get_next_arg(goal);
-		}
-
-		for (size_t i = arity; i--;)
-		{
-			opcode_t* ops = append_opcodes(context,c->m_tail,2);
-			(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
-			ops->m_term.m_pval = deref_var(context,rev[i]);
-		}
-	}
-	else if (arity)
+	for (size_t i = 0; i < arity; ++i)
 	{
 		opcode_t* ops = append_opcodes(context,c->m_tail,2);
 		(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
 		ops->m_term.m_pval = deref_var(context,goal);
+		goal = get_next_arg(goal);
 	}
-
+	
 	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
 	(ops++)->m_term.m_pval = fn;
@@ -973,13 +939,6 @@ static continuation_t* compile_ground(compile_context_t* context, continuation_t
 	return compile_builtin(context,cont,&builtin_ground,1,g1);
 }
 
-static continuation_t* compile_builtin_fn(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, const term_t* goal)
-{
-	size_t arity;
-	goal = get_first_arg(goal,&arity);
-	return compile_builtin(context,cont,fn,arity,goal);
-}
-
 static continuation_t* compile_subgoal(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
 	int debug = 0;
@@ -987,12 +946,12 @@ static continuation_t* compile_subgoal(compile_context_t* context, continuation_
 	continuation_t* c;
 	switch (goal->m_u64val)
 	{
-#define DECLARE_BUILTIN_INTRINSIC(f,n) \
-	case (n): c = compile_##f(context,cont,goal); break;
+#define DECLARE_BUILTIN_INTRINSIC(f,p) \
+	case (p): c = compile_##f(context,cont,goal); break;
 
 #undef DECLARE_BUILTIN_FUNCTION
-#define DECLARE_BUILTIN_FUNCTION(f,n) \
-	case (n): c = compile_builtin_fn(context,cont,&builtin_##f,goal); break;
+#define DECLARE_BUILTIN_FUNCTION(f,p,a) \
+	case (p): c = compile_builtin(context,cont,&builtin_##f,a,get_first_arg(goal,NULL)); break;
 
 #include "builtin_functions.h"
 

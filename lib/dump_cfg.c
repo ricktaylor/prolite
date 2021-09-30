@@ -7,10 +7,10 @@
 #include <math.h>
 
 #undef DECLARE_BUILTIN_INTRINSIC
-#define DECLARE_BUILTIN_INTRINSIC(f,n)
+#define DECLARE_BUILTIN_INTRINSIC(f,p)
 
 #undef DECLARE_BUILTIN_FUNCTION
-#define DECLARE_BUILTIN_FUNCTION(f,n) \
+#define DECLARE_BUILTIN_FUNCTION(f,p,a) \
 	{ &builtin_##f, #f },
 
 static const char* builtinName(const builtin_fn_t fn)

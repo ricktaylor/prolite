@@ -142,16 +142,9 @@ void directive_set_prolog_flag(context_t* context, const term_t* flag)
 	set_prolog_flag_inner(context,flag,value);
 }
 
-PROLITE_EXPORT void builtin_set_prolog_flag(context_t* context)
+PROLITE_EXPORT void prolite_builtin_set_prolog_flag(context_t* context, const term_t* arg1, const term_t* arg2)
 {
-	// Pop 2 terms
-	term_t* value = context->m_stack;
-	const term_t* flag = get_next_arg(value);
-	context->m_stack = (term_t*)get_next_arg(flag);
-
-	set_prolog_flag_inner(context,flag,value);
-	if (context->m_flags & FLAG_THROW)
-		throw_exception(context);
+	set_prolog_flag_inner(context,arg1,arg2);
 }
 
 const term_t* deref_local_var(context_t* context, const term_t* t)
@@ -268,21 +261,19 @@ PROLITE_EXPORT void prolite_context_destroy(prolite_context_t context)
 
 
 // MOVE THIS!!
-PROLITE_EXPORT void builtin_assert(context_t* context)
+
+void builtin_user_defined(context_t* context)
 {
-	/*const term_t* goal = (context->m_stack--)->m_pval;
-	const builtin_fn_t gosub = (context->m_stack--)->m_pval;
 
-	int assertz = (goal->m_u64val == PACK_COMPOUND_BUILTIN(assertz,1));
+}
 
-	assert_clause(context,deref_local_var(context,get_first_arg(goal,NULL)),assertz);
+PROLITE_EXPORT void prolite_builtin_asserta(context_t* context, const term_t* arg1)
+{
 	
-	if (!(context->m_flags & (FLAG_HALT | FLAG_THROW)))
-		(*gosub)(context);
-	*/
 }
 
-PROLITE_EXPORT void builtin_user_defined(context_t* context)
+PROLITE_EXPORT void prolite_builtin_assertz(context_t* context, const term_t* arg1)
 {
-
+	
 }
+
