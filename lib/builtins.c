@@ -1,5 +1,7 @@
 #include "context.h"
 
+void prolite_builtin_throw(context_t* context);
+
 #define BUILTIN_FUNCTION_DEFN(f) \
 	PROLITE_EXPORT void prolite_builtin_##f(context_t* context) {
 
@@ -9,7 +11,7 @@
 	
 #define BUILTIN_FUNCTION_RET \
 	if (context->m_flags & FLAG_THROW) \
-		throw_exception(context); \
+		prolite_builtin_throw(context); \
 	else \
 	{ \
 		if (!(context->m_flags & FLAG_FAIL))\
@@ -53,6 +55,12 @@
 	builtin_##f(context,arg1,arg2,arg3); \
 	BUILTIN_FUNCTION_RET
 
+#undef DECLARE_BUILTIN_FUNCTION
+#undef DECLARE_BUILTIN_FUNCTION_0
+#undef DECLARE_BUILTIN_FUNCTION_1
+#undef DECLARE_BUILTIN_FUNCTION_2
+#undef DECLARE_BUILTIN_FUNCTION_3
+
 #define DECLARE_BUILTIN_FUNCTION_0(f,p) BUILTIN_THUNK_0(f)
 #define DECLARE_BUILTIN_FUNCTION_1(f,p) BUILTIN_THUNK_1(f)
 #define DECLARE_BUILTIN_FUNCTION_2(f,p) BUILTIN_THUNK_2(f)
@@ -77,8 +85,6 @@ BUILTIN_THUNK_1(user_defined)
 
 void builtin_call(context_t* context, const term_t* arg1) {  }
 void builtin_callN(context_t* context, const term_t* arg1) {  }
-void builtin_catch(context_t* context, const term_t* arg1) {  }
-void builtin_throw(context_t* context, const term_t* arg1) {  }
 void builtin_halt(context_t* context, const term_t* arg1) {  }
 void builtin_occurs_check(context_t* context, const term_t* arg1, const term_t* arg2) {  }
 void builtin_callable(context_t* context, const term_t* arg1) {  }

@@ -70,6 +70,7 @@ typedef struct context
 	void*                           m_user_data;
 	heap_t                          m_heap;
 	term_t*                         m_stack;
+	term_t*                         m_exception;
 	prolite_exception_handler_fn_t  m_eh;
 	prolite_stream_resolver_t*      m_resolver;
 	exec_flags_t                    m_flags;
@@ -98,6 +99,5 @@ void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const t
 void push_type_error(context_t* context, uint64_t p1, const term_t* t);
 void push_domain_error(context_t* context, uint64_t p1, const term_t* t);
 void push_representation_error(context_t* context, uint64_t p1, const term_t* t);
-void throw_exception(context_t* context);
 
 #endif // CONTEXT_H_

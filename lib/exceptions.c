@@ -1,54 +1,82 @@
 #include "context.h"
 
-static void push_exception(context_t* context)
+void push_out_of_memory_error(context_t* context, const term_t* t)
 {
+	// 't' just gives us debug info
+
+	// It would be nice to be able to avoid malloc calls here
+
 	// TODO
 	assert(0);
 	
-    context->m_flags |= FLAG_THROW;
-}
-
-void push_out_of_memory_error(context_t* context, const term_t* t)
-{
-    // 't' just gives us debug info
-
-	// TODO
-	push_exception(context);
+	context->m_flags |= FLAG_THROW;
 }
 
 void push_instantiation_error(context_t* context, const term_t* t)
 {
-    // 't' just gives us debug info
+	// 't' just gives us debug info
 
 	// TODO
-	push_exception(context);
+	assert(0);
+	
+	context->m_flags |= FLAG_THROW;
 }
 
 void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
 {
 	// TODO
-	push_exception(context);
+	assert(0);
+	
+	context->m_flags |= FLAG_THROW;
 }
 
 void push_type_error(context_t* context, uint64_t p1, const term_t* t)
 {
 	// TODO
-	push_exception(context);
+	assert(0);
+	
+	context->m_flags |= FLAG_THROW;
 }
 
 void push_domain_error(context_t* context, uint64_t p1, const term_t* t)
 {
 	// TODO
-	push_exception(context);
+	assert(0);
+	
+	context->m_flags |= FLAG_THROW;
 }
 
 void push_representation_error(context_t* context, uint64_t p1, const term_t* t)
 {
 	// TODO
-	push_exception(context);
+	assert(0);
+	
+	context->m_flags |= FLAG_THROW;
 }
 
-void throw_exception(context_t* context)
+void builtin_throw(context_t* context, const term_t* arg1) 
 {
-    // TODO - Exception is on the stack!
+	prolite_allocator_t a = heap_allocator(&context->m_heap);
+	size_t var_count = 0;
+	term_t* ball = copy_term(&a,context,arg1,&var_count);
+	if (!ball)
+		push_out_of_memory_error(context,arg1);
+	else if (var_count)
+	{
+		allocator_free(&a,ball);
+		push_instantiation_error(context,arg1);
+	}
+	else
+		context->m_exception = ball;
+}
+
+void builtin_catch(context_t* context, const term_t* arg1) 
+{
+	assert(context->m_exception);
+
+	// TODO
+
+	// Push context->m_exception to stack
+	
+	// Unify with arg1
 }
