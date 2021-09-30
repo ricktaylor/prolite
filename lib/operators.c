@@ -395,35 +395,32 @@ static void set_op_inner(context_t* context, operator_table_t* ops, int64_t prec
 	}
 }
 
-void directive_op(context_t* context, operator_table_t* ops, const term_t* goal)
+static void set_op(context_t* context, operator_table_t* ops, const term_t* p, const term_t* s, const term_t* op)
 {
-	const term_t* arg = get_first_arg(goal,NULL);
-	
 	int64_t precendence = 0;
-	switch (get_term_type(arg))
+	switch (get_term_type(p))
 	{
 	case prolite_var:
-		return push_instantiation_error(context,arg);
+		return push_instantiation_error(context,p);
 
 	case prolite_integer:
-		precendence = get_integer(arg);
+		precendence = get_integer(p);
 		if (precendence < 0 || precendence > 1200)
-			return push_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),arg);
+			return push_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),p);
 		break;
 
 	default:
-		return push_type_error(context,PACK_ATOM_BUILTIN(integer),arg);
+		return push_type_error(context,PACK_ATOM_BUILTIN(integer),p);
 	}
 	
-	arg = get_next_arg(arg);
 	operator_specifier_t specifier;
-	switch (get_term_type(arg))
+	switch (get_term_type(s))
 	{
 	case prolite_var:
-		return push_instantiation_error(context,arg);
+		return push_instantiation_error(context,s);
 
 	case prolite_atom:
-		switch (arg->m_u64val)
+		switch (s->m_u64val)
 		{
 		case PACK_ATOM_EMBED_2('x','f'):
 			specifier = eXF;
@@ -454,42 +451,57 @@ void directive_op(context_t* context, operator_table_t* ops, const term_t* goal)
 			break;
 
 		default:
-			return push_domain_error(context,PACK_ATOM_BUILTIN(operator_specifier),arg);
+			return push_domain_error(context,PACK_ATOM_BUILTIN(operator_specifier),s);
 		}
 		break;
 
 	default:
-		return push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),arg);
+		return push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),s);
 	}
 
-	arg = get_next_arg(arg);
-	switch (get_term_type(arg))
+	switch (get_term_type(op))
 	{
 	case prolite_var:
-		return push_instantiation_error(context,arg);
+		return push_instantiation_error(context,op);
 
 	case prolite_atom:
-		return set_op_inner(context,ops,precendence,specifier,arg);
+		return set_op_inner(context,ops,precendence,specifier,op);
 
 	case prolite_compound:
-		while (arg->m_u64val == PACK_COMPOUND_EMBED_1(2,'.'))
+		while (op->m_u64val == PACK_COMPOUND_EMBED_1(2,'.'))
 		{
-			arg = get_first_arg(arg,NULL);
-			set_op_inner(context,ops,precendence,specifier,arg);
-			arg = get_next_arg(arg);
+			op = get_first_arg(op,NULL);
+			set_op_inner(context,ops,precendence,specifier,op);
+			op = get_next_arg(op);
 		}
 
-		if (arg->m_u64val != PACK_ATOM_EMBED_2('[',']'))
-			set_op_inner(context,ops,precendence,specifier,arg);
+		if (op->m_u64val != PACK_ATOM_EMBED_2('[',']'))
+			set_op_inner(context,ops,precendence,specifier,op);
 		break;
 
 	default:
-		return push_type_error(context,PACK_ATOM_EMBED_4('l','i','s','t'),arg);
+		return push_type_error(context,PACK_ATOM_EMBED_4('l','i','s','t'),op);
 	}
+}
+
+void directive_op(context_t* context, operator_table_t* ops, const term_t* goal)
+{
+	const term_t* p = get_first_arg(goal,NULL);
+	const term_t* s = get_next_arg(p);
+	const term_t* op = get_next_arg(s);
+
+	set_op(context,ops,p,s,op);
 }
 
 void builtin_op(context_t* context)
 {
+	// Pop 2 terms
+	term_t* op = context->m_stack;
+	const term_t* s = get_next_arg(op);
+	const term_t* p = get_next_arg(s);
+	context->m_stack = (term_t*)get_next_arg(p);
+
+	set_op(context,&context->m_module->m_operators,p,s,op);
 }
 
 void builtin_current_op(context_t* context)

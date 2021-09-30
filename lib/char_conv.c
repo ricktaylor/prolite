@@ -4,7 +4,7 @@ uint32_t convert_char(const char_conv_table_t* cc, uint32_t in_char)
 {
 	if (in_char == 0)
 		in_char = -1;
-	
+
 	uint32_t out_char = (uintptr_t)btree_lookup(cc,in_char);
 	if (!out_char)
 		out_char = in_char;
@@ -21,7 +21,7 @@ static uint32_t atom_to_code(const term_t* a)
 	get_string(a,&s,NULL);
 	if (s.m_len == 0)
 		return -1;
-	
+
 	const unsigned char* c = s.m_str;
 	if (c[0] <= 0x7f)
 		return s.m_len == 1 ? c[0] : -1;
@@ -63,7 +63,7 @@ static uint32_t atom_to_code(const term_t* a)
 
 	if (s.m_len != count)
 		return -1;
-	
+
 	for (size_t i = 1; i < count; ++i)
 	{
 		if ((c[i] & 0xC0) != 0x80)
@@ -71,7 +71,7 @@ static uint32_t atom_to_code(const term_t* a)
 
 		val = (val << 6) | (c[i] & 0x3F);
 	}
-	
+
 	return val;
 }
 
@@ -124,11 +124,17 @@ void directive_char_conversion(context_t* context, char_conv_table_t* cc, const 
 	const term_t* in_char = get_first_arg(goal,NULL);
 	const term_t* out_char = get_next_arg(in_char);
 
-	set_char_conversion(context,cc,in_char,out_char);	
+	set_char_conversion(context,cc,in_char,out_char);
 }
 
 void builtin_char_conversion(context_t* context)
 {
+	// Pop 2 terms
+	term_t* out_char = context->m_stack;
+	const term_t* in_char = get_next_arg(out_char);
+	context->m_stack = (term_t*)get_next_arg(in_char);
+
+	set_char_conversion(context,&context->m_module->m_char_conversion,in_char,out_char);
 }
 
 void builtin_current_char_conversion(context_t* context)
