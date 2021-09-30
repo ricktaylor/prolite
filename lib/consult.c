@@ -68,10 +68,15 @@ void directive_char_conversion(context_t* context, char_conv_table_t* cc, const 
 
 static void report_exception(consult_context_t* context)
 {
+	const term_t* arg1 = context->m_context->m_stack;
+	term_t* sp = (term_t*)get_next_arg(arg1);
+	
 	// TODO
 	assert(0);
-	
 	//(*context->m_eh)(context->m_context);
+	
+	context->m_context->m_stack = sp;
+	context->m_context->m_flags &= ~FLAG_THROW;
 	context->m_failed = 1;
 }
 
@@ -81,17 +86,9 @@ static void check_exception(consult_context_t* context)
 		report_exception(context);
 }
 
-static void report_parse_exception(consult_context_t* context)
-{
-	// TODO
-	report_exception(context);
-}
-
 static void report_out_of_memory_error(consult_context_t* context, const term_t* t)
 {
-    // 't' just gives us debug info
-
-	// TODO
+    push_out_of_memory_error(context->m_context,t);
 	report_exception(context);
 
 	context->m_critical_failure = 1;
@@ -99,25 +96,25 @@ static void report_out_of_memory_error(consult_context_t* context, const term_t*
 
 static void report_permission_error(consult_context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
 {
-	// TODO
+	push_permission_error(context->m_context,p1,p2,t);
 	report_exception(context);
 }
 
 static void report_type_error(consult_context_t* context, uint64_t p1, const term_t* t)
 {
-	// TODO
+	push_type_error(context->m_context,p1,t);
 	report_exception(context);
 }
 
 static void report_domain_error(consult_context_t* context, uint64_t p1, const term_t* t)
 {
-	// TODO
+	push_domain_error(context->m_context,p1,t);
 	report_exception(context);
 }
 
 static void report_representation_error(consult_context_t* context, uint64_t p1, const term_t* t)
 {
-	// TODO
+	push_representation_error(context->m_context,p1,t);
 	report_exception(context);
 }
 
@@ -506,7 +503,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 
 			if (status == PARSE_THROW)
 			{
-				report_parse_exception(context);
+				report_exception(context);
 
 				// Reset stack
 				context->m_context->m_stack = sp;
