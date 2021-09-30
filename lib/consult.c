@@ -62,12 +62,17 @@ typedef struct consult_context
 
 	// TODO: The following are per-module
 	predicate_map_t         m_predicates;
+	prolog_flags_t          m_flags;
 	operator_table_t        m_operators;
+	char_conv_table_t       m_char_conversion;
 	consult_initializer_t*  m_initializers;
 	
 } consult_context_t;
 
-int update_operator(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name);
+void directive_op(context_t* context, operator_table_t* ops, const term_t* goal);
+void directive_set_prolog_flag(context_t* context, const term_t* flag);
+void directive_char_conversion(context_t* context, char_conv_table_t* cc, const term_t* goal);
+
 void compile_goal(context_t* context, const term_t* goal, size_t var_count);
 
 static void report_exception(consult_context_t* context)
@@ -77,6 +82,12 @@ static void report_exception(consult_context_t* context)
 	
 	//(*context->m_eh)(context->m_context);
 	context->m_failed = 1;
+}
+
+static void check_exception(consult_context_t* context)
+{
+	if (context->m_context->m_flags & FLAG_THROW)
+		report_exception(context);
 }
 
 static void report_parse_exception(consult_context_t* context)
@@ -93,14 +104,6 @@ static void report_out_of_memory_error(consult_context_t* context, const term_t*
 	report_exception(context);
 
 	context->m_critical_failure = 1;
-}
-
-static void report_instantiation_error(consult_context_t* context, const term_t* t)
-{
-    // 't' just gives us debug info
-
-	// TODO
-	report_exception(context);
 }
 
 static void report_permission_error(consult_context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
@@ -326,234 +329,6 @@ static void assert_initializer(consult_context_t* context, const term_t* goal, s
 	}
 }
 
-static void report_flag_value_error(consult_context_t* context, const term_t* flag, const term_t* value)
-{
-	// TODO
-	report_exception(context);
-}
-
-static void set_prolog_flag(consult_context_t* context, const term_t* flag)
-{
-	const term_t* value = get_next_arg(flag);
-	switch (flag->m_u64val)
-	{
-	case PACK_ATOM_BUILTIN(char_conversion):
-		switch(value->m_u64val)
-		{
-		case PACK_ATOM_EMBED_2('o','n'):
-			context->m_context->m_module->m_flags.char_conversion = 1;
-			break;
-
-		case PACK_ATOM_EMBED_3('o','f','f'):
-			context->m_context->m_module->m_flags.char_conversion = 0;
-			break;
-
-		default:
-			report_flag_value_error(context,flag,value);
-			break;
-		}
-		break;
-
-	case PACK_ATOM_EMBED_5('d','e','b','u','g'):
-		switch(value->m_u64val)
-		{
-		case PACK_ATOM_EMBED_2('o','n'):
-			context->m_context->m_module->m_flags.debug = 1;
-			break;
-
-		case PACK_ATOM_EMBED_3('o','f','f'):
-			context->m_context->m_module->m_flags.debug = 0;
-			break;
-
-		default:
-			report_flag_value_error(context,flag,value);
-			break;
-		}
-		break;
-
-	case PACK_ATOM_BUILTIN(unknown):
-		switch(value->m_u64val)
-		{
-		case PACK_ATOM_EMBED_5('e','r','r','o','r'):
-			context->m_context->m_module->m_flags.unknown = 0;
-			break;
-
-		case PACK_ATOM_EMBED_4('f','a','i','l'):
-			context->m_context->m_module->m_flags.unknown = 1;
-			break;
-
-		case PACK_ATOM_BUILTIN(warning):
-			context->m_context->m_module->m_flags.unknown = 2;
-			break;
-
-		default:
-			report_flag_value_error(context,flag,value);
-			break;
-		}
-		break;
-
-	case PACK_ATOM_BUILTIN(double_quotes):
-		switch(value->m_u64val)
-		{
-		case PACK_ATOM_EMBED_5('c','h','a','r','s'):
-			context->m_context->m_module->m_flags.double_quotes = 0;
-			break;
-
-		case PACK_ATOM_EMBED_5('c','o','d','e','s'):
-			context->m_context->m_module->m_flags.double_quotes = 1;
-			break;
-
-		case PACK_ATOM_EMBED_4('a','t','o','m'):
-			context->m_context->m_module->m_flags.double_quotes = 2;
-			break;
-		
-		default:
-			report_flag_value_error(context,flag,value);
-			break;
-		}
-		break;
-
-	case PACK_ATOM_BUILTIN(back_quotes):
-		switch(value->m_u64val)
-		{
-		case PACK_ATOM_EMBED_5('c','h','a','r','s'):
-			context->m_context->m_module->m_flags.double_quotes = 0;
-			break;
-
-		case PACK_ATOM_EMBED_5('c','o','d','e','s'):
-			context->m_context->m_module->m_flags.double_quotes = 1;
-			break;
-
-		case PACK_ATOM_EMBED_4('a','t','o','m'):
-			context->m_context->m_module->m_flags.double_quotes = 2;
-			break;
-		
-		default:
-			report_flag_value_error(context,flag,value);
-			break;
-		}
-		break;
-
-	default:
-		if (get_term_type(flag) == prolite_var)
-			report_instantiation_error(context,flag);
-		else if (get_term_type(flag) != prolite_atom)
-			report_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),flag);
-		else
-			report_domain_error(context,PACK_ATOM_BUILTIN(prolog_flag),flag);
-		break;
-	}	
-}
-
-static void set_op_inner(consult_context_t* context, int64_t precendence, operator_specifier_t specifier, const term_t* op)
-{
-	if (get_term_type(op) != prolite_atom)
-		report_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),op);
-	else if (op->m_u64val == PACK_ATOM_EMBED_1(','))
-		report_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(operator),op);
-	else
-	{
-		int i = update_operator(context->m_context,&context->m_operators,precendence,specifier,op);
-		if (i == 0)
-			report_permission_error(context,PACK_ATOM_BUILTIN(create),PACK_ATOM_BUILTIN(operator),op);
-		else if (i == -1)
-			report_out_of_memory_error(context,op);
-	}
-}
-
-static void set_op(consult_context_t* context, const term_t* goal)
-{
-	const term_t* arg = get_first_arg(goal,NULL);
-	
-	int64_t precendence = 0;
-	switch (get_term_type(arg))
-	{
-	case prolite_var:
-		return report_instantiation_error(context,arg);
-
-	case prolite_integer:
-		precendence = get_integer(arg);
-		if (precendence < 0 || precendence > 1200)
-			return report_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),arg);
-		break;
-
-	default:
-		return report_type_error(context,PACK_ATOM_BUILTIN(integer),arg);
-	}
-	
-	arg = get_next_arg(arg);
-	operator_specifier_t specifier;
-	switch (get_term_type(arg))
-	{
-	case prolite_var:
-		return report_instantiation_error(context,arg);
-
-	case prolite_atom:
-		switch (arg->m_u64val)
-		{
-		case PACK_ATOM_EMBED_2('x','f'):
-			specifier = eXF;
-			break;
-
-		case PACK_ATOM_EMBED_2('y','f'):
-			specifier = eYF;
-			break;
-
-		case PACK_ATOM_EMBED_2('f','x'):
-			specifier = eFX;
-			break;
-
-		case PACK_ATOM_EMBED_2('f','y'):
-			specifier = eFY;
-			break;
-
-		case PACK_ATOM_EMBED_3('x','f','x'):
-			specifier = eXFX;
-			break;
-
-		case PACK_ATOM_EMBED_3('x','f','y'):
-			specifier = eXFY;
-			break;
-
-		case PACK_ATOM_EMBED_3('y','f','x'):
-			specifier = eYFX;
-			break;
-
-		default:
-			return report_domain_error(context,PACK_ATOM_BUILTIN(operator_specifier),arg);
-		}
-		break;
-
-	default:
-		return report_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),arg);
-	}
-
-	arg = get_next_arg(arg);
-	switch (get_term_type(arg))
-	{
-	case prolite_var:
-		return report_instantiation_error(context,arg);
-
-	case prolite_atom:
-		return set_op_inner(context,precendence,specifier,arg);
-
-	case prolite_compound:
-		while (arg->m_u64val == PACK_COMPOUND_EMBED_1(2,'.'))
-		{
-			arg = get_first_arg(arg,NULL);
-			set_op_inner(context,precendence,specifier,arg);
-			arg = get_next_arg(arg);
-		}
-
-		if (arg->m_u64val != PACK_ATOM_EMBED_2('[',']'))
-			set_op_inner(context,precendence,specifier,arg);
-		break;
-
-	default:
-		return report_type_error(context,PACK_ATOM_EMBED_4('l','i','s','t'),arg);
-	}
-}
-
 static void include(consult_context_t* context, const term_t* t);
 static void ensure_loaded(consult_context_t* context, const term_t* t);
 
@@ -574,15 +349,18 @@ static void directive(consult_context_t* context, const term_t* term, size_t var
 		break;
 
 	case PACK_COMPOUND_BUILTIN(set_prolog_flag,2):
-		set_prolog_flag(context,get_first_arg(term,NULL));
+		directive_set_prolog_flag(context->m_context,get_first_arg(term,NULL));
+		check_exception(context);
 		break;
 
 	case PACK_COMPOUND_EMBED_2(3,'o','p'):
-		set_op(context,term);
+		directive_op(context->m_context,&context->m_operators,term);
+		check_exception(context);
 		break;
 
 	case PACK_COMPOUND_BUILTIN(char_conversion,2):
-		// TODO
+		directive_char_conversion(context->m_context,&context->m_char_conversion,term);
+		check_exception(context);
 		break;
 
 	case PACK_COMPOUND_BUILTIN(public,1):
@@ -707,6 +485,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 		.m_context = context->m_context,
 		.m_flags = context->m_parser->m_flags,
 		.m_operators = context->m_parser->m_operators,
+		.m_char_conversion = context->m_parser->m_char_conversion,
 		.m_multiterm = 1,
 		.m_line_info.m_start_col = 1,
 		.m_line_info.m_end_col = 1,
@@ -797,18 +576,20 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	context->m_loaded_files = f;
 
 	// Stash the parse context, as this is a different "prolog text" being prepared for execution
-	prolog_flags_t old_flags = context->m_parser->m_flags;
-	context->m_parser->m_flags = g_default_prolog_flags;
+	prolog_flags_t old_flags = context->m_flags;
+	context->m_flags = g_default_prolog_flags;
 
 	operator_table_t old_ops = context->m_operators;
 	context->m_operators.m_root = NULL;
-	context->m_parser->m_operators = &context->m_operators;
 	
+	char_conv_table_t old_conv = context->m_char_conversion;
+	context->m_char_conversion.m_root = NULL;
+		
 	load_file(context,t);
 
 	context->m_operators = old_ops;
-	context->m_parser->m_operators = &context->m_operators;
-	context->m_parser->m_flags = old_flags;	
+	context->m_char_conversion = old_conv;
+	context->m_flags = old_flags;	
 }
 
 static int consult(context_t* context, const term_t* filename)
@@ -822,11 +603,13 @@ static int consult(context_t* context, const term_t* filename)
 		.m_context = context,
 		.m_predicates.m_allocator = &local_allocator,
 		.m_operators.m_allocator = &local_allocator,
-		.m_parser = &(parser_t){
-			.m_flags = g_default_prolog_flags
-		}
+		.m_char_conversion.m_allocator = &local_allocator,
+		.m_flags = g_default_prolog_flags,
+		.m_parser = &(parser_t){0}
 	};
+	cc.m_parser->m_flags = &cc.m_flags;
 	cc.m_parser->m_operators = &cc.m_operators;
+	cc.m_parser->m_char_conversion = &cc.m_char_conversion;
 
 	load_file(&cc,filename);
 	if (!cc.m_failed)

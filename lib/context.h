@@ -25,6 +25,7 @@ typedef struct operator_defn
 } operator_t;
 
 typedef btree_t operator_table_t;
+typedef btree_t char_conv_table_t;
 
 typedef struct prolog_flags
 {
@@ -40,9 +41,9 @@ extern const prolog_flags_t g_default_prolog_flags;
 
 typedef struct module
 {
-	prolog_flags_t   m_flags;
-	operator_table_t m_operators;
-	btree_t          m_char_conversion;
+	prolog_flags_t    m_flags;
+	operator_table_t  m_operators;
+	char_conv_table_t m_char_conversion;
 
 	const term_t*  m_name;
 
@@ -88,5 +89,12 @@ term_t* copy_term(prolite_allocator_t* allocator, context_t* context, const term
 
 context_t* context_new(void* user_data, const prolite_environment_t* env);
 void context_delete(context_t* c);
+
+void push_out_of_memory_error(context_t* context, const term_t* t);
+void push_instantiation_error(context_t* context, const term_t* t);
+void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t);
+void push_type_error(context_t* context, uint64_t p1, const term_t* t);
+void push_domain_error(context_t* context, uint64_t p1, const term_t* t);
+void push_representation_error(context_t* context, uint64_t p1, const term_t* t);
 
 #endif // CONTEXT_H_

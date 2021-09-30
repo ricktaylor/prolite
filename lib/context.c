@@ -17,86 +17,134 @@ const prolog_flags_t g_default_prolog_flags =
 	.back_quotes = 1
 };
 
-uint32_t convert_char(context_t* context, uint32_t in_char)
+static void push_flag_value_error(context_t* context, const term_t* flag, const term_t* value)
 {
-	/* TODO */
-
-	return in_char;
-}
-
-#ifdef UNUSED
-static uint32_t atom_to_code(const term_t* b)
-{
-	uint64_t all48 = UNPACK_MANT_48(b->m_u64val);
-	unsigned int len = ((all48 >> 40) & 0x07);
-	unsigned int count = 0;
-	uint32_t val = 0;
+	// TODO
 	
-	uint8_t c[5] =
-	{
-		(all48 >> 32) & 0xFF,
-		(all48 >> 24) & 0xFF,
-		(all48 >> 16) & 0xFF,
-		(all48 >> 8) & 0xFF,
-		all48 & 0xFF
-	};
-
-	if (((all48 >> 32) & 0xC000) != 0x8000)
-		return -1;
-
-	if (c[0] <= 0x7f)
-		return len == 1 ? c[0] : -1;
-
-	if (c[0] < 0xC2 || c[0] > 0xF4)
-		return -1;
-
-	if ((c[0] & 0xE0) == 0xC0)
-	{
-		count = 2;
-		val = (c[0] & 0x1F);
-	}
-	else if ((c[0] & 0xF0) == 0xE0)
-	{
-		if ((c[0] == 0xE0 && c[1] >= 0x80 && c[1] <= 0x9F) ||
-			(c[0] == 0xED && c[1] >= 0xA0 && c[1] <= 0xBF))
-		{
-			return -1;
-		}
-
-		count = 3;
-		val = (c[0] & 0x0F);
-	}
-	else if ((c[0] & 0xF8) == 0xF0)
-	{
-		if ((c[0] == 0xF0 && c[1] >= 0x80 && c[1] <= 0x8F) ||
-			(c[0] == 0xF4 && c[1] >= 0x90 && c[1] <= 0xBF))
-		{
-			return -1;
-		}
-
-		count = 4;
-		val = (c[0] & 0x7);
-	}
-	else
-		return -1;
-
-	if (len != count)
-		return -1;
-	else
-	{
-		unsigned int i;
-		for (i=1;i<count;++i)
-		{
-			if ((c[i] & 0xC0) != 0x80)
-				return -1;
-
-			val = (val << 6) | (c[i] & 0x3F);
-		}
-	}
-
-	return val;
+	context->m_flags |= FLAG_THROW;
 }
-#endif
+
+static void set_prolog_flag_inner(context_t* context, const term_t* flag)
+{
+	const term_t* value = get_next_arg(flag);
+	switch (flag->m_u64val)
+	{
+	case PACK_ATOM_BUILTIN(char_conversion):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_2('o','n'):
+			context->m_module->m_flags.char_conversion = 1;
+			break;
+
+		case PACK_ATOM_EMBED_3('o','f','f'):
+			context->m_module->m_flags.char_conversion = 0;
+			break;
+
+		default:
+			push_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	case PACK_ATOM_EMBED_5('d','e','b','u','g'):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_2('o','n'):
+			context->m_module->m_flags.debug = 1;
+			break;
+
+		case PACK_ATOM_EMBED_3('o','f','f'):
+			context->m_module->m_flags.debug = 0;
+			break;
+
+		default:
+			push_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	case PACK_ATOM_BUILTIN(unknown):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_5('e','r','r','o','r'):
+			context->m_module->m_flags.unknown = 0;
+			break;
+
+		case PACK_ATOM_EMBED_4('f','a','i','l'):
+			context->m_module->m_flags.unknown = 1;
+			break;
+
+		case PACK_ATOM_BUILTIN(warning):
+			context->m_module->m_flags.unknown = 2;
+			break;
+
+		default:
+			push_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	case PACK_ATOM_BUILTIN(double_quotes):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_5('c','h','a','r','s'):
+			context->m_module->m_flags.double_quotes = 0;
+			break;
+
+		case PACK_ATOM_EMBED_5('c','o','d','e','s'):
+			context->m_module->m_flags.double_quotes = 1;
+			break;
+
+		case PACK_ATOM_EMBED_4('a','t','o','m'):
+			context->m_module->m_flags.double_quotes = 2;
+			break;
+		
+		default:
+			push_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	case PACK_ATOM_BUILTIN(back_quotes):
+		switch(value->m_u64val)
+		{
+		case PACK_ATOM_EMBED_5('c','h','a','r','s'):
+			context->m_module->m_flags.double_quotes = 0;
+			break;
+
+		case PACK_ATOM_EMBED_5('c','o','d','e','s'):
+			context->m_module->m_flags.double_quotes = 1;
+			break;
+
+		case PACK_ATOM_EMBED_4('a','t','o','m'):
+			context->m_module->m_flags.double_quotes = 2;
+			break;
+		
+		default:
+			push_flag_value_error(context,flag,value);
+			break;
+		}
+		break;
+
+	default:
+		if (get_term_type(flag) == prolite_var)
+			push_instantiation_error(context,flag);
+		else if (get_term_type(flag) != prolite_atom)
+			push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),flag);
+		else
+			push_domain_error(context,PACK_ATOM_BUILTIN(prolog_flag),flag);
+		break;
+	}	
+}
+
+void directive_set_prolog_flag(context_t* context, const term_t* flag)
+{
+	set_prolog_flag_inner(context,flag);
+}
+
+void builtin_set_prolog_flag(context_t* context)
+{
+}
 
 const term_t* deref_local_var(context_t* context, const term_t* t)
 {
@@ -109,27 +157,6 @@ const term_t* deref_local_var(context_t* context, const term_t* t)
 	}
 	return t;
 }
-
-void builtin_set_prolog_flag(context_t* context)
-{
-}
-
-void builtin_char_conversion(context_t* context)
-{
-}
-
-void builtin_current_char_conversion(context_t* context)
-{
-}
-
-void builtin_op(context_t* context)
-{
-}
-
-void builtin_current_op(context_t* context)
-{
-}
-
 
 module_t* module_new(context_t* context, const term_t* name)
 {

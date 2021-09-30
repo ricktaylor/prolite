@@ -55,7 +55,7 @@ static const dynamic_operator_t* op_map_lookup(const btree_t* om, const term_t* 
 	return p;
 }
 
-static const operator_t* builtin_op(const term_t* name)
+static const operator_t* static_op(const term_t* name)
 {
 	static const operator_t s_builtins[] =
 	{
@@ -136,7 +136,7 @@ static const operator_t* builtin_op(const term_t* name)
 	return NULL;
 }
 
-static const operator_t* builtin_prefix_op(const term_t* name)
+static const operator_t* static_prefix_op(const term_t* name)
 {
 	static const operator_t s_builtins[] =
 	{
@@ -177,14 +177,14 @@ const operator_t* lookup_op(context_t* context, const btree_t* ops, const unsign
 	if (dyn_op && dyn_op->m_other.m_precedence)
 		op = &dyn_op->m_other;
 	else
-		op = builtin_op(context->m_stack);
+		op = static_op(context->m_stack);
 
 	if (!op)
 	{
 		if (dyn_op && dyn_op->m_prefix.m_precedence)
 			op = &dyn_op->m_prefix;
 		else
-			op = builtin_prefix_op(context->m_stack);
+			op = static_prefix_op(context->m_stack);
 	}
 
 	context->m_stack = sp;	
@@ -202,14 +202,14 @@ const operator_t* lookup_prefix_op(context_t* context, const btree_t* ops, const
 	if (dyn_op && dyn_op->m_prefix.m_precedence)
 		op = &dyn_op->m_prefix;
 	else
-		op = builtin_prefix_op(context->m_stack);
+		op = static_prefix_op(context->m_stack);
 
 	if (!op)
 	{
 		if (dyn_op && dyn_op->m_other.m_precedence)
 			op = &dyn_op->m_other;
 		else
-			op = builtin_op(context->m_stack);
+			op = static_op(context->m_stack);
 	}
 	
 	context->m_stack = sp;	
@@ -260,7 +260,7 @@ static void remove_operator(operator_table_t* ops, operator_specifier_t specifie
 	}
 }
 
-int update_operator(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name)
+static int update_operator(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name)
 {
 	// return -1 on OOM, 0 on failure, 1 on success
 
@@ -377,4 +377,121 @@ int update_operator(context_t* context, operator_table_t* ops, int64_t precenden
 	}
 
 	return 1;
+}
+
+static void set_op_inner(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* op)
+{
+	if (get_term_type(op) != prolite_atom)
+		push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),op);
+	else if (op->m_u64val == PACK_ATOM_EMBED_1(','))
+		push_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(operator),op);
+	else
+	{
+		int i = update_operator(context,ops,precendence,specifier,op);
+		if (i == 0)
+			push_permission_error(context,PACK_ATOM_BUILTIN(create),PACK_ATOM_BUILTIN(operator),op);
+		else if (i == -1)
+			push_out_of_memory_error(context,op);
+	}
+}
+
+void directive_op(context_t* context, operator_table_t* ops, const term_t* goal)
+{
+	const term_t* arg = get_first_arg(goal,NULL);
+	
+	int64_t precendence = 0;
+	switch (get_term_type(arg))
+	{
+	case prolite_var:
+		return push_instantiation_error(context,arg);
+
+	case prolite_integer:
+		precendence = get_integer(arg);
+		if (precendence < 0 || precendence > 1200)
+			return push_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),arg);
+		break;
+
+	default:
+		return push_type_error(context,PACK_ATOM_BUILTIN(integer),arg);
+	}
+	
+	arg = get_next_arg(arg);
+	operator_specifier_t specifier;
+	switch (get_term_type(arg))
+	{
+	case prolite_var:
+		return push_instantiation_error(context,arg);
+
+	case prolite_atom:
+		switch (arg->m_u64val)
+		{
+		case PACK_ATOM_EMBED_2('x','f'):
+			specifier = eXF;
+			break;
+
+		case PACK_ATOM_EMBED_2('y','f'):
+			specifier = eYF;
+			break;
+
+		case PACK_ATOM_EMBED_2('f','x'):
+			specifier = eFX;
+			break;
+
+		case PACK_ATOM_EMBED_2('f','y'):
+			specifier = eFY;
+			break;
+
+		case PACK_ATOM_EMBED_3('x','f','x'):
+			specifier = eXFX;
+			break;
+
+		case PACK_ATOM_EMBED_3('x','f','y'):
+			specifier = eXFY;
+			break;
+
+		case PACK_ATOM_EMBED_3('y','f','x'):
+			specifier = eYFX;
+			break;
+
+		default:
+			return push_domain_error(context,PACK_ATOM_BUILTIN(operator_specifier),arg);
+		}
+		break;
+
+	default:
+		return push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),arg);
+	}
+
+	arg = get_next_arg(arg);
+	switch (get_term_type(arg))
+	{
+	case prolite_var:
+		return push_instantiation_error(context,arg);
+
+	case prolite_atom:
+		return set_op_inner(context,ops,precendence,specifier,arg);
+
+	case prolite_compound:
+		while (arg->m_u64val == PACK_COMPOUND_EMBED_1(2,'.'))
+		{
+			arg = get_first_arg(arg,NULL);
+			set_op_inner(context,ops,precendence,specifier,arg);
+			arg = get_next_arg(arg);
+		}
+
+		if (arg->m_u64val != PACK_ATOM_EMBED_2('[',']'))
+			set_op_inner(context,ops,precendence,specifier,arg);
+		break;
+
+	default:
+		return push_type_error(context,PACK_ATOM_EMBED_4('l','i','s','t'),arg);
+	}
+}
+
+void builtin_op(context_t* context)
+{
+}
+
+void builtin_current_op(context_t* context)
+{
 }

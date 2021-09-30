@@ -28,10 +28,10 @@ typedef struct parser
 	jmp_buf           m_jmp;
 	unsigned          m_eof : 1;
 	unsigned          m_multiterm : 1;
-	prolog_flags_t    m_flags;
 
-	const operator_table_t* m_operators;
-	const btree_t*          m_char_conversion;
+	const prolog_flags_t*    m_flags;
+	const operator_table_t*  m_operators;
+	const char_conv_table_t* m_char_conversion;
 } parser_t;
 
 typedef enum parse_status

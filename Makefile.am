@@ -22,6 +22,7 @@ libprolite_la_SOURCES = \
 	lib/compile.c \
 	lib/predicates.c \
 	lib/operators.c \
+	lib/char_conv.c \
 	lib/consult.c \
 	lib/exceptions.c
 

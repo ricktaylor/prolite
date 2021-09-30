@@ -10,7 +10,7 @@
 #define isnan _isnan
 #endif
 
-uint32_t convert_char(context_t* context, uint32_t in_char);
+uint32_t convert_char(const char_conv_table_t* cc, uint32_t in_char);
 
 /* Try to find a infix/suffix op, otherwise find prefix */
 const operator_t* lookup_op(context_t* context, const operator_table_t* ops, const unsigned char* name, size_t name_len);
@@ -299,8 +299,8 @@ static uint32_t token_get_char(const unsigned char** p, const unsigned char* pe,
 static uint32_t token_get_char_conv(parser_t* parser, const unsigned char** p, const unsigned char* pe, int eof, size_t* line, size_t* col)
 {
 	uint32_t c = token_get_char(p,pe,eof,line,col);
-	if (parser->m_flags.char_conversion && c <= CHAR_MAX_VALID)
-		c = convert_char(parser->m_context,c);
+	if (parser->m_flags->char_conversion && c <= CHAR_MAX_VALID)
+		c = convert_char(parser->m_char_conversion,c);
 	return c;
 }
 
@@ -1760,20 +1760,20 @@ static ast_node_t* parse_term_base(parser_t* parser, unsigned int* max_prec, tok
 		return parse_number(parser,node,next_type,next,ast_err,0);
 
 	case tokDQL:
-		if (parser->m_flags.double_quotes == 2 /* atom */)
+		if (parser->m_flags->double_quotes == 2 /* atom */)
 		{
 			/* ISO/IEC 13211-1:1995/Cor.1:2007 */
 			return parse_name(parser,max_prec,next_type,next,ast_err);
 		}
 
-		node = parse_chars_and_codes(parser,parser->m_flags.double_quotes,next,ast_err);
+		node = parse_chars_and_codes(parser,parser->m_flags->double_quotes,next,ast_err);
 		break;
 
 	case tokBackQuote:
-		if (parser->m_flags.back_quotes == 2 /* atom */)
+		if (parser->m_flags->back_quotes == 2 /* atom */)
 			return parse_name(parser,max_prec,next_type,next,ast_err);
 
-		node = parse_chars_and_codes(parser,parser->m_flags.back_quotes,next,ast_err);
+		node = parse_chars_and_codes(parser,parser->m_flags->back_quotes,next,ast_err);
 		break;
 
 	case tokOpen:
@@ -2275,7 +2275,7 @@ parse_status_t read_term_todo(context_t* context, prolite_stream_t* s)
 	parser_t parser = 
 	{
 		.m_context = context,
-		.m_flags = context->m_module->m_flags,
+		.m_flags = &context->m_module->m_flags,
 		.m_s = s,
 		.m_line_info.m_start_col = 1,
 		.m_line_info.m_end_col = 1,
