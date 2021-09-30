@@ -179,13 +179,18 @@ static int insert_internal(btree_t* bt, struct btree_page* page, struct btree_pa
 	return 1;
 }
 
-static void* kv_insert(btree_t* bt, struct btree_page** page, uint64_t key, void* val)
+static void* kv_insert(btree_t* bt, struct btree_page** page, uint64_t key, void* val, int replace)
 {
 	size_t i = binary_search(*page,key);
 	if (!(*page)->m_internal)
 	{
 		if (i < (*page)->m_count && (*page)->m_keys[i] == key)
+		{
+			if (replace)
+				values(*page)[i] = val;
+
 			return values(*page)[i];
+		}
 
 		if ((*page)->m_count == c_max_items)
 		{
@@ -213,7 +218,7 @@ static void* kv_insert(btree_t* bt, struct btree_page** page, uint64_t key, void
 	else
 	{
 		struct btree_page* sub_page = values(*page)[i];
-		val = kv_insert(bt,&sub_page,key,val);
+		val = kv_insert(bt,&sub_page,key,val,replace);
 		if (val)
 		{
 			uint32_t prev_count = sub_page->m_count;
@@ -234,7 +239,7 @@ static void* kv_insert(btree_t* bt, struct btree_page** page, uint64_t key, void
 	return val;
 }
 
-void* btree_insert(btree_t* bt, uint64_t key, void* val)
+static void* btree_insert_root(btree_t* bt, uint64_t key, void* val, int replace)
 {
 	if (!bt)
 		return NULL;
@@ -250,7 +255,17 @@ void* btree_insert(btree_t* bt, uint64_t key, void* val)
 	}
 
 	struct btree_page* page = bt->m_root;
-	return kv_insert(bt,&page,key,val);
+	return kv_insert(bt,&page,key,val,replace);
+}
+
+void* btree_insert(btree_t* bt, uint64_t key, void* val)
+{
+	return btree_insert_root(bt,key,val,0);
+}
+
+void* btree_replace(btree_t* bt, uint64_t key, void* val)
+{
+	return btree_insert_root(bt,key,val,1);
 }
 
 static void* kv_remove(btree_t* bt, struct btree_page* page, uint64_t key)
