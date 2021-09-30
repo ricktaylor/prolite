@@ -127,7 +127,7 @@ void directive_char_conversion(context_t* context, char_conv_table_t* cc, const 
 	set_char_conversion(context,cc,in_char,out_char);
 }
 
-void builtin_char_conversion(context_t* context)
+PROLITE_EXPORT void builtin_char_conversion(context_t* context)
 {
 	// Pop 2 terms
 	term_t* out_char = context->m_stack;
@@ -135,8 +135,10 @@ void builtin_char_conversion(context_t* context)
 	context->m_stack = (term_t*)get_next_arg(in_char);
 
 	set_char_conversion(context,&context->m_module->m_char_conversion,in_char,out_char);
+	if (context->m_flags & FLAG_THROW)
+		throw_exception(context);
 }
 
-void builtin_current_char_conversion(context_t* context)
+PROLITE_EXPORT void builtin_current_char_conversion(context_t* context)
 {
 }

@@ -1,6 +1,8 @@
 #ifndef CONTEXT_H_
 #define CONTEXT_H_
 
+#include "export.h"
+#include "heap.h"
 #include "btree.h"
 #include "types.h"
 #include "setjmp.h"
@@ -96,5 +98,6 @@ void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const t
 void push_type_error(context_t* context, uint64_t p1, const term_t* t);
 void push_domain_error(context_t* context, uint64_t p1, const term_t* t);
 void push_representation_error(context_t* context, uint64_t p1, const term_t* t);
+void throw_exception(context_t* context);
 
 #endif // CONTEXT_H_

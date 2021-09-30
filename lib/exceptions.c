@@ -47,3 +47,8 @@ void push_representation_error(context_t* context, uint64_t p1, const term_t* t)
 	// TODO
 	push_exception(context);
 }
+
+void throw_exception(context_t* context)
+{
+    // TODO - Exception is on the stack!
+}

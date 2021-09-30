@@ -1,7 +1,7 @@
 #ifndef BTREE_H_
 #define BTREE_H_
 
-#include "heap.h"
+#include "../include/prolite.h"
 
 // This isn't a 'btree', it's a b+tree
 

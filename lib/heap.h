@@ -1,7 +1,6 @@
 #ifndef HEAP_H_
 #define HEAP_H_
 
-#include "export.h"
 #include "../include/prolite.h"
 
 #include <stdint.h>

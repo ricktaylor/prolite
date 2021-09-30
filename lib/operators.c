@@ -493,17 +493,19 @@ void directive_op(context_t* context, operator_table_t* ops, const term_t* goal)
 	set_op(context,ops,p,s,op);
 }
 
-void builtin_op(context_t* context)
+PROLITE_EXPORT void builtin_op(context_t* context)
 {
-	// Pop 2 terms
+	// Pop 3 terms
 	term_t* op = context->m_stack;
 	const term_t* s = get_next_arg(op);
 	const term_t* p = get_next_arg(s);
 	context->m_stack = (term_t*)get_next_arg(p);
 
 	set_op(context,&context->m_module->m_operators,p,s,op);
+	if (context->m_flags & FLAG_THROW)
+		throw_exception(context);
 }
 
-void builtin_current_op(context_t* context)
+PROLITE_EXPORT void builtin_current_op(context_t* context)
 {
 }

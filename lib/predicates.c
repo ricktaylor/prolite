@@ -163,6 +163,7 @@ int predicate_is_builtin(const term_t* pred)
 	return 0;
 }
 
+#if 0
 #include "context.h"
 
 typedef struct clause
@@ -297,3 +298,4 @@ void builtin_user_defined(context_t* context)
 {
 
 }
+#endif
