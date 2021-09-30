@@ -2,6 +2,7 @@
 #define COMPILE_H_
 
 #include "context.h"
+#include "predicates.h"
 
 typedef enum prolite_type_flags
 {
@@ -79,6 +80,26 @@ static inline continuation_t* compile_true(compile_context_t* context, continuat
 continuation_t* compile_false(compile_context_t* context, continuation_t* cont, const term_t* goal);
 continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, size_t arity, const term_t* g1);
 continuation_t* compile_type_test(compile_context_t* context, continuation_t* cont, prolite_type_flags_t types, int negate, const term_t* goal);
+
+void compile_goal(context_t* context, const term_t* goal, size_t var_count);
+
+typedef struct compile_clause
+{
+	struct compile_clause* m_next;
+	const term_t*          m_head;
+	const term_t*          m_body;
+	size_t                 m_varcount;
+
+} compile_clause_t;
+
+typedef struct compile_predicate
+{
+	predicate_base_t  m_base;
+	compile_clause_t* m_clauses;
+		
+} compile_predicate_t;
+
+static_assert(offsetof(compile_predicate_t,m_base) == 0,"structure members reorganised");
 
 typedef struct cfg_block_info
 {

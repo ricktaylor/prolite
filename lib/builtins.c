@@ -58,6 +58,7 @@
 
 #include "builtin_functions.h"
 
+// These are the supporting builtin thunks for some intrinsics
 BUILTIN_THUNK_1(call)
 BUILTIN_THUNK_1(callN)
 BUILTIN_THUNK_1(catch)

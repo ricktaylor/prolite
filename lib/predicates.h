@@ -1,6 +1,7 @@
 #ifndef PREDICATES_H_
 #define PREDICATES_H_
 
+#include "export.h"
 #include "btree.h"
 #include "types.h"
 

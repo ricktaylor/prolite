@@ -1,16 +1,7 @@
 #include "parser.h"
-#include "predicates.h"
+#include "compile.h"
 
 #include <string.h>
-
-typedef struct consult_clause
-{
-	struct consult_clause* m_next;
-	const term_t*          m_head;
-	const term_t*          m_body;
-	size_t                 m_varcount;
-
-} consult_clause_t;
 
 typedef struct consult_file
 {
@@ -21,7 +12,7 @@ typedef struct consult_file
 
 typedef struct consult_predicate
 {
-	predicate_base_t  m_base;
+	compile_predicate_t m_base;
 
 	unsigned          m_public : 1;
 	unsigned          m_dynamic : 1;
@@ -29,9 +20,11 @@ typedef struct consult_predicate
 	unsigned          m_discontiguous : 1;
 
 	const term_t*     m_filename;
-	consult_clause_t* m_clauses;
+	compile_clause_t* m_clauses;
 		
 } consult_predicate_t;
+
+static_assert(offsetof(consult_predicate_t,m_base) == 0,"structure members reorganised");
 
 typedef struct consult_initializer
 {
@@ -72,8 +65,6 @@ typedef struct consult_context
 void directive_op(context_t* context, operator_table_t* ops, const term_t* goal);
 void directive_set_prolog_flag(context_t* context, const term_t* flag);
 void directive_char_conversion(context_t* context, char_conv_table_t* cc, const term_t* goal);
-
-void compile_goal(context_t* context, const term_t* goal, size_t var_count);
 
 static void report_exception(consult_context_t* context)
 {
@@ -137,19 +128,19 @@ static consult_predicate_t* new_predicate(consult_context_t* context, const term
 		return NULL;
 	
 	*new_pred = (consult_predicate_t){ 
-		.m_base.m_functor = t,
+		.m_base.m_base.m_functor = t,
 		.m_dynamic = dynamic,
 		.m_multifile = multifile,
 		.m_discontiguous = discontiguous,
 		.m_filename = context->m_includes->m_filename
 	};
 
-	predicate_base_t* pred = predicate_map_insert(&context->m_predicates,&new_pred->m_base);
+	predicate_base_t* pred = predicate_map_insert(&context->m_predicates,&new_pred->m_base.m_base);
 	
 	if (is_new_pred)
-		*is_new_pred = (pred == &new_pred->m_base);
+		*is_new_pred = (pred == &new_pred->m_base.m_base);
 
-	if (!pred || pred != &new_pred->m_base)
+	if (!pred || pred != &new_pred->m_base.m_base)
 		heap_free(&context->m_context->m_heap,new_pred,sizeof(consult_predicate_t));
 	
 	return (consult_predicate_t*)pred;
@@ -295,14 +286,14 @@ static void pi_directive(consult_context_t* context, const term_t* directive, vo
 	}
 }
 
-static void append_clause(consult_context_t* context, consult_predicate_t* pred, const consult_clause_t* c)
+static void append_clause(consult_context_t* context, consult_predicate_t* pred, const compile_clause_t* c)
 {
 	// Push a clause frame on the stack, and add to linked list
-	consult_clause_t** tail = &pred->m_clauses;
+	compile_clause_t** tail = &pred->m_clauses;
 	while (*tail)
 		tail = &(*tail)->m_next;
 
-	consult_clause_t* new_clause = heap_malloc(&context->m_context->m_heap,sizeof(consult_clause_t));
+	compile_clause_t* new_clause = heap_malloc(&context->m_context->m_heap,sizeof(compile_clause_t));
 	if (!new_clause)
 		return report_out_of_memory_error(context,c->m_head);
 
@@ -409,11 +400,11 @@ static void directive(consult_context_t* context, const term_t* term, size_t var
 	}
 }
 
-static void assert_clause(consult_context_t* context, const consult_clause_t* c)
+static void assert_clause(consult_context_t* context, const compile_clause_t* c)
 {
 	int is_current_pred = 0;
 	if (context->m_current_predicate)
-		is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_functor,c->m_head);
+		is_current_pred = predicate_compare(context->m_current_predicate->m_base.m_base.m_functor,c->m_head);
 	
 	if (!is_current_pred)
 	{
@@ -523,7 +514,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 			else
 			{
 				// Unpack clause term
-				consult_clause_t clause = { .m_head = context->m_context->m_stack };
+				compile_clause_t clause = { .m_head = context->m_context->m_stack };
 				clause.m_varcount = (clause.m_head++)->m_u64val;
 				for (size_t i = 0; i < clause.m_varcount; ++i)
 					clause.m_head = get_next_arg(clause.m_head) + 1;
