@@ -2,10 +2,14 @@
 
 uint32_t convert_char(const char_conv_table_t* cc, uint32_t in_char)
 {
+	if (in_char == 0)
+		in_char = -1;
+	
 	uint32_t out_char = (uintptr_t)btree_lookup(cc,in_char);
 	if (!out_char)
 		out_char = in_char;
-	else if (out_char == -1)
+
+	if (out_char == -1)
 		out_char = 0;
 
 	return out_char;
