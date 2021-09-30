@@ -5,15 +5,17 @@
 
 #define BUILTIN_FUNCTION_POP \
 	term_t* sp = (term_t*)get_next_arg(arg1); \
-	const builtin_fn_t gosub = (sp++)->m_pval; \
-	context->m_stack = sp;
-
+	const builtin_fn_t gosub = (sp++)->m_pval;
+	
 #define BUILTIN_FUNCTION_RET \
 	if (context->m_flags & FLAG_THROW) \
 		throw_exception(context); \
-	else if (!(context->m_flags & FLAG_FAIL))\
-		(*gosub)(context); \
-	}
+	else \
+	{ \
+		if (!(context->m_flags & FLAG_FAIL))\
+			(*gosub)(context); \
+		context->m_stack = sp; \
+	} }
 
 #define BUILTIN_THUNK_0(f) \
 	void builtin_##f(context_t* context); \
