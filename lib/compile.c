@@ -626,7 +626,7 @@ static continuation_t* compile_unify_var(compile_context_t* context, continuatio
 	ops->m_term.m_u64val = idx;
 
 	if (with_occurs_check)
-		c_set = compile_builtin(context,c_set,&prolite_builtin_occurs_check,0,g1);
+		c_set = compile_builtin(context,c_set,&prolite_builtin_occurs_check,0,NULL);
 
 	c_set = goto_next(context,c_set,c_end);
 
@@ -659,7 +659,7 @@ static continuation_t* compile_unify_var(compile_context_t* context, continuatio
 		ops->m_term.m_pval = g1;
 	}
 
-	continuation_t* c1 = compile_builtin(context,cont,&prolite_builtin_term_compare,0,g1);
+	continuation_t* c1 = compile_builtin(context,cont,&prolite_builtin_term_compare,0,NULL);
 	c = goto_next(context,c,c1);
 	return goto_next(context,c,c_end);
 }
@@ -945,7 +945,7 @@ static continuation_t* compile_subgoal(compile_context_t* context, continuation_
 
 #undef DECLARE_BUILTIN_FUNCTION
 #define DECLARE_BUILTIN_FUNCTION(f,p,a) \
-	case (p): c = compile_builtin(context,cont,&prolite_builtin_##f,a,get_first_arg(goal,NULL)); break;
+	case (p): c = compile_builtin(context,cont,&prolite_builtin_##f,a,a ? get_first_arg(goal,NULL) : NULL); break;
 
 #include "builtin_functions.h"
 
