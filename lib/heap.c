@@ -199,6 +199,6 @@ prolite_allocator_t heap_allocator(heap_t* h)
 		.m_fn_malloc = &heap_allocator_malloc,
 		.m_fn_realloc = &heap_allocator_realloc,
 		.m_fn_free = &heap_allocator_free,
-		.m_param = h
+		.m_user_data = h
 	};
 }

@@ -28,18 +28,18 @@ typedef struct heap
 
 static inline void* allocator_malloc(prolite_allocator_t* a, size_t bytes)
 {
-	return a ? (*a->m_fn_malloc)(a->m_param,bytes) : malloc(bytes);
+	return a ? (*a->m_fn_malloc)(a->m_user_data,bytes) : malloc(bytes);
 }
 
 static inline void* allocator_realloc(prolite_allocator_t* a, void* ptr, size_t bytes)
 {
-	return a ? (*a->m_fn_realloc)(a->m_param,ptr,bytes) : realloc(ptr,bytes);
+	return a ? (*a->m_fn_realloc)(a->m_user_data,ptr,bytes) : realloc(ptr,bytes);
 }
 
 static inline void allocator_free(prolite_allocator_t* a, void* ptr)
 {
 	if (a)
-		(*a->m_fn_free)(a->m_param,ptr);
+		(*a->m_fn_free)(a->m_user_data,ptr);
 	else
 		free(ptr);
 }
