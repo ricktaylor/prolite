@@ -282,7 +282,7 @@ static void pre_substitute_goal(compile_context_t* context, const term_t* goal)
 	}
 }
 
-static continuation_t* compile_goal(compile_context_t* context, continuation_t* cont, const term_t* goal);
+static continuation_t* compile_subgoal(compile_context_t* context, continuation_t* cont, const term_t* goal);
 
 continuation_t* compile_false(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
@@ -307,10 +307,10 @@ static continuation_t* compile_and(compile_context_t* context, continuation_t* c
 	context->m_substs = copy_substitutions(context,context->m_substs);
 
 	pre_substitute_goal(context,g1);
-	continuation_t* c = compile_goal(context,cont,g2);
+	continuation_t* c = compile_subgoal(context,cont,g2);
 
 	context->m_substs = s_orig;
-	return compile_goal(context,c,g1);
+	return compile_subgoal(context,c,g1);
 }
 
 static continuation_t* compile_if_then_else(compile_context_t* context, continuation_t* c_if, continuation_t* c_then, continuation_t* c_else)
@@ -397,34 +397,34 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 	{
 		const term_t* g_if = get_first_arg(g1,NULL);
 
-		continuation_t* c_if = compile_goal(context,set_flags(context,new_continuation(context),FLAG_CUT),g_if);
+		continuation_t* c_if = compile_subgoal(context,set_flags(context,new_continuation(context),FLAG_CUT),g_if);
 
 		continuation_t* c_then = NULL;
 		continuation_t* c_else = NULL;
 		if (c_if->m_always_flags & FLAG_FAIL)
 		{
 			context->m_substs = s_orig;
-			c_else = compile_goal(context,cont,g2);
+			c_else = compile_subgoal(context,cont,g2);
 		}
 		else
 		{
-			c_then = compile_goal(context,cont,get_next_arg(g_if));
+			c_then = compile_subgoal(context,cont,get_next_arg(g_if));
 			
 			if (!(c_if->m_always_flags & FLAG_CUT))
 			{
 				context->m_substs = s_orig;
-				c_else = compile_goal(context,cont,g2);
+				c_else = compile_subgoal(context,cont,g2);
 			}
 		}
 
 		return compile_if_then_else(context,c_if,c_then,c_else);
 	}
 
-	continuation_t* c = compile_goal(context,convert_to_gosub(context,cont),g1);
+	continuation_t* c = compile_subgoal(context,convert_to_gosub(context,cont),g1);
 	if (c->m_always_flags & FLAG_FAIL)
 	{
 		context->m_substs = s_orig;
-		c = compile_goal(context,cont,g2);
+		c = compile_subgoal(context,cont,g2);
 	}
 	else if (!(c->m_always_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT)))
 	{
@@ -434,7 +434,7 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 		c = clear_flags(context,c,FLAG_FAIL);
 
 		context->m_substs = s_orig;
-		continuation_t* c2 = compile_goal(context,convert_to_gosub(context,cont),g2);
+		continuation_t* c2 = compile_subgoal(context,convert_to_gosub(context,cont),g2);
 		c2 = goto_next(context,c2,c_end);
 		c = goto_next(context,c,c2);
 
@@ -450,9 +450,9 @@ static continuation_t* compile_if_then(compile_context_t* context, continuation_
 	const term_t* g_then = get_next_arg(g_if);
 
 	continuation_t* c_if = set_flags(context,new_continuation(context),FLAG_CUT);
-	c_if = compile_goal(context,c_if,g_if);
+	c_if = compile_subgoal(context,c_if,g_if);
 
-	continuation_t* c_then = compile_goal(context,cont,g_then);
+	continuation_t* c_then = compile_subgoal(context,cont,g_then);
 	return compile_if_then_else(context,c_if,c_then,NULL);
 }
 
@@ -571,7 +571,7 @@ static continuation_t* compile_call_inner(compile_context_t* context, continuati
 	goal = deref_var(context,goal);
 
 	if (compile_is_callable(context,goal))
-		return compile_goal(context,cont,goal);
+		return compile_subgoal(context,cont,goal);
 
 	return compile_builtin(context,cont,&builtin_call,1,goal);
 }
@@ -980,7 +980,7 @@ static continuation_t* compile_builtin_fn(compile_context_t* context, continuati
 	return compile_builtin(context,cont,fn,arity,goal);
 }
 
-static continuation_t* compile_goal(compile_context_t* context, continuation_t* cont, const term_t* goal)
+static continuation_t* compile_subgoal(compile_context_t* context, continuation_t* cont, const term_t* goal)
 {
 	int debug = 0;
 
@@ -1254,7 +1254,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 	return (end - start);
 }
 
-void compile_term(context_t* context, const term_t* goal, size_t var_count)
+void compile_goal(context_t* context, const term_t* goal, size_t var_count)
 {
 	size_t heap_start = heap_top(&context->m_heap);
 	compile_context_t cc = { .m_heap = &context->m_heap };
@@ -1274,7 +1274,7 @@ void compile_term(context_t* context, const term_t* goal, size_t var_count)
 		opcode_t* ops = append_opcodes(&cc,c->m_tail,1);
 		ops->m_opcode.m_op = OP_SUCCEEDS;
 
-		c = compile_goal(&cc,c,goal);
+		c = compile_subgoal(&cc,c,goal);
 		ops = append_opcodes(&cc,c->m_tail,1);
 		ops->m_opcode.m_op = OP_END;
 		

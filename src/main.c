@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
 					context->m_stack = (term_t*)sp;
 				}
 
-				compile_term(context,context->m_stack,varcount);
+				compile_goal(context,context->m_stack,varcount);
 			}*/
 			
 			prolite_context_destroy(context);

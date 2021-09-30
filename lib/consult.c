@@ -55,18 +55,20 @@ typedef struct consult_context
 
 	context_t*              m_context;
 	parser_t*               m_parser;
-	operator_table_t        m_operators;
 	consult_file_t*         m_includes;
 	consult_file_t*         m_loaded_files;
-	predicate_map_t         m_predicates;
 	consult_predicate_t*    m_current_predicate;
-	consult_initializer_t*  m_initializers;
 	consult_module_t*       m_modules;
 
+	// TODO: The following are per-module
+	predicate_map_t         m_predicates;
+	operator_table_t        m_operators;
+	consult_initializer_t*  m_initializers;
+	
 } consult_context_t;
 
 int update_operator(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* name);
-void compile_term(context_t* context, const term_t* goal, size_t var_count);
+void compile_goal(context_t* context, const term_t* goal, size_t var_count);
 
 static void report_exception(consult_context_t* context)
 {
@@ -307,9 +309,6 @@ static void append_clause(consult_context_t* context, consult_predicate_t* pred,
 
 static void assert_initializer(consult_context_t* context, const term_t* goal, size_t varcount)
 {
-	// Initializer clears the current predicate
-	context->m_current_predicate = NULL;
-
 	// Only add if we are actually going to do something about it
 	if (!context->m_failed)
 	{
@@ -645,6 +644,9 @@ static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 		if (!pred)
 			return report_out_of_memory_error(context,c->m_head);
 
+		// The current predicate changes, no matter what happens next
+		context->m_current_predicate = pred;
+
 		if (!is_new_pred)
 		{
 			if (!pred->m_discontiguous && pred->m_clauses)
@@ -657,9 +659,6 @@ static void assert_clause(consult_context_t* context, const consult_clause_t* c)
 				// TODO: Some kind of multifile warning
 			}
 		}
-
-		// The current predicate changes, no matter what happens next
-		context->m_current_predicate = pred;
 	}
 
 	append_clause(context,context->m_current_predicate,c);
@@ -834,9 +833,10 @@ static int consult(context_t* context, const term_t* filename)
 	{
 		// TODO: We now have a map of predicates...
 
+		// Initializer context flags must be the consult flags
 		for (consult_initializer_t* init = cc.m_initializers; init ; init = init->m_next)
 		{
-			compile_term(context,init->m_goal,init->m_varcount);
+			compile_goal(context,init->m_goal,init->m_varcount);
 		}
 	}
 	
