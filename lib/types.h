@@ -23,6 +23,8 @@ typedef enum prolite_type
 
 } prolite_type_t;
 
+static const uint16_t prolite_debug_info = 0x8000;
+
 #include "packed_types.h"
 
 typedef union term
@@ -37,7 +39,7 @@ typedef union term
 typedef enum builtin_atom_id
 {
 #include "builtin_strings.h"
-	BUILTIN_ATOM_
+	MAX_BUILTIN_ATOM
 } builtin_atom_id_t;
 
 typedef struct string

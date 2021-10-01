@@ -257,8 +257,8 @@ static void pre_substitute_goal_inner(compile_context_t* context, const term_t* 
 
 static void pre_substitute_goal(compile_context_t* context, const term_t* goal)
 {
-	if (goal->m_u64val == PACK_COMPOUND_EMBED_1(2,'=') ||
-		goal->m_u64val == PACK_COMPOUND_BUILTIN(unify_with_occurs_check,2))
+	if (MASK_DEBUG_INFO(goal->m_u64val) == PACK_COMPOUND_EMBED_1(2,'=') ||
+		MASK_DEBUG_INFO(goal->m_u64val) == PACK_COMPOUND_BUILTIN(unify_with_occurs_check,2))
 	{
 		const term_t* g1 = get_first_arg(goal,NULL);
 		const term_t* g2 = get_next_arg(g1);
@@ -378,7 +378,7 @@ static continuation_t* compile_or(compile_context_t* context, continuation_t* co
 	substitutions_t* s_orig = context->m_substs;
 	context->m_substs = copy_substitutions(context,context->m_substs);
 
-	if (g1->m_u64val == PACK_COMPOUND_EMBED_2(2,'-','>'))
+	if (MASK_DEBUG_INFO(g1->m_u64val) == PACK_COMPOUND_EMBED_2(2,'-','>'))
 	{
 		const term_t* g_if = get_first_arg(g1,NULL);
 
@@ -501,7 +501,7 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 		return 1;
 
 	case prolite_compound:
-		switch (goal->m_u64val)
+		switch (MASK_DEBUG_INFO(goal->m_u64val))
 		{
 		case PACK_COMPOUND_EMBED_1(2,','):
 		case PACK_COMPOUND_EMBED_1(2,';'):
@@ -940,7 +940,7 @@ static continuation_t* compile_subgoal(compile_context_t* context, continuation_
 	int debug = 0;
 
 	continuation_t* c;
-	switch (goal->m_u64val)
+	switch (MASK_DEBUG_INFO(goal->m_u64val))
 	{
 #define DECLARE_BUILTIN_INTRINSIC(f,p) \
 	case (p): c = compile_##f(context,cont,goal); break;
@@ -955,9 +955,9 @@ static continuation_t* compile_subgoal(compile_context_t* context, continuation_
 		switch (get_term_type(goal))
 		{
 		case prolite_compound:
-			if ((goal->m_u64val & PACK_COMPOUND_EMBED_MASK) == PACK_COMPOUND_EMBED_4(0,'c','a','l','l') ||
-				(goal->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(call,0) ||
-				goal[1].m_u64val == PACK_ATOM_EMBED_4('c','a','l','l'))
+			if ((MASK_DEBUG_INFO(goal->m_u64val) & PACK_COMPOUND_EMBED_MASK) == PACK_COMPOUND_EMBED_4(0,'c','a','l','l') ||
+				(MASK_DEBUG_INFO(goal->m_u64val) & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(call,0) ||
+				MASK_DEBUG_INFO(goal[1].m_u64val) == PACK_ATOM_EMBED_4('c','a','l','l'))
 			{
 				c = wrap_cut(context,compile_callN(context,cont,goal));
 			}

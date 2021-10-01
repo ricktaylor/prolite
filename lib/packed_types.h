@@ -39,8 +39,6 @@
  *  values.  See: misc/clang_aliasing.c.
  */
 
-static const uint16_t prolite_debug_info = 0x8000;
-
 #if defined(__aarch64__) || defined(__arm__)
 #define PACK_EXP_16(v)    ((UINT64_C(0xFFFF) & (v)) << 24)
 #define UNPACK_EXP_16(v)  ((uint16_t)((v) & (UINT64_C(0xFFFF) << 24) >> 24))
@@ -56,6 +54,8 @@ static const uint16_t prolite_debug_info = 0x8000;
 #define PACK_TYPE(type)   PACK_EXP_16(0x7FF0 | (type))
 #define UNPACK_TYPE(v)    (UNPACK_EXP_16(v) & 0x8007)
 
+#define MASK_DEBUG_INFO(v) ((v) & ~(PACK_EXP_16(prolite_debug_info)))
+
 #define PACK_TYPE_EMBED(type,flags,count,a,b,c,d,e)  (PACK_TYPE(type) | PACK_MANT_48(((UINT64_C(0x8000) | (((flags) & 7) << 11) | (((count) & 7) << 8) | (uint8_t)(a)) << 32) | (((uint32_t)(b) & 0xFF) << 24) | (((uint32_t)(c) & 0xFF) << 16) | (((uint32_t)(d) & 0xFF) << 8) | (uint8_t)(e)))
 
 #define PACK_ATOM_EMBED_1(c)              PACK_TYPE_EMBED(prolite_atom,0,1,c,0,0,0,0)
@@ -65,7 +65,6 @@ static const uint16_t prolite_debug_info = 0x8000;
 #define PACK_ATOM_EMBED_5(c1,c2,c3,c4,c5) PACK_TYPE_EMBED(prolite_atom,0,5,c1,c2,c3,c4,c5)
 
 #define PACK_ATOM_BUILTIN(name)  (PACK_TYPE(prolite_atom) | PACK_MANT_48((UINT64_C(0x4000) << 32) | (uint32_t)(BUILTIN_ATOM_##name)))
-#define PACK_ATOM_NUL            (PACK_TYPE(prolite_atom) | PACK_MANT_48((UINT64_C(0x4000) << 32) | (uint32_t)(BUILTIN_ATOM_)))
 
 #define MAX_ATOM_LEN      ((UINT64_C(1) << 46) - 1)
 

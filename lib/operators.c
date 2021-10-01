@@ -71,7 +71,7 @@ static const operator_t* static_op(const term_t* name)
 		/* 9 */ { eXFY, 200 },
 	};
 
-	switch (name->m_u64val)
+	switch (MASK_DEBUG_INFO(name->m_u64val))
 	{
 	case PACK_ATOM_EMBED_2(':','-'):
 	case PACK_ATOM_EMBED_3('-','-','>'):
@@ -145,7 +145,7 @@ static const operator_t* static_prefix_op(const term_t* name)
 		/* 2 */ { eFY, 200 },
 	};
 
-	switch (name->m_u64val)
+	switch (MASK_DEBUG_INFO(name->m_u64val))
 	{
 	case PACK_ATOM_EMBED_2(':','-'):
 	case PACK_ATOM_EMBED_2('?','-'):
@@ -383,7 +383,7 @@ static void set_op_inner(context_t* context, operator_table_t* ops, int64_t prec
 {
 	if (get_term_type(op) != prolite_atom)
 		push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),op);
-	else if (op->m_u64val == PACK_ATOM_EMBED_1(','))
+	else if (MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_1(','))
 		push_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(operator),op);
 	else
 	{
@@ -420,7 +420,7 @@ static void set_op(context_t* context, operator_table_t* ops, const term_t* p, c
 		return push_instantiation_error(context,s);
 
 	case prolite_atom:
-		switch (s->m_u64val)
+		switch (MASK_DEBUG_INFO(s->m_u64val))
 		{
 		case PACK_ATOM_EMBED_2('x','f'):
 			specifier = eXF;
@@ -468,14 +468,14 @@ static void set_op(context_t* context, operator_table_t* ops, const term_t* p, c
 		return set_op_inner(context,ops,precendence,specifier,op);
 
 	case prolite_compound:
-		while (op->m_u64val == PACK_COMPOUND_EMBED_1(2,'.'))
+		while (MASK_DEBUG_INFO(op->m_u64val) == PACK_COMPOUND_EMBED_1(2,'.'))
 		{
 			op = get_first_arg(op,NULL);
 			set_op_inner(context,ops,precendence,specifier,op);
 			op = get_next_arg(op);
 		}
 
-		if (op->m_u64val != PACK_ATOM_EMBED_2('[',']'))
+		if (MASK_DEBUG_INFO(op->m_u64val) != PACK_ATOM_EMBED_2('[',']'))
 			set_op_inner(context,ops,precendence,specifier,op);
 		break;
 

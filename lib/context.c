@@ -26,10 +26,10 @@ static void push_flag_value_error(context_t* context, const term_t* flag, const 
 
 static void set_prolog_flag_inner(context_t* context, const term_t* flag, const term_t* value)
 {
-	switch (flag->m_u64val)
+	switch (MASK_DEBUG_INFO(flag->m_u64val))
 	{
 	case PACK_ATOM_BUILTIN(char_conversion):
-		switch(value->m_u64val)
+		switch (MASK_DEBUG_INFO(value->m_u64val))
 		{
 		case PACK_ATOM_EMBED_2('o','n'):
 			context->m_module->m_flags.char_conversion = 1;
@@ -46,7 +46,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 		break;
 
 	case PACK_ATOM_EMBED_5('d','e','b','u','g'):
-		switch(value->m_u64val)
+		switch (MASK_DEBUG_INFO(value->m_u64val))
 		{
 		case PACK_ATOM_EMBED_2('o','n'):
 			context->m_module->m_flags.debug = 1;
@@ -63,7 +63,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 		break;
 
 	case PACK_ATOM_BUILTIN(unknown):
-		switch(value->m_u64val)
+		switch (MASK_DEBUG_INFO(value->m_u64val))
 		{
 		case PACK_ATOM_EMBED_5('e','r','r','o','r'):
 			context->m_module->m_flags.unknown = 0;
@@ -84,7 +84,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 		break;
 
 	case PACK_ATOM_BUILTIN(double_quotes):
-		switch(value->m_u64val)
+		switch (MASK_DEBUG_INFO(value->m_u64val))
 		{
 		case PACK_ATOM_EMBED_5('c','h','a','r','s'):
 			context->m_module->m_flags.double_quotes = 0;
@@ -105,7 +105,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 		break;
 
 	case PACK_ATOM_BUILTIN(back_quotes):
-		switch(value->m_u64val)
+		switch (MASK_DEBUG_INFO(value->m_u64val))
 		{
 		case PACK_ATOM_EMBED_5('c','h','a','r','s'):
 			context->m_module->m_flags.double_quotes = 0;

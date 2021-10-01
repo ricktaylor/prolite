@@ -26,7 +26,7 @@ static int string_compare(const void* p1, const void* p2)
 
 static builtin_atom_id_t is_builtin_string(const unsigned char* str, size_t len)
 {
-	builtin_atom_id_t ret = BUILTIN_ATOM_;
+	builtin_atom_id_t ret = MAX_BUILTIN_ATOM;
 	string_t f =
 	{
 		.m_len = len,
@@ -76,7 +76,7 @@ term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str
 		break;
 
 	default:
-		if ((builtin = is_builtin_string(str,len)) != BUILTIN_ATOM_)
+		if ((builtin = is_builtin_string(str,len)) != MAX_BUILTIN_ATOM)
 		{
 			(--stack)->m_u64val = (PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0x4000) << 32) | builtin));
 		}
@@ -136,7 +136,7 @@ term_t* push_predicate(term_t* stack, uint64_t arity, const unsigned char* funct
 			break;
 		}
 	}
-	else if (arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(functor,functor_len)) != BUILTIN_ATOM_)
+	else if (arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(functor,functor_len)) != MAX_BUILTIN_ATOM)
 	{
 		if (debug_info)
 		{

@@ -145,7 +145,7 @@ void predicate_map_clear(predicate_map_t* pm, void (*callback)(void* param, pred
 
 int predicate_is_builtin(const term_t* pred)
 {
-	switch (pred->m_u64val)
+	switch (MASK_DEBUG_INFO(pred->m_u64val))
 	{
 #define DECLARE_BUILTIN_INTRINSIC(f,p) \
 	case (p):
@@ -191,7 +191,7 @@ typedef struct predicate
 		return 1;
 
 	case prolite_compound:
-		switch (goal->m_u64val)
+		switch (MASK_DEBUG_INFO(goal->m_u64val))
 		{
 		case PACK_COMPOUND_EMBED_1(2,','):
 		case PACK_COMPOUND_EMBED_1(2,';'):
@@ -221,14 +221,14 @@ void term_to_clause(context_t* context, const term_t* t, clause_t* clause)
 	const term_t* head = t;
 	const term_t* body = NULL;
 
-	if (head->m_u64val == PACK_COMPOUND_EMBED_2(2,':','-'))
+	if (MASK_DEBUG_INFO(head->m_u64val) == PACK_COMPOUND_EMBED_2(2,':','-'))
 	{
 		head = get_first_arg(head,NULL);
 		body = deref_local_var(context,get_next_arg(head));
 	}
 	head = deref_local_var(context,head);
 
-	switch (head->m_u64val)
+	switch (MASK_DEBUG_INFO(head->m_u64val))
 	{
 #undef DECLARE_BUILTIN_INTRINSIC
 #define DECLARE_BUILTIN_INTRINSIC(f,p) \

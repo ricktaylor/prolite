@@ -215,7 +215,7 @@ static void multifile(consult_context_t* context, const term_t* t, const term_t*
 
 static void pi_directive_inner(consult_context_t* context, const term_t* pi, void (*fn)(consult_context_t*,const term_t*,const term_t*))
 {
-	if (pi->m_u64val == PACK_COMPOUND_EMBED_1(2,'/'))
+	if (MASK_DEBUG_INFO(pi->m_u64val) == PACK_COMPOUND_EMBED_1(2,'/'))
 	{
 		const term_t* functor = get_first_arg(pi,NULL);
 		if (get_term_type(functor) == prolite_atom)
@@ -259,7 +259,7 @@ static void pi_directive(consult_context_t* context, const term_t* directive, vo
 	const term_t* arg = get_first_arg(directive,&arity);
 	if (arity == 1)
 	{
-		while (arg->m_u64val == PACK_COMPOUND_EMBED_1(2,'.'))
+		while (MASK_DEBUG_INFO(arg->m_u64val) == PACK_COMPOUND_EMBED_1(2,'.'))
 		{
 			arg = get_first_arg(arg,NULL);
 
@@ -268,7 +268,7 @@ static void pi_directive(consult_context_t* context, const term_t* directive, vo
 			arg = get_next_arg(arg);
 		}
 
-		if (arg->m_u64val != PACK_ATOM_EMBED_2('[',']'))
+		if (MASK_DEBUG_INFO(arg->m_u64val) != PACK_ATOM_EMBED_2('[',']'))
 			pi_directive_inner(context,arg,fn);
 	}
 	else
@@ -322,7 +322,8 @@ static void ensure_loaded(consult_context_t* context, const term_t* t);
 
 static void directive(consult_context_t* context, const term_t* term, size_t varcount)
 {
-	switch (term->m_u64val)
+	uint64_t d = MASK_DEBUG_INFO(term->m_u64val);
+	switch (d)
 	{
 	case PACK_COMPOUND_BUILTIN(include,1):
 		include(context,get_first_arg(term,NULL));
@@ -368,23 +369,24 @@ static void directive(consult_context_t* context, const term_t* term, size_t var
 		break;
 
 	default:
-		if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(public,0))
+		if ((d & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(public,0))
 			pi_directive(context,term,&public);
-		else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(dynamic,0))
+		else if ((d & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(dynamic,0))
 			pi_directive(context,term,&dynamic);
-		else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(multifile,0))
+		else if ((d & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(multifile,0))
 			pi_directive(context,term,&multifile);
-		else if ((term->m_u64val & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(discontiguous,0))
+		else if ((d & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(discontiguous,0))
 			pi_directive(context,term,&discontiguous);
 		else if (get_term_type(term) == prolite_compound)
 		{
-			if (term[1].m_u64val == PACK_ATOM_BUILTIN(public))
+			d = MASK_DEBUG_INFO(term[1].m_u64val);
+			if (d == PACK_ATOM_BUILTIN(public))
 				pi_directive(context,term,&public);
-			else if (term[1].m_u64val == PACK_ATOM_BUILTIN(dynamic))
+			else if (d == PACK_ATOM_BUILTIN(dynamic))
 				pi_directive(context,term,&dynamic);
-			else if (term[1].m_u64val == PACK_ATOM_BUILTIN(multifile))
+			else if (d == PACK_ATOM_BUILTIN(multifile))
 				pi_directive(context,term,&multifile);
-			else if (term[1].m_u64val == PACK_ATOM_BUILTIN(discontiguous))
+			else if (d == PACK_ATOM_BUILTIN(discontiguous))
 				pi_directive(context,term,&discontiguous);
 			else
 				assert(0);
@@ -516,11 +518,11 @@ static void load_file(consult_context_t* context, const term_t* filename)
 				for (size_t i = 0; i < clause.m_varcount; ++i)
 					clause.m_head = get_next_arg(clause.m_head) + 1;
 							
-				if (clause.m_head->m_u64val == PACK_COMPOUND_EMBED_2(1,':','-'))
+				if (MASK_DEBUG_INFO(clause.m_head->m_u64val) == PACK_COMPOUND_EMBED_2(1,':','-'))
 					directive(context,get_first_arg(clause.m_head,NULL),clause.m_varcount);
 				else
 				{
-					if (clause.m_head->m_u64val == PACK_COMPOUND_EMBED_2(2,':','-'))
+					if (MASK_DEBUG_INFO(clause.m_head->m_u64val) == PACK_COMPOUND_EMBED_2(2,':','-'))
 					{
 						clause.m_head = get_first_arg(clause.m_head,NULL);
 						clause.m_body = get_next_arg(clause.m_head);
