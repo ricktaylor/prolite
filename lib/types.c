@@ -696,7 +696,7 @@ int term_precedes(const term_t* t1, const term_t* t2)
 	return r;
 }
 
-static const term_t* push_term_inner(context_t* context, const term_t* src, int allow_external, uint64_t** var_mapping, size_t* var_count)
+static const term_t* push_term_inner(context_t* context, const term_t* src, int allow_external, uint64_t** var_mapping, size_t* var_count, jmp_buf* jmp)
 {
 	uint64_t all48;
 	prolite_type_t type;
@@ -710,31 +710,29 @@ static const term_t* push_term_inner(context_t* context, const term_t* src, int 
 		{
 			const term_t* v = deref_local_var(context,src);
 			if (v != src)
+				push_term_inner(context,v,allow_external,var_mapping,var_count,jmp);
+			else
 			{
-				v = push_term_inner(context,v,allow_external,var_mapping,var_count);
-				if (!v)
-					p = NULL;
-				return p;
+				size_t i = 0;
+				while (i < *var_count && (*var_mapping)[i] != all48)
+					++i;
+
+				if (i == *var_count)
+				{
+					uint64_t* v = heap_realloc(&context->m_heap,var_mapping,(*var_count) * sizeof(uint64_t),(*var_count + 1) * sizeof(uint64_t));
+					if (!v)
+						longjmp(*jmp,1);
+						
+					*var_mapping = v;
+					(*var_mapping)[(*var_count)++] = all48;
+				}
+
+				const debug_info_t* di = NULL;
+				if (have_debug_info)
+					p = skip_debug_info(p,&di);
+				
+				context->m_stack = push_var(context->m_stack,i,di);
 			}
-
-			size_t i = 0;
-			while (i < *var_count && (*var_mapping)[i] != all48)
-				++i;
-
-			if (i == *var_count)
-			{
-				uint64_t* v = heap_realloc(&context->m_heap,var_mapping,(*var_count) * sizeof(uint64_t),(*var_count + 1) * sizeof(uint64_t));
-				if (!v)
-					return NULL;
-				*var_mapping = v;
-				(*var_mapping)[(*var_count)++] = all48;
-			}
-
-			const debug_info_t* di = NULL;
-			if (have_debug_info)
-				p = skip_debug_info(p,&di);
-			
-			context->m_stack = push_var(context->m_stack,i,di);
 		}
 		return p;
 
@@ -767,12 +765,12 @@ static const term_t* push_term_inner(context_t* context, const term_t* src, int 
 			// Push args
 			const term_t* q = p;
 			if (arity == 1)
-				p = push_term_inner(context,p,allow_external,var_mapping,var_count);
+				p = push_term_inner(context,p,allow_external,var_mapping,var_count,jmp);
 			else
 			{
 				const term_t** rev = heap_malloc(&context->m_heap,arity * sizeof(term_t*));
 				if (!rev)
-					return NULL;
+					longjmp(*jmp,1);
 
 				for (size_t i = 0; i < arity; ++i)
 				{
@@ -781,16 +779,13 @@ static const term_t* push_term_inner(context_t* context, const term_t* src, int 
 				}
 				
 				for (size_t i = arity; --i;)
-				{
-					if (!push_term_inner(context,rev[i],allow_external,var_mapping,var_count))
-						return NULL;
-				}
-
+					push_term_inner(context,rev[i],allow_external,var_mapping,var_count,jmp);
+				
 				heap_free(&context->m_heap,rev,arity * sizeof(term_t*));
 			}
 
 			if ((hi16 >> 14) == 0)
-				push_term_inner(context,q,allow_external,var_mapping,var_count);
+				push_term_inner(context,q,allow_external,var_mapping,var_count,jmp);
 
 			context->m_stack -= (q - src);
 			memcpy(context->m_stack,src,(q - src) * sizeof(term_t));
@@ -842,23 +837,28 @@ term_t* push_term(context_t* context, const term_t* src, int allow_external, siz
 {
 	term_t* sp = context->m_stack;
 	size_t heap_start = heap_top(&context->m_heap);
+	
+	jmp_buf jmp;
+	if (!setjmp(jmp))
+	{
+		size_t vc = 0;
+		uint64_t* var_mapping = NULL;
+		push_term_inner(context,src,allow_external,&var_mapping,&vc,&jmp);
 
-	size_t vc = 0;
-	uint64_t* var_mapping = NULL;
-	const term_t* p = push_term_inner(context,src,allow_external,&var_mapping,&vc);
+		if (var_count)
+			*var_count = vc;
+
+		sp = context->m_stack;
+	}
+	else
+	{
+		context->m_stack = sp;
+		sp = NULL;
+	}
 
 	heap_reset(&context->m_heap,heap_start);
 
-	if (!p)
-	{
-		context->m_stack = sp;
-		return NULL;
-	}
-	
-	if (var_count)
-		*var_count = vc;
-
-	return context->m_stack;
+	return sp;
 }
 
 term_t* copy_term(prolite_allocator_t* a, context_t* context, const term_t* src, int allow_external, size_t* var_count)

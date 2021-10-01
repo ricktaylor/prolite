@@ -5,8 +5,8 @@
 #include "heap.h"
 #include "btree.h"
 #include "types.h"
-#include "setjmp.h"
 
+#include <setjmp.h>
 #include <assert.h>
 
 typedef enum operator_specifier
