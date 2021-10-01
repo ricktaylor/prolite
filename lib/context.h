@@ -51,13 +51,14 @@ typedef struct module
 
 } module_t;
 
-typedef enum exec_flags
+enum exec_flags
 {
 	FLAG_FAIL = 1,
 	FLAG_CUT = 2,
 	FLAG_THROW = 4,
 	FLAG_HALT = 8
-} exec_flags_t;
+};
+typedef uint16_t exec_flags_t;
 
 typedef struct substitutions
 {
