@@ -170,7 +170,7 @@ static const operator_t* static_prefix_op(const term_t* name)
 const operator_t* lookup_op(context_t* context, const btree_t* ops, const unsigned char* name, size_t name_len)
 {
 	term_t* sp = context->m_stack;
-	context->m_stack = push_string(context->m_stack,prolite_atom,name,name_len,1);
+	context->m_stack = push_string(context->m_stack,prolite_atom,name,name_len,1,NULL);
 
 	const operator_t* op = NULL;
 	const dynamic_operator_t* dyn_op = ops ? op_map_lookup(ops,context->m_stack) : NULL;
@@ -187,7 +187,7 @@ const operator_t* lookup_op(context_t* context, const btree_t* ops, const unsign
 			op = static_prefix_op(context->m_stack);
 	}
 
-	context->m_stack = sp;	
+	context->m_stack = sp;
 	return op;
 }
 
@@ -195,7 +195,7 @@ const operator_t* lookup_op(context_t* context, const btree_t* ops, const unsign
 const operator_t* lookup_prefix_op(context_t* context, const btree_t* ops, const unsigned char* name, size_t name_len)
 {
 	term_t* sp = context->m_stack;
-	context->m_stack = push_string(context->m_stack,prolite_atom,name,name_len,1);
+	context->m_stack = push_string(context->m_stack,prolite_atom,name,name_len,1,NULL);
 
 	const operator_t* op = NULL;
 	const dynamic_operator_t* dyn_op = ops ? op_map_lookup(ops,context->m_stack) : NULL;
@@ -211,8 +211,8 @@ const operator_t* lookup_prefix_op(context_t* context, const btree_t* ops, const
 		else
 			op = static_op(context->m_stack);
 	}
-	
-	context->m_stack = sp;	
+
+	context->m_stack = sp;
 	return op;
 }
 
@@ -243,7 +243,7 @@ static void remove_operator(operator_table_t* ops, operator_specifier_t specifie
 				if (new_postfix != curr_postfix)
 					return;
 			}
-			
+
 			curr_op->m_other.m_precedence = 0;
 		}
 
@@ -273,21 +273,21 @@ static int update_operator(context_t* context, operator_table_t* ops, int64_t pr
 	dynamic_operator_t* new_op = allocator_malloc(ops->m_allocator,sizeof(dynamic_operator_t));
 	if (!new_op)
 		return -1;
-	
+
 	*new_op = (dynamic_operator_t){ .m_name = (term_t*)name };
 
 	// Only copy the name if we need to
 	term_t* name_copy = NULL;
 	if (ops->m_allocator)
 	{
-		name_copy = copy_term(ops->m_allocator,context,name,NULL);
+		name_copy = copy_term(ops->m_allocator,context,name,0,NULL);
 		if (!name_copy)
 		{
 			allocator_free(ops->m_allocator,new_op);
 			return -1;
 		}
 		new_op->m_name = name_copy;
-	}	
+	}
 
 	if (specifier == eFX || specifier == eFY)
 	{
@@ -335,7 +335,7 @@ static int update_operator(context_t* context, operator_table_t* ops, int64_t pr
 				allocator_free(ops->m_allocator,new_op);
 				return -1;
 			}
-		
+
 			// TODO: Check for clashes...
 			assert(term_compare(curr_op->m_name,name));
 		}
@@ -358,7 +358,7 @@ static int update_operator(context_t* context, operator_table_t* ops, int64_t pr
 		if (specifier == eFX || specifier == eFY)
 		{
 			curr_op->m_prefix.m_precedence = precendence;
-			curr_op->m_prefix.m_specifier = specifier;		
+			curr_op->m_prefix.m_specifier = specifier;
 		}
 		else
 		{
@@ -370,7 +370,7 @@ static int update_operator(context_t* context, operator_table_t* ops, int64_t pr
 				if (new_postfix != curr_postfix)
 					return 0;
 			}
-			
+
 			curr_op->m_other.m_precedence = precendence;
 			curr_op->m_other.m_specifier = specifier;
 		}
@@ -412,7 +412,7 @@ static void set_op(context_t* context, operator_table_t* ops, const term_t* p, c
 	default:
 		return push_type_error(context,PACK_ATOM_BUILTIN(integer),p);
 	}
-	
+
 	operator_specifier_t specifier;
 	switch (get_term_type(s))
 	{

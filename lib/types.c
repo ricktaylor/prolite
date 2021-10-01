@@ -27,7 +27,7 @@ static int string_compare(const void* p1, const void* p2)
 static builtin_atom_id_t is_builtin_string(const unsigned char* str, size_t len)
 {
 	builtin_atom_id_t ret = BUILTIN_ATOM_;
-	string_t f = 
+	string_t f =
 	{
 		.m_len = len,
 		.m_str = str
@@ -40,8 +40,14 @@ static builtin_atom_id_t is_builtin_string(const unsigned char* str, size_t len)
 	return ret;
 }
 
-term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external)
+term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external, const debug_info_t* debug_info)
 {
+	if (debug_info)
+	{
+		stack = push_debug_info(stack,debug_info);
+		type |= prolite_debug_info;
+	}
+
 	uint32_t builtin;
 	switch (len)
 	{
@@ -91,58 +97,90 @@ term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str
 	return stack;
 }
 
-term_t* push_predicate(term_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len, int external)
+term_t* push_predicate(term_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len, int external, const debug_info_t* debug_info)
 {
+	prolite_type_t type = prolite_compound;
 	uint32_t builtin;
 	if (arity <= MAX_ARITY_EMBED && functor_len <= 5)
 	{
+		if (debug_info)
+		{
+			stack = push_debug_info(stack,debug_info);
+			type |= prolite_debug_info;
+		}
+
 		switch (functor_len)
 		{
 		case 5:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,5,functor[0],functor[1],functor[2],functor[3],functor[4]);
+			(--stack)->m_u64val = PACK_TYPE_EMBED(type,arity,5,functor[0],functor[1],functor[2],functor[3],functor[4]);
 			break;
 
 		case 4:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,4,functor[0],functor[1],functor[2],functor[3],0);
+			(--stack)->m_u64val = PACK_TYPE_EMBED(type,arity,4,functor[0],functor[1],functor[2],functor[3],0);
 			break;
 
 		case 3:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,3,functor[0],functor[1],functor[2],0,0);
+			(--stack)->m_u64val = PACK_TYPE_EMBED(type,arity,3,functor[0],functor[1],functor[2],0,0);
 			break;
 
 		case 2:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,2,functor[0],functor[1],0,0,0);
+			(--stack)->m_u64val = PACK_TYPE_EMBED(type,arity,2,functor[0],functor[1],0,0,0);
 			break;
 
 		case 1:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,1,functor[0],0,0,0,0);
+			(--stack)->m_u64val = PACK_TYPE_EMBED(type,arity,1,functor[0],0,0,0,0);
 			break;
 
 		default:
-			(--stack)->m_u64val = PACK_TYPE_EMBED(prolite_compound,arity,0,0,0,0,0,0);
+			(--stack)->m_u64val = PACK_TYPE_EMBED(type,arity,0,0,0,0,0,0);
 			break;
 		}
 	}
 	else if (arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(functor,functor_len)) != BUILTIN_ATOM_)
 	{
-		(--stack)->m_u64val = (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(arity) & MAX_ARITY_BUILTIN)) << 32) | builtin));
+		if (debug_info)
+		{
+			stack = push_debug_info(stack,debug_info);
+			type |= prolite_debug_info;
+		}
+
+		(--stack)->m_u64val = (PACK_TYPE(type) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(arity) & MAX_ARITY_BUILTIN)) << 32) | builtin));
 	}
 	else
 	{
-		stack = push_string(stack,prolite_atom,functor,functor_len,external);
-		(--stack)->m_u64val = PACK_TYPE(prolite_compound) | PACK_MANT_48(arity);
+		stack = push_string(stack,prolite_atom,functor,functor_len,external,debug_info);
+		(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48(arity);
 	}
 
 	return stack;
 }
 
+static const term_t* unpack_term(const term_t* t, prolite_type_t* type, int* have_debug_info, uint64_t* all48)
+{
+	uint16_t exp = UNPACK_EXP_16(t->m_u64val);
+	if ((exp & 0x7FF0) != 0x7FF0)
+	{
+		*type = prolite_double;
+		*have_debug_info = 0;
+		*all48 = 0;
+	}
+	else
+	{
+		*type = exp & 0x7;
+		*have_debug_info = (exp & prolite_debug_info);
+		*all48 = UNPACK_MANT_48(t->m_u64val);
+	}
+	return t+1;
+}
+
 void get_string(const term_t* t, string_t* str, const debug_info_t** debug_info)
 {
-	assert(get_term_type(t) == prolite_atom);
-	
-	uint64_t all48 = (t++)->m_u64val;
-	int have_debug_info = (UNPACK_TYPE(all48) & prolite_debug_info);
-	all48 = UNPACK_MANT_48(all48);
+	uint64_t all48;
+	prolite_type_t type;
+	int have_debug_info;
+	t = unpack_term(t,&type,&have_debug_info,&all48);
+
+	assert(type == prolite_atom);
 
 	uint16_t hi16 = (all48 >> 32);
 	switch (hi16 >> 14)
@@ -161,11 +199,11 @@ void get_string(const term_t* t, string_t* str, const debug_info_t** debug_info)
 		str->m_data[4] = all48;
 		str->m_str = str->m_data;
 		break;
-	
+
 	case 1:
 		*str = s_builtin_strings[(uint32_t)all48];
 		break;
-	
+
 	case 0:
 		str->m_len = (size_t)(all48 & MAX_ATOM_LEN);
 		str->m_str = (const unsigned char*)t;
@@ -179,11 +217,12 @@ void get_string(const term_t* t, string_t* str, const debug_info_t** debug_info)
 
 void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_info_t** debug_info)
 {
-	assert(get_term_type(t) == prolite_compound);
+	uint64_t all48;
+	prolite_type_t type;
+	int have_debug_info;
+	t = unpack_term(t,&type,&have_debug_info,&all48);
 
-	uint64_t all48 = (t++)->m_u64val;
-	int have_debug_info = (UNPACK_TYPE(all48) & prolite_debug_info);
-	all48 = UNPACK_MANT_48(all48);
+	assert(type == prolite_compound);
 
 	uint16_t hi16 = (all48 >> 32);
 	switch (hi16 >> 14)
@@ -207,7 +246,7 @@ void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_in
 		if (debug_info && have_debug_info)
 			*debug_info = (const debug_info_t*)t;
 		break;
-	
+
 	case 1:
 		if (arity)
 			*arity = hi16 & MAX_ARITY_BUILTIN;
@@ -217,7 +256,7 @@ void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_in
 		if (debug_info && have_debug_info)
 			*debug_info = (const debug_info_t*)t;
 		break;
-	
+
 	case 0:
 		if (arity)
 			*arity = (all48 & MAX_ARITY);
@@ -231,18 +270,17 @@ static const term_t* skip_debug_info(const term_t* t, const debug_info_t** debug
 {
 	if (debug_info)
 		*debug_info = (const debug_info_t*)t;
-	
+
 	return t + bytes_to_cells(sizeof(debug_info_t),sizeof(term_t));
 }
 
 const term_t* get_next_arg(const term_t* t)
 {
-	uint64_t all48 = (t++)->m_u64val;
-	uint16_t hi16 = UNPACK_TYPE(all48);
-	prolite_type_t type = hi16 & 0x7;
-	int have_debug_info = (hi16 & prolite_debug_info);
-	all48 = UNPACK_MANT_48(all48);
-	hi16 = (all48 >> 32);
+	uint64_t all48;
+	prolite_type_t type;
+	int have_debug_info;
+	t = unpack_term(t,&type,&have_debug_info,&all48);
+	uint16_t hi16 = (all48 >> 32);
 
 	switch (type)
 	{
@@ -277,13 +315,13 @@ const term_t* get_next_arg(const term_t* t)
 				if (have_debug_info)
 					t = skip_debug_info(t,NULL);
 				break;
-			
+
 			case 1:
 				arity = hi16 & MAX_ARITY_BUILTIN;
 				if (have_debug_info)
 					t = skip_debug_info(t,NULL);
 				break;
-			
+
 			case 0:
 				arity = (all48 & MAX_ARITY);
 				t = get_next_arg(t);
@@ -307,11 +345,13 @@ const term_t* get_next_arg(const term_t* t)
 
 const term_t* get_first_arg(const term_t* compound, size_t* arity)
 {
-	assert(get_term_type(compound) == prolite_compound);
+	uint64_t all48;
+	prolite_type_t type;
+	int have_debug_info;
+	compound = unpack_term(compound,&type,&have_debug_info,&all48);
 
-	uint64_t all48 = (compound++)->m_u64val;
-	int have_debug_info = (UNPACK_TYPE(all48) & prolite_debug_info);
-	all48 = UNPACK_MANT_48(all48);
+	assert(type == prolite_compound);
+
 	uint16_t hi16 = (all48 >> 32);
 	switch (hi16 >> 14)
 	{
@@ -326,7 +366,7 @@ const term_t* get_first_arg(const term_t* compound, size_t* arity)
 		if (have_debug_info)
 			compound = skip_debug_info(compound,NULL);
 		break;
-	
+
 	case 1:
 		if (arity)
 			*arity = hi16 & MAX_ARITY_BUILTIN;
@@ -334,7 +374,7 @@ const term_t* get_first_arg(const term_t* compound, size_t* arity)
 		if (have_debug_info)
 			compound = skip_debug_info(compound,NULL);
 		break;
-	
+
 	case 0:
 		if (arity)
 			*arity = (all48 & MAX_ARITY);
@@ -347,22 +387,27 @@ const term_t* get_first_arg(const term_t* compound, size_t* arity)
 	return compound;
 }
 
+term_t* push_debug_info(term_t* stack, const debug_info_t* debug_info)
+{
+	// TODO
+	return stack;
+}
+
 const debug_info_t* get_debug_info(const term_t* t)
 {
 	const debug_info_t* di = NULL;
-	uint64_t all48 = (t++)->m_u64val;
-	uint16_t hi16 = UNPACK_TYPE(all48);
-	prolite_type_t type = hi16 & 0x7;
-	int have_debug_info = (hi16 & prolite_debug_info);
-	all48 = UNPACK_MANT_48(all48);
-	hi16 = (all48 >> 32);
+	uint64_t all48;
+	prolite_type_t type;
+	int have_debug_info;
+	t = unpack_term(t,&type,&have_debug_info,&all48);
+	uint16_t sub_type = (all48 >> 46);
 
 	switch (type)
 	{
 	case prolite_atom:
 	case prolite_chars:
 	case prolite_charcodes:
-		switch (hi16 >> 14)
+		switch (sub_type)
 		{
 		case 3:
 			++t;
@@ -377,7 +422,7 @@ const debug_info_t* get_debug_info(const term_t* t)
 		break;
 
 	case prolite_compound:
-		switch (hi16 >> 14)
+		switch (sub_type)
 		{
 		case 3:
 			assert(0);
@@ -387,12 +432,12 @@ const debug_info_t* get_debug_info(const term_t* t)
 			if (have_debug_info)
 				di = (const debug_info_t*)t;
 			break;
-		
+
 		case 1:
 			if (have_debug_info)
 				di = (const debug_info_t*)t;
 			break;
-		
+
 		case 0:
 			di = get_debug_info(t);
 			break;
@@ -438,7 +483,7 @@ static int atom_precedes(const term_t* a1, const term_t* a2)
 	int r = memcmp(s1.m_str,s2.m_str,s1.m_len < s2.m_len ? s1.m_len : s2.m_len);
 	if (r == 0)
 		r = s1.m_len - s2.m_len;
-	
+
 	return r;
 }
 
@@ -470,10 +515,10 @@ int predicate_compare(const term_t* c1, const term_t* c2)
 		{
 		case prolite_atom:
 			return atom_compare(c1,c2);
-			
+
 		case prolite_compound:
 			return functor_compare(c1,c2);
-			
+
 		default:
 			break;
 		}
@@ -572,8 +617,8 @@ int term_compare(const term_t* t1, const term_t* t2)
 		case prolite_double:
 			r = (t1->m_dval == t2->m_dval);
 			break;
-		
-		case prolite_integer:	
+
+		case prolite_integer:
 		case prolite_var:
 		default:
 			r = (t1->m_u64val == t2->m_u64val);
@@ -594,7 +639,6 @@ int term_precedes(const term_t* t1, const term_t* t2)
 			type1 == prolite_charcodes ||
 			type1 == prolite_compound)
 		{
-			
 			if (type2 == prolite_chars ||
 				type2 == prolite_charcodes ||
 				type2 == prolite_compound)
@@ -638,11 +682,11 @@ int term_precedes(const term_t* t1, const term_t* t2)
 			// See: https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
 			r = (int)(t1->m_dval - t2->m_dval);
 			break;
-		
+
 		case prolite_integer:
 			r = get_integer(t1) - get_integer(t2);
 			break;
-		
+
 		case prolite_var:
 		default:
 			r = (t1->m_u64val - t2->m_u64val);
@@ -652,75 +696,47 @@ int term_precedes(const term_t* t1, const term_t* t2)
 	return r;
 }
 
-static term_t* append_term(prolite_allocator_t* a, const term_t* src, term_t* dst, size_t* old_len, size_t count)
+static const term_t* push_term_inner(context_t* context, const term_t* src, int allow_external, uint64_t** var_mapping, size_t* var_count)
 {
-	term_t* new_dst = allocator_realloc(a,dst,*old_len + (count * sizeof(term_t)));
-	if (new_dst)
-	{
-		memcpy(new_dst + (*old_len / sizeof(term_t)),src,count * sizeof(term_t));
-		*old_len += count * sizeof(term_t);
-	}
-	return new_dst;
-}
-
-static int copy_term_inner(prolite_allocator_t* a, context_t* context, const term_t* src, term_t** dst, size_t* dst_len, const term_t* var_mapping, size_t* var_count)
-{
-	const term_t* p = src;
-	uint64_t all48 = (p++)->m_u64val;
-	uint16_t hi16 = UNPACK_TYPE(all48);
-	prolite_type_t type = hi16 & 0x7;
-	int have_debug_info = (hi16 & prolite_debug_info);
-	all48 = UNPACK_MANT_48(all48);
-	hi16 = (all48 >> 32);
+	uint64_t all48;
+	prolite_type_t type;
+	int have_debug_info;
+	const term_t* p = unpack_term(src,&type,&have_debug_info,&all48);
+	uint16_t hi16 = (all48 >> 32);
 
 	switch (type)
 	{
 	case prolite_var:
 		{
+			const term_t* v = deref_local_var(context,src);
+			if (v != src)
+			{
+				v = push_term_inner(context,v,allow_external,var_mapping,var_count);
+				if (!v)
+					p = NULL;
+				return p;
+			}
+
 			size_t i = 0;
-			while (i < *var_count && var_mapping[i].m_u64val != all48)
+			while (i < *var_count && (*var_mapping)[i] != all48)
 				++i;
 
 			if (i == *var_count)
 			{
-				(--context->m_stack)->m_u64val = all48;
-				++(*var_count);
+				uint64_t* v = heap_realloc(&context->m_heap,var_mapping,(*var_count) * sizeof(uint64_t),(*var_count + 1) * sizeof(uint64_t));
+				if (!v)
+					return NULL;
+				*var_mapping = v;
+				(*var_mapping)[(*var_count)++] = all48;
 			}
 
-			term_t new_var = (term_t){ .m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(i) };
-			term_t* new_dst = append_term(a,&new_var,*dst,dst_len,1);
-			if (!new_dst)
-				return 0;
-			*dst = new_dst;
-
+			const debug_info_t* di = NULL;
 			if (have_debug_info)
-			{
-				src = p;
-				p = skip_debug_info(p,NULL);
-				new_dst = append_term(a,p,*dst,dst_len,src - p);
-				if (!new_dst)
-					return 0;
-				*dst = new_dst;
-			}
+				p = skip_debug_info(p,&di);
+			
+			context->m_stack = push_var(context->m_stack,i,di);
 		}
-		return 1;
-
-	case prolite_atom:
-	case prolite_chars:
-	case prolite_charcodes:
-		switch (hi16 >> 14)
-		{
-		case 3:
-			++p;
-			break;
-
-		case 0:
-			p += bytes_to_cells(all48 & MAX_ATOM_LEN,sizeof(term_t));
-			break;
-		}
-		if (have_debug_info)
-			p = skip_debug_info(p,NULL);
-		break;
+		return p;
 
 	case prolite_compound:
 		{
@@ -736,63 +752,133 @@ static int copy_term_inner(prolite_allocator_t* a, context_t* context, const ter
 				if (have_debug_info)
 					p = skip_debug_info(p,NULL);
 				break;
-			
+
 			case 1:
 				arity = hi16 & MAX_ARITY_BUILTIN;
 				if (have_debug_info)
 					p = skip_debug_info(p,NULL);
 				break;
-			
+
 			case 0:
 				arity = (all48 & MAX_ARITY);
-				p = get_next_arg(p);
 				break;
 			}
 
-			term_t* new_dst = append_term(a,src,*dst,dst_len,p - src);
-			if (!new_dst)
-				return 0;
-			*dst = new_dst;
-			
-			/* Skip args */
-			while (arity--)
+			// Push args
+			const term_t* q = p;
+			if (arity == 1)
+				p = push_term_inner(context,p,allow_external,var_mapping,var_count);
+			else
 			{
-				p = get_next_arg(p);
-				if (!copy_term_inner(a,context,deref_local_var(context,p),dst,dst_len,var_mapping,var_count))
-					return 0;
+				const term_t** rev = heap_malloc(&context->m_heap,arity * sizeof(term_t*));
+				if (!rev)
+					return NULL;
+
+				for (size_t i = 0; i < arity; ++i)
+				{
+					rev[i] = p;
+					p = get_next_arg(p);
+				}
+				
+				for (size_t i = arity; --i;)
+				{
+					if (!push_term_inner(context,rev[i],allow_external,var_mapping,var_count))
+						return NULL;
+				}
+
+				heap_free(&context->m_heap,rev,arity * sizeof(term_t*));
 			}
+
+			if ((hi16 >> 14) == 0)
+				push_term_inner(context,q,allow_external,var_mapping,var_count);
+
+			context->m_stack -= (q - src);
+			memcpy(context->m_stack,src,(q - src) * sizeof(term_t));
 		}
-		return 1;
+		return p;
+
+	case prolite_atom:
+	case prolite_chars:
+	case prolite_charcodes:
+		switch (hi16 >> 14)
+		{
+		case 3:
+			if (!allow_external)
+			{
+				// Copy the external data
+
+				size_t len = (size_t)(all48 & MAX_ATOM_LEN);
+				const unsigned char* str = p->m_pval;
+
+				const debug_info_t* di = NULL;
+				if (have_debug_info)
+					p = skip_debug_info(p,&di);
+				
+				context->m_stack = push_string(context->m_stack,type,str,len,0,di);
+				return p;
+			}
+			++p;
+			break;
+
+		case 0:
+			p += bytes_to_cells(all48 & MAX_ATOM_LEN,sizeof(term_t));
+			break;
+		}
+		break;
 
 	default:
-		if (have_debug_info)
-			p = skip_debug_info(p,NULL);
 		break;
 	}
 
-	term_t* new_dst = append_term(a,src,*dst,dst_len,p - src);
-	if (!new_dst)
-		return 0;
-	*dst = new_dst;
-	return 1;
+	if (have_debug_info)
+		p = skip_debug_info(p,NULL);
+	
+	context->m_stack -= (p - src);
+	memcpy(context->m_stack,src,(p - src) * sizeof(term_t));
+	return p;
 }
 
-term_t* copy_term(prolite_allocator_t* a, context_t* context, const term_t* t, size_t* var_count)
+term_t* push_term(context_t* context, const term_t* src, int allow_external, size_t* var_count)
+{
+	term_t* sp = context->m_stack;
+	size_t heap_start = heap_top(&context->m_heap);
+
+	size_t vc = 0;
+	uint64_t* var_mapping = NULL;
+	const term_t* p = push_term_inner(context,src,allow_external,&var_mapping,&vc);
+
+	heap_reset(&context->m_heap,heap_start);
+
+	if (!p)
+	{
+		context->m_stack = sp;
+		return NULL;
+	}
+	
+	if (var_count)
+		*var_count = vc;
+
+	return context->m_stack;
+}
+
+term_t* copy_term(prolite_allocator_t* a, context_t* context, const term_t* src, int allow_external, size_t* var_count)
 {
 	term_t* sp = context->m_stack;
 
 	size_t vc = 0;
-	size_t dst_len = 0;
-	term_t* dst = NULL;
-	if (!copy_term_inner(a,context,deref_local_var(context,t),&dst,&dst_len,context->m_stack,&vc))
+	term_t* dst = push_term(context,src,allow_external,&vc);
+	if (dst && dst != sp)
 	{
-		allocator_free(a,dst);
-		dst = NULL;
+		term_t* cp = allocator_malloc(a,(sp - dst) * sizeof(term_t));
+		if (cp)
+			memcpy(cp,dst,(sp - dst) * sizeof(term_t));
+		
+		dst = cp;
+	
+		if (dst && var_count)
+			*var_count = vc;
 	}
-	else if (var_count)
-		*var_count = vc;
 
 	context->m_stack = sp;
-
 	return dst;
 }

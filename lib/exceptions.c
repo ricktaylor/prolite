@@ -58,7 +58,7 @@ void builtin_throw(context_t* context, const term_t* arg1)
 {
 	prolite_allocator_t a = heap_allocator(&context->m_heap);
 	size_t var_count = 0;
-	term_t* ball = copy_term(&a,context,arg1,&var_count);
+	term_t* ball = copy_term(&a,context,arg1,0,&var_count);
 	if (!ball)
 		push_out_of_memory_error(context,arg1);
 	else if (var_count)
@@ -74,9 +74,30 @@ void builtin_catch(context_t* context, const term_t* arg1)
 {
 	assert(context->m_exception);
 
-	// TODO
+	// Clear throw flag
+	context->m_flags &= ~FLAG_THROW;
 
-	// Push context->m_exception to stack
-	
-	// Unify with arg1
+	term_t* exception = context->m_exception;
+	context->m_exception = NULL;
+
+	term_t* ball = push_term(context,exception,0,NULL);
+	if (!ball)
+	{
+		prolite_allocator_t a = heap_allocator(&context->m_heap);
+		allocator_free(&a,exception);
+		push_out_of_memory_error(context,arg1);
+	}
+	else
+	{
+		// TODO - unify_terms(context,ball,arg1);
+
+		if (context->m_flags & FLAG_FAIL)
+		{
+			// Rethrow...
+			context->m_flags &= ~FLAG_FAIL;
+			context->m_flags |= FLAG_THROW;
+
+			context->m_exception = exception;
+		}
+	}
 }

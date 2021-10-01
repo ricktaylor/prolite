@@ -88,7 +88,8 @@ typedef void (*builtin_fn_t)(context_t* context);
 
 const term_t* deref_local_var(context_t* context, const term_t* t);
 
-term_t* copy_term(prolite_allocator_t* allocator, context_t* context, const term_t* t, size_t* var_count);
+term_t* push_term(context_t* context, const term_t* src, int allow_external, size_t* var_count);
+term_t* copy_term(prolite_allocator_t* allocator, context_t* context, const term_t* src, int allow_external, size_t* var_count);
 
 context_t* context_new(void* user_data, const prolite_environment_t* env);
 void context_delete(context_t* c);

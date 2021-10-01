@@ -235,7 +235,7 @@ static void pi_directive_inner(consult_context_t* context, const term_t* pi, voi
 				{
 					string_t f;
 					get_string(functor,&f,NULL);
-					context->m_context->m_stack = push_predicate(context->m_context->m_stack,a,f.m_str,f.m_len,1);
+					context->m_context->m_stack = push_predicate(context->m_context->m_stack,a,f.m_str,f.m_len,1,NULL);
 					functor = context->m_context->m_stack;
 				}
 
@@ -631,7 +631,7 @@ PROLITE_EXPORT prolite_context_t prolite_context_load(void* user_data, const pro
 	context_t* context = context_new(user_data,env);
 	if (context)
 	{
-		term_t* filename = context->m_stack = push_string(context->m_stack,prolite_atom,(const unsigned char*)source,strlen(source),1);
+		term_t* filename = context->m_stack = push_string(context->m_stack,prolite_atom,(const unsigned char*)source,strlen(source),1,NULL);
 		if (consult(context,filename))
 		{
 			context_delete(context);

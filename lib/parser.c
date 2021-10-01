@@ -72,6 +72,7 @@ typedef struct ast_node
 	size_t           m_str_len;
 	size_t           m_arity;
 	enum ast_type    m_type;
+	debug_info_t*    m_debug_info;
 	struct ast_node* m_params[];
 } ast_node_t;
 
@@ -1430,8 +1431,7 @@ static ast_node_t* atom_to_compound(parser_t* parser, ast_node_t* node, ast_erro
 		longjmp(parser->m_jmp,1);
 
 	new_node->m_type = AST_TYPE_COMPOUND;
-	new_node->m_arity = 0;
-
+	
 	return new_node;
 }
 
@@ -1443,8 +1443,7 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 		if (!node)
 			longjmp(parser->m_jmp,1);
 
-		node->m_type = AST_TYPE_DOUBLE;
-		node->m_arity = 0;
+		*node = (ast_node_t){ .m_type = AST_TYPE_DOUBLE	};		
 	}
 
 	if (*next_type == tokFloat)
@@ -1547,10 +1546,11 @@ static ast_node_t* parse_arg(parser_t* parser, token_type_t* next_type, token_t*
 			if (!node)
 				longjmp(parser->m_jmp,1);
 
-			node->m_arity = 0;
-			node->m_type = AST_TYPE_ATOM;
-			node->m_str = next->m_str;
-			node->m_str_len = next->m_len;
+			*node = (ast_node_t){
+				.m_type = AST_TYPE_ATOM,
+				.m_str = next->m_str,
+				.m_str_len = next->m_len
+			};
 			token_reset(next);
 
 			if (node->m_str_len > MAX_ATOM_LEN)
@@ -1619,11 +1619,13 @@ static ast_node_t* parse_list_term(parser_t* parser, token_type_t* next_type, to
 			if (!(*tail))
 				longjmp(parser->m_jmp,1);
 
-			(*tail)->m_type = AST_TYPE_COMPOUND;
-			(*tail)->m_str = (const unsigned char*)".";
-			(*tail)->m_str_len = 1;
-			(*tail)->m_arity = 2;
-			(*tail)->m_params[1] = NULL;
+			**tail = (ast_node_t){
+				.m_type = AST_TYPE_COMPOUND,
+				.m_str = (const unsigned char*)".",
+				.m_str_len = 1,
+				.m_arity = 2
+			};
+
 			(*tail)->m_params[0] = parse_arg(parser,next_type,next,ast_err);
 			if (!(*tail)->m_params[0])
 				return NULL;
@@ -1651,10 +1653,11 @@ static ast_node_t* parse_list_term(parser_t* parser, token_type_t* next_type, to
 		if (!(*tail))
 			longjmp(parser->m_jmp,1);
 
-		(*tail)->m_type = AST_TYPE_ATOM;
-		(*tail)->m_str = (const unsigned char*)"[]";
-		(*tail)->m_str_len = 2;
-		(*tail)->m_arity = 0;
+		**tail = (ast_node_t){
+			.m_type = AST_TYPE_ATOM,
+			.m_str = (const unsigned char*)"[]",
+			.m_str_len = 2
+		};
 	}
 
 	if (*next_type != tokCloseL)
@@ -1670,10 +1673,11 @@ static ast_node_t* parse_name(parser_t* parser, unsigned int* max_prec, token_ty
 	if (!node)
 		longjmp(parser->m_jmp,1);
 
-	node->m_arity = 0;
-	node->m_type = AST_TYPE_ATOM;
-	node->m_str = next->m_str;
-	node->m_str_len = next->m_len;
+	*node = (ast_node_t){
+		.m_type = AST_TYPE_ATOM,
+		.m_str = next->m_str,
+		.m_str_len = next->m_len
+	};
 	token_reset(next);
 
 	*next_type = token_next(parser,next);	
@@ -1720,10 +1724,11 @@ static ast_node_t* parse_chars_and_codes(parser_t* parser, int chars, token_t* t
 	if (!node)
 		longjmp(parser->m_jmp,1);
 
-	node->m_type = chars ? AST_TYPE_CHARS : AST_TYPE_CODES;
-	node->m_arity = 0;
-	node->m_str = token->m_str;
-	node->m_str_len = token->m_len;
+	*node = (ast_node_t){
+		.m_type = chars ? AST_TYPE_CHARS : AST_TYPE_CODES,
+		.m_str = token->m_str,
+		.m_str_len = token->m_len
+	};
 	token_reset(token);
 
 	return node;
@@ -1743,10 +1748,12 @@ static ast_node_t* parse_term_base(parser_t* parser, unsigned int* max_prec, tok
 		if (!node)
 			longjmp(parser->m_jmp,1);
 
-		node->m_type = AST_TYPE_VAR;
-		node->m_arity = UINT64_C(-1);
-		node->m_str = next->m_str;
-		node->m_str_len = next->m_len;
+		*node = (ast_node_t){
+			.m_type = AST_TYPE_VAR,
+			.m_arity = UINT64_C(-1),
+			.m_str = next->m_str,
+			.m_str_len = next->m_len
+		};
 		token_reset(next);
 		break;
 
@@ -1794,11 +1801,12 @@ static ast_node_t* parse_term_base(parser_t* parser, unsigned int* max_prec, tok
 		if (!node)
 			longjmp(parser->m_jmp,1);
 
-		node->m_type = AST_TYPE_COMPOUND;
-		node->m_str = (const unsigned char*)"{}";
-		node->m_str_len = 2;
-		node->m_arity = 1;
-
+		*node = (ast_node_t){
+			.m_type = AST_TYPE_COMPOUND,
+			.m_str = (const unsigned char*)"{}",
+			.m_str_len = 2,
+			.m_arity = 1
+		};
 		*next_type = token_next(parser,next);
 
 		node->m_params[0] = parse_term(parser,1201,next_type,next,ast_err);
@@ -1960,10 +1968,12 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 			if (!next_node)
 				longjmp(parser->m_jmp,1);
 
-			next_node->m_type = AST_TYPE_COMPOUND;
-			next_node->m_str = name;
-			next_node->m_str_len = name_len;
-			next_node->m_arity = 1 + binary;
+			*next_node = (ast_node_t){
+				.m_type = AST_TYPE_COMPOUND,
+				.m_str = name,
+				.m_str_len = name_len,
+				.m_arity = 1 + binary,
+			};
 			next_node->m_params[0] = node;
 
 			if (*next_type == tokName)
@@ -1988,7 +1998,7 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 static term_t* emit_ast_string(term_t* stack, prolite_type_t type, ast_node_t* node)
 {
 	// TODO: We could de-duplicate here...
-	return push_string(stack,type,node->m_str,node->m_str_len,0);
+	return push_string(stack,type,node->m_str,node->m_str_len,0,node->m_debug_info);
 }
 
 static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
@@ -2000,7 +2010,7 @@ static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 			stack = emit_ast_node(stack,node->m_params[i]);
 
 		// TODO: We could de-duplicate here...
-		stack = push_predicate(stack,node->m_arity,node->m_str,node->m_str_len,0);
+		stack = push_predicate(stack,node->m_arity,node->m_str,node->m_str_len,0,node->m_debug_info);
 		break;
 
 	case AST_TYPE_ATOM:
@@ -2019,11 +2029,11 @@ static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 	case AST_TYPE_DOUBLE:
 	case AST_TYPE_INTEGER:
 		if (node->m_type == AST_TYPE_VAR)
-			stack = push_var(stack,node->m_arity);
+			stack = push_var(stack,node->m_arity,node->m_debug_info);
 		else if (node->m_type == AST_TYPE_DOUBLE)
 			stack = push_double(stack,node->m_dval);
 		else if (node->m_type == AST_TYPE_INTEGER)
-			stack = push_integer(stack,node->m_u64val);
+			stack = push_integer(stack,node->m_u64val,node->m_debug_info);
 		break;
 	}
 
@@ -2145,6 +2155,7 @@ typedef struct var_info
 	size_t               m_use_count;
 	const unsigned char* m_name;
 	size_t               m_name_len;
+	const debug_info_t*  m_debug_info;
 } var_info_t;
 
 static parse_status_t collate_var_info(parser_t* parser, var_info_t** varinfo, size_t* var_count, ast_node_t* node)
@@ -2181,9 +2192,12 @@ static parse_status_t collate_var_info(parser_t* parser, var_info_t** varinfo, s
 			*varinfo = new_varinfo;
 			new_varinfo = *varinfo + (*var_count)++;
 
-			new_varinfo->m_name = node->m_str;
-			new_varinfo->m_name_len = node->m_str_len;
-			new_varinfo->m_use_count = 1;
+			*new_varinfo = (var_info_t){
+				.m_name = node->m_str,
+				.m_name_len = node->m_str_len,
+				.m_use_count = 1,
+				.m_debug_info = node->m_debug_info
+			};
 		}
 
 		node->m_arity = i;
@@ -2253,7 +2267,7 @@ parse_status_t read_term(parser_t* parser)
 					(--parser->m_context->m_stack)->m_u64val = varinfo[i].m_use_count;
 
 					/* variable name */
-					parser->m_context->m_stack = push_string(parser->m_context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len,0);
+					parser->m_context->m_stack = push_string(parser->m_context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len,0,varinfo[i].m_debug_info);
 				}
 				(--parser->m_context->m_stack)->m_u64val = varcount;
 			}

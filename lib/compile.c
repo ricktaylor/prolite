@@ -706,6 +706,8 @@ static continuation_t* compile_unify_inner(compile_context_t* context, continuat
 				if (cont->m_always_flags & FLAG_FAIL)
 					break;
 			}
+
+			heap_free(context->m_heap,rev,arity * 2 * sizeof(term_t*));
 			return cont;
 		}
 		else if (term_compare(g1,g2))

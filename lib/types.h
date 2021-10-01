@@ -54,12 +54,19 @@ typedef struct debug_info
 
 const debug_info_t* get_debug_info(const term_t* t);
 
-term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external);
-term_t* push_predicate(term_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len, int external);
+term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str, size_t len, int external, const debug_info_t* debug_info);
+term_t* push_predicate(term_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len, int external, const debug_info_t* debug_info);
+term_t* push_debug_info(term_t* stack, const debug_info_t* debug_info);
 
-static inline term_t* push_integer(term_t* stack, int64_t i)
+static inline term_t* push_integer(term_t* stack, int64_t i, const debug_info_t* debug_info)
 {
-	(--stack)->m_u64val = PACK_TYPE(prolite_integer) | PACK_MANT_48(i);
+	prolite_type_t type = prolite_integer;
+	if (debug_info)
+	{
+		stack = push_debug_info(stack,debug_info);
+		type |= prolite_debug_info;
+	}
+	(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48(i);
 	return stack;
 }
 
@@ -69,9 +76,15 @@ static inline term_t* push_double(term_t* stack, double d)
 	return stack;
 }
 
-static inline term_t* push_var(term_t* stack, size_t idx)
+static inline term_t* push_var(term_t* stack, size_t idx, const debug_info_t* debug_info)
 {
-	(--stack)->m_u64val = PACK_TYPE(prolite_var) | PACK_MANT_48(idx);
+	prolite_type_t type = prolite_var;
+	if (debug_info)
+	{
+		stack = push_debug_info(stack,debug_info);
+		type |= prolite_debug_info;
+	}
+	(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48(idx);
 	return stack;
 }
 
@@ -93,17 +106,16 @@ static inline int64_t get_integer(const term_t* i)
 
 static inline prolite_type_t get_term_type(const term_t* t)
 {
-	return (prolite_type_t)(UNPACK_TYPE(t->m_u64val) & 0x7);
+	uint16_t exp = UNPACK_EXP_16(t->m_u64val);
+	if ((exp & 0x7FF0) != 0x7FF0)
+		return prolite_double;
+
+	return (prolite_type_t)(exp & 0x7);
 }
 
 static inline unsigned int get_term_subtype(const term_t* t)
 {
 	return ((UNPACK_MANT_48(t->m_u64val) >> 32) >> 14);
-}
-
-static inline int has_debug_info(const term_t* t)
-{
-	return !!(UNPACK_TYPE(t->m_u64val) & prolite_debug_info);
 }
 
 const term_t* get_first_arg(const term_t* compound, size_t* arity);
