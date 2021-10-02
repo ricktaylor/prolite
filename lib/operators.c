@@ -383,8 +383,12 @@ static void set_op_inner(context_t* context, operator_table_t* ops, int64_t prec
 {
 	if (get_term_type(op) != prolite_atom)
 		push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),op);
-	else if (MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_1(','))
+	else if (MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_1(',') ||
+			MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_2('{','}') ||
+			MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_2('[',']'))
+	{
 		push_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(operator),op);
+	}
 	else
 	{
 		int i = update_operator(context,ops,precendence,specifier,op);
