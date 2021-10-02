@@ -365,7 +365,7 @@ enum eAction
 	eaBackQuote
 };
 
-static const enum eAction actions[128] =
+static const enum eAction c_actions[128] =
 {
 	/* \x0 */ eaErr, /* \x1 */ eaErr, /* \x2 */ eaErr, /* \x3 */ eaErr,
 	/* \x4 */ eaErr, /* \x5 */ eaErr, /* \x6 */ eaErr, /* \x7 */ eaErr,
@@ -414,31 +414,31 @@ static int token_meta_char(parser_t* parser, uint32_t meta, token_t* token)
 		break;
 
 	case 'a':
-		c = 7;
+		c = '\a';
 		break;
 
 	case 'b':
-		c = 127;
+		c = '\b';
 		break;
 
 	case 'f':
-		c = 12;
+		c = '\f';
 		break;
 
 	case 'n':
-		c = 10;
+		c = '\n';
 		break;
 
 	case 'r':
-		c = 13;
+		c = '\r';
 		break;
 
 	case 't':
-		c = 9;
+		c = '\t';
 		break;
 
 	case 'v':
-		c = 11;
+		c = '\v';
 		break;
 
 	default:
@@ -502,7 +502,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 					return tokInvalidChar;
 				}
 
-				switch (actions[c & 0x7F])
+				switch (c_actions[c & 0x7F])
 				{
 				case eaWhitespace:
 					parser->m_line_info.m_start_line = parser->m_line_info.m_end_line;
@@ -1431,7 +1431,7 @@ static ast_node_t* atom_to_compound(parser_t* parser, ast_node_t* node, ast_erro
 		longjmp(parser->m_jmp,1);
 
 	new_node->m_type = AST_TYPE_COMPOUND;
-	
+
 	return new_node;
 }
 
@@ -1867,7 +1867,6 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 	{
 		unsigned int right_prec = 0;
 		unsigned int left_prec = 0;
-		int binary = 0;
 		const unsigned char* name = next->m_str;
 		size_t name_len = next->m_len;
 
@@ -1885,19 +1884,16 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 
 			case eXFX:
 				left_prec = right_prec = op->m_precedence - 1;
-				binary = 1;
 				break;
 
 			case eXFY:
 				left_prec = op->m_precedence - 1;
 				right_prec = op->m_precedence;
-				binary = 1;
 				break;
 
 			case eYFX:
 				left_prec = op->m_precedence;
 				right_prec = op->m_precedence - 1;
-				binary = 1;
 				break;
 
 			case eXF:
@@ -1914,7 +1910,6 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 			if (1000 > max_prec)
 				break;
 
-			binary = 1;
 			left_prec = 999;
 			right_prec = 1000;
 
@@ -1941,19 +1936,16 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 
 			case eXFX:
 				left_prec = right_prec = op->m_precedence - 1;
-				binary = 1;
 				break;
 
 			case eXFY:
 				left_prec = op->m_precedence - 1;
 				right_prec = op->m_precedence;
-				binary = 1;
 				break;
 
 			case eYFX:
 				left_prec = op->m_precedence;
 				right_prec = op->m_precedence - 1;
-				binary = 1;
 				break;
 			}
 		}
@@ -1964,7 +1956,9 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 			break;
 		else
 		{
-			ast_node_t* next_node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t) + ((1 + binary) * sizeof(ast_node_t*)));
+			size_t arity = (left_prec != 0 && right_prec != 0) ? 2 : 1;
+
+			ast_node_t* next_node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t) + (arity * sizeof(ast_node_t*)));
 			if (!next_node)
 				longjmp(parser->m_jmp,1);
 
@@ -1972,7 +1966,7 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 				.m_type = AST_TYPE_COMPOUND,
 				.m_str = name,
 				.m_str_len = name_len,
-				.m_arity = 1 + binary,
+				.m_arity = arity,
 			};
 			next_node->m_params[0] = node;
 
@@ -1981,7 +1975,7 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 
 			*next_type = token_next(parser,next);
 
-			if (binary)
+			if (arity == 2)
 			{
 				next_node->m_params[1] = parse_term(parser,right_prec,next_type,next,ast_err);
 				if (!next_node->m_params[1])
