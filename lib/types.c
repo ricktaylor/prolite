@@ -778,7 +778,7 @@ static const term_t* push_term_inner(context_t* context, const term_t* src, int 
 					p = get_next_arg(p);
 				}
 				
-				for (size_t i = arity; --i;)
+				for (size_t i = arity; i--;)
 					push_term_inner(context,rev[i],allow_external,var_mapping,var_count,jmp);
 				
 				heap_free(&context->m_heap,rev,arity * sizeof(term_t*));
