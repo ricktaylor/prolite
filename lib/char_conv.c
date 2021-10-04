@@ -22,56 +22,35 @@ static uint32_t atom_to_code(const term_t* a)
 	if (s.m_len == 0)
 		return -1;
 
-	const unsigned char* c = s.m_str;
-	if (c[0] <= 0x7f)
-		return s.m_len == 1 ? c[0] : -1;
-
-	if (c[0] < 0xC2 || c[0] > 0xF4)
-		return -1;
-
 	size_t count = 0;
 	uint32_t val = 0;
-	if ((c[0] & 0xE0) == 0xC0)
+	if (s.m_str[0] <= 0x7F)
+	{
+		count = 1;
+		val = s.m_str[0];
+	}
+	else if ((s.m_str[0] & 0xE0) == 0xC0)
 	{
 		count = 2;
-		val = (c[0] & 0x1F);
+		val = (s.m_str[0] & 0x1F);
 	}
-	else if ((c[0] & 0xF0) == 0xE0)
+	else if ((s.m_str[0] & 0xF0) == 0xE0)
 	{
-		if ((c[0] == 0xE0 && c[1] >= 0x80 && c[1] <= 0x9F) ||
-			(c[0] == 0xED && c[1] >= 0xA0 && c[1] <= 0xBF))
-		{
-			return -1;
-		}
-
 		count = 3;
-		val = (c[0] & 0x0F);
+		val = (s.m_str[0] & 0x0F);
 	}
-	else if ((c[0] & 0xF8) == 0xF0)
+	else if ((s.m_str[0] & 0xF8) == 0xF0)
 	{
-		if ((c[0] == 0xF0 && c[1] >= 0x80 && c[1] <= 0x8F) ||
-			(c[0] == 0xF4 && c[1] >= 0x90 && c[1] <= 0xBF))
-		{
-			return -1;
-		}
-
 		count = 4;
-		val = (c[0] & 0x7);
+		val = (s.m_str[0] & 0x7);
 	}
-	else
-		return -1;
-
+	
 	if (s.m_len != count)
 		return -1;
 
 	for (size_t i = 1; i < count; ++i)
-	{
-		if ((c[i] & 0xC0) != 0x80)
-			return -1;
-
-		val = (val << 6) | (c[i] & 0x3F);
-	}
-
+		val = (val << 6) | (s.m_str[i] & 0x3F);
+	
 	return val;
 }
 
