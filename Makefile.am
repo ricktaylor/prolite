@@ -25,7 +25,8 @@ libprolite_la_SOURCES = \
 	lib/operators.c \
 	lib/char_conv.c \
 	lib/consult.c \
-	lib/exceptions.c
+	lib/exceptions.c \
+	lib/write_term.c
 
 if ENABLE_TESTS
 libprolite_la_SOURCES += \

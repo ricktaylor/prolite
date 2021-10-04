@@ -17,6 +17,11 @@
 prolite_stream_resolver_t* fs_resolver_new(void);
 void fs_resolver_destroy(prolite_stream_resolver_t* r);
 
+static void exception_handler(const char* err_msg, size_t err_len)
+{
+	fprintf(stderr,"Unhandled prolite exception: %.*s\n",(int)err_len,err_msg);
+}
+
 int main(int argc, char* argv[])
 {
 	settings_t settings = {0};
@@ -25,7 +30,8 @@ int main(int argc, char* argv[])
 	prolite_environment_t env =
 	{
 		.m_resolver = fs_resolver_new(),
-		.m_stack_size = 0x1000000
+		.m_stack_size = 0x1000000,
+		.m_handler = &exception_handler
 	};
 	if (env.m_resolver)
 	{

@@ -180,11 +180,10 @@ void module_delete(module_t* module)
 	// TODO
 }
 
-static void default_exception_handler(prolite_context_t context)
+static void default_exception_handler(const char* err_msg, size_t err_len)
 {
-	// TODO - Print error?
-
-	fprintf(stderr,"Unhandled prolite exception\n");
+	fprintf(stderr,"Unhandled prolite exception: %.*s\n",(int)err_len,err_msg);
+	
 	assert(0);
 	exit(EXIT_FAILURE);
 }

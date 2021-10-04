@@ -68,15 +68,8 @@ void directive_char_conversion(context_t* context, char_conv_table_t* cc, const 
 
 static void report_exception(consult_context_t* context)
 {
-	const term_t* arg1 = context->m_context->m_stack;
-	term_t* sp = (term_t*)get_next_arg(arg1);
+	unhandled_exception(context->m_context,context->m_parser->m_operators);
 	
-	// TODO
-	assert(0);
-	//(*context->m_eh)(context->m_context);
-	
-	context->m_context->m_stack = sp;
-	context->m_context->m_flags &= ~FLAG_THROW;
 	context->m_failed = 1;
 }
 

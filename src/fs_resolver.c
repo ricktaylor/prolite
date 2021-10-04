@@ -28,28 +28,6 @@ typedef struct fs_stream
 
 static_assert(offsetof(fs_stream_t,m_base) == 0,"structure members reorganised");
 
-static prolite_stream_t* resolver_open(fs_resolver_t* r, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* dir, const char* name, size_t name_len);
-
-static prolite_stream_t* stream_open_relative(struct fs_stream* stream, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len)
-{
-	char* dir = strrchr(stream->m_name,'/');
-	if (dir)
-	{
-		dir = strndup(stream->m_name,dir - stream->m_name);
-		if (!dir)
-		{
-			// TODO - memory error via EH
-			return NULL;
-		}
-	}
-
-	prolite_stream_t* s = resolver_open(stream->m_resolver,context,eh,dir,name,name_len);
-
-	free(dir);
-
-	return s;
-}
-
 static void fs_stream_close(prolite_stream_t* s)
 {
 	fs_stream_t* stream = (fs_stream_t*)s;
@@ -59,14 +37,26 @@ static void fs_stream_close(prolite_stream_t* s)
 	free(stream);
 }
 
-static int64_t fs_stream_read(prolite_stream_t* s, void* dest, size_t len)
+static int64_t fs_stream_read(prolite_stream_t* s, void* dest, size_t len, prolite_stream_error_t* err)
 {
 	FILE* f = ((fs_stream_t*)s)->m_f;
 
 	int64_t r = fread(dest,1,len,f);
-	if (r == 0 && ferror(f))
+	if (r == 0)
+	{
 		r = -1;
-
+		if (err)
+		{
+			if (feof(f))
+				*err = prolite_stream_error_eof;
+			else
+			{
+				// TODO!
+				*err = prolite_stream_error_no_room;
+			}
+		}
+	}
+	
 	/*if (r > 0)
 	{
 		fwrite(dest,1,r,stdout);
@@ -76,7 +66,7 @@ static int64_t fs_stream_read(prolite_stream_t* s, void* dest, size_t len)
 	return r;
 }
 
-static prolite_stream_t* resolver_open(fs_resolver_t* r, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* dir, const char* name, size_t name_len)
+static prolite_stream_t* resolver_open(fs_resolver_t* r, const char* dir, const char* name, size_t name_len, prolite_stream_resolver_error_t* err)
 {
 	size_t dir_len = 0;
 	if (dir)
@@ -176,27 +166,46 @@ static prolite_stream_t* resolver_open(fs_resolver_t* r, prolite_context_t conte
 	return (prolite_stream_t*)s;
 }
 
-static prolite_stream_t* fs_resolver_open(prolite_stream_resolver_t* r, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len)
+static prolite_stream_t* stream_open_relative(struct fs_stream* stream, const char* name, size_t name_len, prolite_stream_resolver_error_t* err)
 {
-	fs_resolver_t* res = (fs_resolver_t*)r;
-	prolite_stream_t* s = resolver_open(res,context,eh,NULL,name,name_len);
-
-	for (size_t i = 0; !s && i < res->m_include_count; ++i)
-		s = resolver_open(res,context,eh,res->m_includes[i],name,name_len);
-	
-	if (!s)
+	char* dir = strrchr(stream->m_name,'/');
+	if (dir)
 	{
-		// TODO: existence error!
+		dir = strndup(stream->m_name,dir - stream->m_name);
+		if (!dir)
+		{
+			// TODO - memory error via EH
+			return NULL;
+		}
 	}
+
+	prolite_stream_t* s = resolver_open(stream->m_resolver,dir,name,name_len,err);
+
+	free(dir);
 
 	return s;
 }
 
-static prolite_stream_t* fs_resolver_open_relative(prolite_stream_resolver_t* r, prolite_stream_t* s, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len)
+static prolite_stream_t* fs_resolver_open(prolite_stream_resolver_t* r, const char* name, size_t name_len, prolite_stream_resolver_error_t* err)
+{
+	fs_resolver_t* res = (fs_resolver_t*)r;
+	prolite_stream_resolver_error_t local_err = prolite_stream_resolver_error_none;
+	prolite_stream_t* s = resolver_open(res,NULL,name,name_len,&local_err);
+	
+	for (size_t i = 0; !s && i < res->m_include_count; ++i)
+		s = resolver_open(res,res->m_includes[i],name,name_len,&local_err);
+	
+	if (!s && err)
+		*err = local_err;
+	
+	return s;
+}
+
+static prolite_stream_t* fs_resolver_open_relative(prolite_stream_resolver_t* r, prolite_stream_t* s, const char* name, size_t name_len, prolite_stream_resolver_error_t* err)
 {
 	fs_stream_t* stream = (fs_stream_t*)s;
 
-	return stream_open_relative(stream,context,eh,name,name_len);
+	return stream_open_relative(stream,name,name_len,err);
 }
 
 prolite_stream_resolver_t* fs_resolver_new(void)

@@ -100,4 +100,6 @@ void push_type_error(context_t* context, uint64_t p1, const term_t* t);
 void push_domain_error(context_t* context, uint64_t p1, const term_t* t);
 void push_representation_error(context_t* context, uint64_t p1, const term_t* t);
 
+void unhandled_exception(context_t* context, const operator_table_t* ops);
+
 #endif // CONTEXT_H_

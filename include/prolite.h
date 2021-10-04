@@ -28,12 +28,11 @@ typedef struct prolite_allocator
 	void  (*m_fn_free)(void* user_data, void* ptr);
 } prolite_allocator_t;
 
-typedef void (*prolite_exception_handler_fn_t)(prolite_context_t context);
-
 typedef enum prolite_stream_error
 {
     prolite_stream_error_none = 0,
-    prolite_stream_error_eof = 1
+    prolite_stream_error_eof = 1,
+    prolite_stream_error_no_room = 2,
 
 } prolite_stream_error_t;
 
@@ -58,6 +57,8 @@ typedef struct prolite_stream_resolver
     prolite_stream_t* (*m_fn_open_relative)(struct prolite_stream_resolver* r, prolite_stream_t* s, const char* name, size_t name_len, prolite_stream_resolver_error_t* err);
 	
 } prolite_stream_resolver_t;
+
+typedef void (*prolite_exception_handler_fn_t)(const char* err_msg, size_t err_len);
 
 typedef struct prolite_environment
 {

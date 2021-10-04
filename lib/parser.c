@@ -2052,7 +2052,7 @@ static term_t* emit_error_line_info(term_t* stack, line_info_t* info)
 	else
 	{
 		// TODO: Line if
-		(--stack)->m_u64val = PACK_ATOM_EMBED_4('T','o','d','o');
+		(--stack)->m_u64val = PACK_ATOM_EMBED_4('t','o','d','o');
 	}
 
 	return stack;
