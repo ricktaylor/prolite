@@ -19,7 +19,7 @@ void fs_resolver_destroy(prolite_stream_resolver_t* r);
 
 static void exception_handler(const char* err_msg, size_t err_len)
 {
-	fprintf(stderr,"Unhandled prolite exception: %.*s\n",(int)err_len,err_msg);
+	fprintf(stderr,"Uncaught Exception: %.*s\n",(int)err_len,err_msg);
 }
 
 int main(int argc, char* argv[])
@@ -38,29 +38,7 @@ int main(int argc, char* argv[])
 		prolite_context_t context = prolite_context_load(NULL,&env,argv[0]);
 		if (context)
 		{
-			/*struct text_stream ts = {
-				.m_proto.m_fn_read = &text_stream_read,
-				.m_str = &cmd,
-				.m_end = *ts.m_str + strlen(*ts.m_str)
-			};
-
-			// Read a term and prepare it for execution
-			parse_status_t result = read_term(context,&ts.m_proto);
-			if (result == PARSE_OK)
-			{		
-				// Pop varinfo
-				size_t varcount = 0;
-				{
-					const term_t* sp = context->m_stack;
-					varcount = (sp++)->m_u64val;
-					for (size_t i = 0; i < varcount; ++i)
-						sp = get_next_arg(sp) + 1;
-
-					context->m_stack = (term_t*)sp;
-				}
-
-				compile_goal(context,context->m_stack,varcount);
-			}*/
+			// TODO!
 			
 			prolite_context_destroy(context);
 		}
