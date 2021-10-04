@@ -182,8 +182,8 @@ void module_delete(module_t* module)
 
 static void default_exception_handler(const char* err_msg, size_t err_len)
 {
-	fprintf(stderr,"Unhandled prolite exception: %.*s\n",(int)err_len,err_msg);
-	
+	fprintf(stderr,"Uncaught exception: %.*s\n",(int)err_len,err_msg);
+
 	assert(0);
 	exit(EXIT_FAILURE);
 }

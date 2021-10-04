@@ -2287,7 +2287,7 @@ parse_status_t read_term(parser_t* parser)
 	return status;
 }
 
-parse_status_t read_term_todo(context_t* context, prolite_stream_t* s)
+void read_term_todo(context_t* context, prolite_stream_t* s)
 {
 	parser_t parser = 
 	{
@@ -2303,6 +2303,7 @@ parse_status_t read_term_todo(context_t* context, prolite_stream_t* s)
 	parse_status_t status = read_term(&parser);
 	if (status == PARSE_EOF)
 		status = emit_eof_error(&context->m_stack,&parser.m_line_info);
-		
-	return status;
+
+	if (status == PARSE_THROW)
+		context->m_flags |= FLAG_THROW;
 }
