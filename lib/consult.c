@@ -435,7 +435,7 @@ static void assert_clause(consult_context_t* context, const compile_clause_t* c)
 static prolite_stream_t* stream_open(consult_context_t* context, const term_t* t)
 {
 	prolite_stream_t* s = NULL;
-	if (context->m_context->m_resolver && context->m_context->m_resolver->m_fn_open_relative)
+	if (context->m_context->m_resolver && context->m_context->m_resolver->m_fn_open_relative && context->m_parser->m_s)
 	{
 		string_t str;
 		get_string(t,&str,NULL);
