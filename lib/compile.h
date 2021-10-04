@@ -50,37 +50,6 @@ typedef union opcode
 	term_t        m_term;
 } opcode_t;
 
-typedef struct cfg_block
-{
-	size_t    m_count;
-	opcode_t* m_ops;
-} cfg_block_t;
-
-typedef struct continuation
-{
-	cfg_block_t* m_entry_point;
-	cfg_block_t* m_tail;
-	uint8_t      m_always_flags;
-	unsigned     m_subroutine : 1;
-} continuation_t;
-
-typedef struct compile_context
-{
-	heap_t*          m_heap;
-	substitutions_t* m_substs;
-	jmp_buf          m_jmp;
-} compile_context_t;
-
-const term_t* deref_var(compile_context_t* context, const term_t* goal);
-
-static inline continuation_t* compile_true(compile_context_t* context, continuation_t* cont, const term_t* goal)
-{
-	return cont;
-}
-continuation_t* compile_false(compile_context_t* context, continuation_t* cont, const term_t* goal);
-continuation_t* compile_builtin(compile_context_t* context, continuation_t* cont, builtin_fn_t fn, size_t arity, const term_t* g1);
-continuation_t* compile_type_test(compile_context_t* context, continuation_t* cont, prolite_type_flags_t types, int negate, const term_t* goal);
-
 void compile_goal(context_t* context, const term_t* goal, size_t var_count);
 
 typedef struct compile_clause
@@ -101,24 +70,6 @@ typedef struct compile_predicate
 
 static_assert(offsetof(compile_predicate_t,m_base) == 0,"structure members reorganised");
 
-typedef struct cfg_block_info
-{
-	intptr_t           m_offset;
-	const cfg_block_t* m_blk;
-} cfg_block_info_t;
-
-typedef struct cfg_vec
-{
-	size_t            m_count;
-	size_t            m_total;
-	cfg_block_info_t* m_blks;
-} cfg_vec_t;
-
 size_t inc_ip(optype_t op);
-
-#if ENABLE_TESTS
-void dumpCFG(const cfg_vec_t* blks, const char* filename);
-void dumpTrace(const opcode_t* code, size_t count, const char* filename);
-#endif
 
 #endif // COMPILE_H_

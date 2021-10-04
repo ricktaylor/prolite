@@ -11,7 +11,7 @@ endif
 lib_LTLIBRARIES = libprolite.la
 
 proliteincludedir = @includedir@/prolite
-#proliteinclude_HEADERS = 
+#proliteinclude_HEADERS =
 
 libprolite_la_SOURCES = \
 	lib/heap.c \
@@ -28,20 +28,15 @@ libprolite_la_SOURCES = \
 	lib/exceptions.c \
 	lib/write_term.c
 
-if ENABLE_TESTS
-libprolite_la_SOURCES += \
-	lib/dump_cfg.c
-endif
-				
-libprolite_la_LDFLAGS = -version-number $(shell echo $(VERSION) | grep -oP '^\d+.\d+.\d+' | sed 's/\./:/g') 
+libprolite_la_LDFLAGS = -version-number $(shell echo $(VERSION) | grep -oP '^\d+.\d+.\d+' | sed 's/\./:/g')
 
-bin_PROGRAMS = prolite 
+bin_PROGRAMS = prolite
 
 prolite_SOURCES = \
 	src/settings.c \
 	src/fs_resolver.c \
 	src/main.c
-	
+
 prolite_LDADD = libprolite.la
 prolite_LDFLAGS = -static
 
