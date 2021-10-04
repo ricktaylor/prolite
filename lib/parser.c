@@ -1390,11 +1390,20 @@ static token_type_t token_next(parser_t* parser, token_t* token)
 		if (!parser->m_eof)
 		{
 			unsigned char c;
-			int64_t i = (*parser->m_s->m_fn_read)(parser->m_s,&c,1);
+			prolite_stream_error_t err = prolite_stream_error_none;
+			int64_t i = (*parser->m_s->m_fn_read)(parser->m_s,&c,1,&err);
 			if (i <= 0)
 			{
-				// TODO: File I/O error?
-				parser->m_eof = 1;
+				switch (err)
+				{
+				case prolite_stream_error_eof:
+					parser->m_eof = 1;
+					break;
+
+				default:
+					// TODO: File I/O error?
+					break;
+				}
 			}
 			else
 				parser->m_buffer[parser->m_buffer_len++] = c;

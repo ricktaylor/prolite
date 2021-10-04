@@ -81,8 +81,6 @@ typedef struct context
 	
 } context_t;
 
-static_assert(offsetof(context_t,m_user_data) == 0,"structure members reorganised");
-
 extern const prolite_environment_t g_default_env;
 
 typedef void (*builtin_fn_t)(context_t* context);

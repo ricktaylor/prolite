@@ -18,7 +18,7 @@ extern "C" {
 
 typedef struct prolite_context
 {
-    void* m_user_data;
+    int opaque;
 }* prolite_context_t;
 
 typedef struct prolite_allocator
@@ -30,18 +30,32 @@ typedef struct prolite_allocator
 
 typedef void (*prolite_exception_handler_fn_t)(prolite_context_t context);
 
+typedef enum prolite_stream_error
+{
+    prolite_stream_error_none = 0,
+    prolite_stream_error_eof = 1
+
+} prolite_stream_error_t;
+
 typedef struct prolite_stream
 {
     void (*m_fn_close)(struct prolite_stream* s);
-	int64_t (*m_fn_read)(struct prolite_stream* s, void* dest, size_t len);
-    int (*m_fn_write)(struct prolite_stream* s, const void* src, size_t len);
+	int64_t (*m_fn_read)(struct prolite_stream* s, void* dest, size_t len, prolite_stream_error_t* err);
+    int (*m_fn_write)(struct prolite_stream* s, const void* src, size_t len, prolite_stream_error_t* err);
 
 } prolite_stream_t;
 
+typedef enum prolite_stream_resolver_error
+{
+    prolite_stream_resolver_error_none = 0,
+    prolite_stream_resolver_error_permission = 1
+
+} prolite_stream_resolver_error_t;
+
 typedef struct prolite_stream_resolver
 {
-	prolite_stream_t* (*m_fn_open)(struct prolite_stream_resolver* r, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len);
-    struct prolite_stream* (*m_fn_open_relative)(struct prolite_stream_resolver* r, struct prolite_stream* s, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len);
+	prolite_stream_t* (*m_fn_open)(struct prolite_stream_resolver* r, const char* name, size_t name_len, prolite_stream_resolver_error_t* err);
+    prolite_stream_t* (*m_fn_open_relative)(struct prolite_stream_resolver* r, prolite_stream_t* s, const char* name, size_t name_len, prolite_stream_resolver_error_t* err);
 	
 } prolite_stream_resolver_t;
 

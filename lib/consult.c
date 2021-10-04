@@ -435,25 +435,37 @@ static void assert_clause(consult_context_t* context, const compile_clause_t* c)
 static prolite_stream_t* stream_open(consult_context_t* context, const term_t* t)
 {
 	prolite_stream_t* s = NULL;
-	if (context->m_context->m_resolver && context->m_context->m_resolver->m_fn_open_relative && context->m_parser->m_s)
+	prolite_stream_resolver_error_t err = prolite_stream_resolver_error_permission;
+	if (context->m_context->m_resolver)
 	{
-		string_t str;
-		get_string(t,&str,NULL);
-		s = (*context->m_context->m_resolver->m_fn_open_relative)(context->m_context->m_resolver,context->m_parser->m_s,(prolite_context_t)context->m_context,context->m_context->m_eh,(const char*)str.m_str,str.m_len);
-		if (!s)
-			context->m_failed = 1;
+		if (context->m_context->m_resolver->m_fn_open_relative && context->m_parser->m_s)
+		{
+			string_t str;
+			get_string(t,&str,NULL);
+			s = (*context->m_context->m_resolver->m_fn_open_relative)(context->m_context->m_resolver,context->m_parser->m_s,(const char*)str.m_str,str.m_len,&err);
+			if (!s)
+				context->m_failed = 1;
+		}
+		else if (context->m_context->m_resolver->m_fn_open)
+		{
+			string_t str;
+			get_string(t,&str,NULL);
+			s = (*context->m_context->m_resolver->m_fn_open)(context->m_context->m_resolver,(const char*)str.m_str,str.m_len,&err);
+			if (!s)
+				context->m_failed = 1;
+		}
 	}
-	else if (context->m_context->m_resolver && context->m_context->m_resolver->m_fn_open)
-	{
-		string_t str;
-		get_string(t,&str,NULL);
-		s = (*context->m_context->m_resolver->m_fn_open)(context->m_context->m_resolver,(prolite_context_t)context->m_context,context->m_context->m_eh,(const char*)str.m_str,str.m_len);
-		if (!s)
-			context->m_failed = 1;
-	}
-	else
-		report_permission_error(context,PACK_ATOM_EMBED_4('o','p','e','n'),PACK_ATOM_BUILTIN(source_sink),t);
 	
+	if (!s)
+	{
+		switch (err)
+		{
+		default:
+			report_permission_error(context,PACK_ATOM_EMBED_4('o','p','e','n'),PACK_ATOM_BUILTIN(source_sink),t);
+			break;
+		}
+	}
+
 	return s;
 }
 

@@ -82,7 +82,8 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 
 static void write_chars(write_context_t* context, const void* src, size_t len)
 {
-	int w = (*context->m_s->m_fn_write)(context->m_s,src,len);
+	prolite_stream_error_t err = prolite_stream_error_none;
+	int w = (*context->m_s->m_fn_write)(context->m_s,src,len,&err);
 	if (!w)
 	{
 		// TODO: Push some kind of error
