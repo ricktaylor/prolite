@@ -435,11 +435,11 @@ static void assert_clause(consult_context_t* context, const compile_clause_t* c)
 static prolite_stream_t* stream_open(consult_context_t* context, const term_t* t)
 {
 	prolite_stream_t* s = NULL;
-	if (context->m_parser && context->m_parser->m_s && context->m_parser->m_s->m_fn_open_relative)
+	if (context->m_context->m_resolver && context->m_context->m_resolver->m_fn_open_relative)
 	{
 		string_t str;
 		get_string(t,&str,NULL);
-		s = (*context->m_parser->m_s->m_fn_open_relative)(context->m_parser->m_s,(prolite_context_t)context->m_context,context->m_context->m_eh,(const char*)str.m_str,str.m_len);
+		s = (*context->m_context->m_resolver->m_fn_open_relative)(context->m_context->m_resolver,context->m_parser->m_s,(prolite_context_t)context->m_context,context->m_context->m_eh,(const char*)str.m_str,str.m_len);
 		if (!s)
 			context->m_failed = 1;
 	}

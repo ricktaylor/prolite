@@ -32,8 +32,7 @@ typedef void (*prolite_exception_handler_fn_t)(prolite_context_t context);
 
 typedef struct prolite_stream
 {
-    struct prolite_stream* (*m_fn_open_relative)(struct prolite_stream* s, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len);
-	void (*m_fn_close)(struct prolite_stream* s);
+    void (*m_fn_close)(struct prolite_stream* s);
 	int64_t (*m_fn_read)(struct prolite_stream* s, void* dest, size_t len);
     int (*m_fn_write)(struct prolite_stream* s, const void* src, size_t len);
 
@@ -42,6 +41,8 @@ typedef struct prolite_stream
 typedef struct prolite_stream_resolver
 {
 	prolite_stream_t* (*m_fn_open)(struct prolite_stream_resolver* r, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len);
+    struct prolite_stream* (*m_fn_open_relative)(struct prolite_stream_resolver* r, struct prolite_stream* s, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len);
+	
 } prolite_stream_resolver_t;
 
 typedef struct prolite_environment

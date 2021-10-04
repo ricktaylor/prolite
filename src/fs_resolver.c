@@ -30,10 +30,8 @@ static_assert(offsetof(fs_stream_t,m_base) == 0,"structure members reorganised")
 
 static prolite_stream_t* resolver_open(fs_resolver_t* r, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* dir, const char* name, size_t name_len);
 
-static struct prolite_stream* fs_stream_open_relative(struct prolite_stream* s, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len)
+static prolite_stream_t* stream_open_relative(struct fs_stream* stream, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len)
 {
-	fs_stream_t* stream = (fs_stream_t*)s;
-
 	char* dir = strrchr(stream->m_name,'/');
 	if (dir)
 	{
@@ -45,14 +43,14 @@ static struct prolite_stream* fs_stream_open_relative(struct prolite_stream* s, 
 		}
 	}
 
-	s = resolver_open(stream->m_resolver,context,eh,dir,name,name_len);
+	prolite_stream_t* s = resolver_open(stream->m_resolver,context,eh,dir,name,name_len);
 
 	free(dir);
 
 	return s;
 }
 
-static void fs_stream_close(struct prolite_stream* s)
+static void fs_stream_close(prolite_stream_t* s)
 {
 	fs_stream_t* stream = (fs_stream_t*)s;
 
@@ -61,7 +59,7 @@ static void fs_stream_close(struct prolite_stream* s)
 	free(stream);
 }
 
-static int64_t fs_stream_read(struct prolite_stream* s, void* dest, size_t len)
+static int64_t fs_stream_read(prolite_stream_t* s, void* dest, size_t len)
 {
 	FILE* f = ((fs_stream_t*)s)->m_f;
 
@@ -120,7 +118,6 @@ static prolite_stream_t* resolver_open(fs_resolver_t* r, prolite_context_t conte
 		*s = (fs_stream_t){
 			.m_base.m_fn_close = &fs_stream_close,
 			.m_base.m_fn_read = &fs_stream_read,
-			.m_base.m_fn_open_relative = &fs_stream_open_relative,
 			.m_resolver = r
 		};
 
@@ -179,7 +176,7 @@ static prolite_stream_t* resolver_open(fs_resolver_t* r, prolite_context_t conte
 	return (prolite_stream_t*)s;
 }
 
-static prolite_stream_t* fs_resolver_open(struct prolite_stream_resolver* r, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len)
+static prolite_stream_t* fs_resolver_open(prolite_stream_resolver_t* r, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len)
 {
 	fs_resolver_t* res = (fs_resolver_t*)r;
 	prolite_stream_t* s = resolver_open(res,context,eh,NULL,name,name_len);
@@ -195,13 +192,21 @@ static prolite_stream_t* fs_resolver_open(struct prolite_stream_resolver* r, pro
 	return s;
 }
 
+static prolite_stream_t* fs_resolver_open_relative(prolite_stream_resolver_t* r, prolite_stream_t* s, prolite_context_t context, prolite_exception_handler_fn_t eh, const char* name, size_t name_len)
+{
+	fs_stream_t* stream = (fs_stream_t*)s;
+
+	return stream_open_relative(stream,context,eh,name,name_len);
+}
+
 prolite_stream_resolver_t* fs_resolver_new(void)
 {
 	fs_resolver_t* r = malloc(sizeof(fs_resolver_t));
 	if (r)
 	{
 		*r = (fs_resolver_t){
-			.m_base.m_fn_open = &fs_resolver_open
+			.m_base.m_fn_open = &fs_resolver_open,
+			.m_base.m_fn_open_relative = &fs_resolver_open_relative,
 		};
 	}
 
