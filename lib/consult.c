@@ -502,23 +502,18 @@ static void load_file(consult_context_t* context, const term_t* filename)
 
 		while (!context->m_critical_failure)
 		{
-			term_t* sp = context->m_context->m_stack;
-
-			parse_status_t status = read_term(&parser);
-			if (status == PARSE_EOF)
-				break;
-
-			if (status == PARSE_THROW)
+			const term_t* term = read_term(&parser);
+			if (!term)
 			{
-				report_exception(context);
-
-				// Reset stack
-				context->m_context->m_stack = sp;
+				if (context->m_context->m_flags & FLAG_THROW)
+					report_exception(context);
+				else
+					break;
 			}
 			else
 			{
 				// Unpack clause term
-				compile_clause_t clause = { .m_head = context->m_context->m_stack };
+				compile_clause_t clause = { .m_head = term };
 				clause.m_varcount = (clause.m_head++)->m_u64val;
 				for (size_t i = 0; i < clause.m_varcount; ++i)
 					clause.m_head = get_next_arg(clause.m_head) + 1;

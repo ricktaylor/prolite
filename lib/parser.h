@@ -34,13 +34,6 @@ typedef struct parser
 	const char_conv_table_t* m_char_conversion;
 } parser_t;
 
-typedef enum parse_status
-{
-	PARSE_OK = 0,
-	PARSE_EOF,
-	PARSE_THROW
-} parse_status_t;
-
-parse_status_t read_term(parser_t* parser);
+const term_t* read_term(parser_t* parser);
 
 #endif // PARSER_H_
