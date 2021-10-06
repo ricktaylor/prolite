@@ -69,7 +69,6 @@ void directive_char_conversion(context_t* context, char_conv_table_t* cc, const 
 static void report_exception(consult_context_t* context)
 {
 	unhandled_exception(context->m_context,context->m_parser->m_operators);
-	
 	context->m_failed = 1;
 }
 
