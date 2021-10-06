@@ -122,14 +122,14 @@ void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len)
 	if (!heap)
 		return NULL;
 
+	if (new_len == 0)
+	{
+		heap_free(heap,ptr,old_len);
+		return NULL;
+	}
+
 	if (ptr)
 	{
-		if (new_len == 0)
-		{
-			heap_free(heap,ptr,old_len);
-			return NULL;
-		}
-
 		size_t align_old_len = bytes_to_cells(old_len,sizeof(uint64_t));
 		if (heap->m_page && heap->m_page->m_top >= align_old_len && ptr == heap->m_page->m_data + (heap->m_page->m_top - align_old_len))
 		{
