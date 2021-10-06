@@ -1674,7 +1674,15 @@ void compile_goal(context_t* context, const term_t* goal, size_t var_count)
 			if (!code)
 				longjmp(cc.m_jmp,1);
 
-			blks.m_total = emit_ops(code,&blks);
+			size_t new_size = emit_ops(code,&blks);
+
+			// Resize the memory block for sanity
+			opcode_t* new_code = heap_realloc(&context->m_heap,code,blks.m_total * sizeof(opcode_t),new_size * sizeof(opcode_t));
+			if (!new_code)
+				longjmp(cc.m_jmp,1);
+
+			code = new_code;
+			blks.m_total = new_size;
 
 #if ENABLE_TESTS
 			dumpTrace(code,blks.m_total,"./pcode.txt");
