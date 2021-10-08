@@ -2,7 +2,6 @@
 
 /* These MUST be sorted by length then text */
 
-DECLARE_BUILTIN_STRING(call)
 DECLARE_BUILTIN_STRING(atomic)
 DECLARE_BUILTIN_STRING(create)
 DECLARE_BUILTIN_STRING(ground)

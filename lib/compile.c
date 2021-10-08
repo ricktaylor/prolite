@@ -505,7 +505,7 @@ static continuation_t* compile_builtin(compile_context_t* context, continuation_
 	(ops++)->m_term.m_pval = fn;
 	ops->m_term.m_pval = cont->m_entry_point;
 
-	c->m_always_flags = (cont->m_always_flags & (FLAG_FAIL | FLAG_THROW));
+	c->m_always_flags = cont->m_always_flags & (FLAG_FAIL | FLAG_THROW | FLAG_HALT);
 
 	return c;
 }
@@ -995,7 +995,6 @@ static continuation_t* compile_subgoal(compile_context_t* context, continuation_
 		{
 		case prolite_compound:
 			if ((MASK_DEBUG_INFO(goal->m_u64val) & PACK_COMPOUND_EMBED_MASK) == PACK_COMPOUND_EMBED_4(0,'c','a','l','l') ||
-				(MASK_DEBUG_INFO(goal->m_u64val) & PACK_COMPOUND_BUILTIN_MASK) == PACK_COMPOUND_BUILTIN(call,0) ||
 				MASK_DEBUG_INFO(goal[1].m_u64val) == PACK_ATOM_EMBED_4('c','a','l','l'))
 			{
 				c = wrap_cut(context,compile_callN(context,cont,goal));
