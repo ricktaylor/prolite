@@ -22,7 +22,6 @@ typedef enum char_class
 	ccErr = 0,
 	ccWhitespace,
 	ccGraphic,
-	ccMinus,
 	ccUpper,
 	ccLower,
 	ccNumeric,
@@ -55,7 +54,7 @@ static const char_class_t c_char_classes[256] =
 	/* space */ ccWhitespace, /* ! */ ccCut, /* " */ ccErr, /* # */ ccGraphic,
 	/* $ */ ccGraphic, /* % */ ccSingleComment, /* & */ ccGraphic, /* ' */ ccSingleQuote,
 	/* ( */ ccOpen, /* ) */ ccClose, /* * */ ccGraphic, /* + */ ccGraphic,
-	/* , */ ccComma, /* - */ ccMinus, /* . */ ccDot, /* / */ ccFwSlash,
+	/* , */ ccComma, /* - */ ccGraphic, /* . */ ccDot, /* / */ ccFwSlash,
 	/* 0 */ ccNumeric, /* 1 */ ccNumeric, /* 2 */ ccNumeric, /* 3 */ ccNumeric,
 	/* 4 */ ccNumeric, /* 5 */ ccNumeric, /* 6 */ ccNumeric, /* 7 */ ccNumeric,
 	/* 8 */ ccNumeric, /* 9 */ ccNumeric, /* : */ ccGraphic, /* ; */ ccSemiColon,
@@ -213,12 +212,11 @@ static int should_quote_atom(const string_t* str)
 		goto graphic;
 
 	case ccGraphic:
-	case ccMinus:
 	graphic:
 		for (size_t i = 1; i < str->m_len; ++i)
 		{
 			char_class_t cc = c_char_classes[str->m_str[i]];
-			if (cc != ccGraphic && cc != ccMinus && cc != ccFwSlash && cc != ccDot)
+			if (cc != ccGraphic && cc != ccFwSlash && cc != ccDot)
 				return 1;
 		}
 		return 0;
@@ -385,8 +383,7 @@ static char_class_t write_operator(write_context_t* context, char_class_t cc_pre
 		switch (c_char_classes[str->m_str[0]])
 		{
 		case ccGraphic:
-		case ccMinus:
-			if (cc_prev == ccGraphic || cc_prev == ccMinus)
+			if (cc_prev == ccGraphic)
 				write_chars(context," ",1);
 			break;
 
@@ -407,9 +404,7 @@ static char_class_t write_operator(write_context_t* context, char_class_t cc_pre
 
 	write_chars(context,str->m_str,str->m_len);
 	cc_prev = c_char_classes[str->m_str[str->m_len-1]];
-	if (str->m_str[0] == '-' && str->m_len == 1)
-		cc_prev = ccMinus;
-
+	
 	if (right_prec)
 	{
 		context->m_add_spaces = 1;
@@ -448,9 +443,12 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 	{
 	case prolite_var:
 		{
-			const term_t* v = deref_local_var(context->m_context,term);
-			if (v != term)
-				return write_term_inner(context,cc_prev,v);
+			if (context->m_context->m_locals)
+			{
+				const term_t* v = deref_local_var(context->m_context,term);
+				if (v != term)
+					return write_term_inner(context,cc_prev,v);
+			}
 			
 			if (context->m_options.variable_names)
 				return write_variable_name(context,cc_prev,term);
@@ -480,11 +478,14 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 	case prolite_integer:
 		{
 			int64_t v = get_integer(term);
-			if (context->m_add_spaces && v < 0 && cc_prev == ccMinus)
-				write_chars(context," ",1);
+			if (context->m_add_spaces)
+			{
+				if (cc_prev == ccLower || cc_prev == ccUpper || cc_prev == ccNumeric)
+					write_chars(context," ",1);
+			}
 
 			char buf[22];
-			int p = snprintf(buf,sizeof(buf)-1,PRId64,v);
+			int p = snprintf(buf,sizeof(buf)-1,"%" PRId64,v);
 			write_chars(context,buf,p);
 			cc_prev = ccNumeric;
 		}
@@ -492,9 +493,12 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 		
 	case prolite_double:
 		{
-			if (context->m_add_spaces && term->m_dval < 0.0 && cc_prev == ccMinus)
-				write_chars(context," ",1);
-
+			if (context->m_add_spaces)
+			{
+				if (cc_prev == ccLower || cc_prev == ccUpper || cc_prev == ccNumeric)
+					write_chars(context," ",1);
+			}
+			
 			char buf[30];
 			int p = snprintf(buf,sizeof(buf)-1,"%.17g",term->m_dval);
 			if (context->m_options.quoted)
@@ -524,8 +528,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 				switch (c_char_classes[str.m_str[0]])
 				{
 				case ccGraphic:
-				case ccMinus:
-					if (cc_prev == ccGraphic || cc_prev == ccMinus)
+					if (cc_prev == ccGraphic)
 						write_chars(context," ",1);
 					break;
 
