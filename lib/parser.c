@@ -2056,7 +2056,7 @@ static void emit_syntax_error_missing(parser_t* parser, uint64_t missing_atom)
 	(--parser->m_context->m_stack)->m_u64val = PACK_COMPOUND_BUILTIN(syntax_error,1);
 	(--parser->m_context->m_stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
 
-	parser->m_context->m_flags |= FLAG_THROW;
+	parser->m_context->m_flags = FLAG_THROW;
 }
 
 static void emit_simple_error(parser_t* parser, uint64_t f, uint64_t arg)
@@ -2067,7 +2067,7 @@ static void emit_simple_error(parser_t* parser, uint64_t f, uint64_t arg)
 	(--parser->m_context->m_stack)->m_u64val = f;
 	(--parser->m_context->m_stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
 
-	parser->m_context->m_flags |= FLAG_THROW;
+	parser->m_context->m_flags = FLAG_THROW;
 }
 
 static void emit_eof_error(parser_t* parser)
@@ -2246,13 +2246,13 @@ const term_t* read_term(parser_t* parser)
 			parser->m_line_info.m_start_col = parser->m_line_info.m_end_col;
 
 			var_info_t* varinfo = NULL;
-			size_t varcount = 0;
-			collate_var_info(parser,&varinfo,&varcount,node);
+			size_t var_count = 0;
+			collate_var_info(parser,&varinfo,&var_count,node);
 			
 			parser->m_context->m_stack = emit_ast_node(parser->m_context->m_stack,node);
 
 			/* Write out var count */
-			for (size_t i = varcount; i--; )
+			for (size_t i = var_count; i--; )
 			{
 				/* use count */
 				(--parser->m_context->m_stack)->m_u64val = varinfo[i].m_use_count;
@@ -2260,7 +2260,7 @@ const term_t* read_term(parser_t* parser)
 				/* variable name */
 				parser->m_context->m_stack = push_string(parser->m_context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len,0,varinfo[i].m_debug_info);
 			}
-			(--parser->m_context->m_stack)->m_u64val = varcount;
+			(--parser->m_context->m_stack)->m_u64val = var_count;
 
 			ret = parser->m_context->m_stack;
 		}
