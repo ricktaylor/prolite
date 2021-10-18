@@ -15,12 +15,10 @@ typedef struct consult_predicate
 	compile_predicate_t m_base;
 
 	unsigned          m_public : 1;
-	unsigned          m_dynamic : 1;
 	unsigned          m_multifile : 1;
 	unsigned          m_discontiguous : 1;
 
 	const term_t*     m_filename;
-	compile_clause_t* m_clauses;
 		
 } consult_predicate_t;
 
@@ -30,7 +28,7 @@ typedef struct consult_initializer
 {
 	struct consult_initializer* m_next;
 	const term_t*               m_goal;
-	size_t                      m_varcount;
+	size_t                      m_var_count;
 	
 } consult_initializer_t;
 
@@ -118,7 +116,7 @@ static consult_predicate_t* new_predicate(consult_context_t* context, const term
 	
 	*new_pred = (consult_predicate_t){ 
 		.m_base.m_base.m_functor = t,
-		.m_dynamic = dynamic,
+		.m_base.m_dynamic = dynamic,
 		.m_multifile = multifile,
 		.m_discontiguous = discontiguous,
 		.m_filename = context->m_includes->m_filename
@@ -143,7 +141,7 @@ static void public(consult_context_t* context, const term_t* t, const term_t* pi
 		
 	if (!pred->m_public)
 	{
-		if (pred->m_clauses)
+		if (pred->m_base.m_clauses)
 		{
 			// TODO: Must error somehow...
 			//return report_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(static_procedure),pi);
@@ -159,12 +157,12 @@ static void dynamic(consult_context_t* context, const term_t* t, const term_t* p
 	if (!pred)
 		return report_out_of_memory_error(context,t);
 		
-	if (!pred->m_dynamic)
+	if (!pred->m_base.m_dynamic)
 	{
-		if (pred->m_clauses)
+		if (pred->m_base.m_clauses)
 			return report_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(static_procedure),pi);
 			
-		pred->m_dynamic = 1;
+		pred->m_base.m_dynamic = 1;
 		pred->m_public = 1;
 	}
 }
@@ -177,7 +175,7 @@ static void discontiguous(consult_context_t* context, const term_t* t, const ter
 		
 	if (!pred->m_discontiguous)
 	{
-		if (pred->m_clauses)
+		if (pred->m_base.m_clauses)
 		{
 			// TODO: Must error somehow...
 			//return report_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(static_procedure),pi);
@@ -195,7 +193,7 @@ static void multifile(consult_context_t* context, const term_t* t, const term_t*
 		
 	if (!pred->m_multifile)
 	{
-		if (pred->m_clauses)
+		if (pred->m_base.m_clauses)
 		{
 			// TODO: Must error somehow...
 			//return report_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(static_procedure),pi);
@@ -278,7 +276,7 @@ static void pi_directive(consult_context_t* context, const term_t* directive, vo
 static void append_clause(consult_context_t* context, consult_predicate_t* pred, const compile_clause_t* c)
 {
 	// Push a clause frame on the stack, and add to linked list
-	compile_clause_t** tail = &pred->m_clauses;
+	compile_clause_t** tail = &pred->m_base.m_clauses;
 	while (*tail)
 		tail = &(*tail)->m_next;
 
@@ -290,7 +288,7 @@ static void append_clause(consult_context_t* context, consult_predicate_t* pred,
 	*tail = new_clause;
 }
 
-static void assert_initializer(consult_context_t* context, const term_t* goal, size_t varcount)
+static void assert_initializer(consult_context_t* context, const term_t* goal, size_t var_count)
 {
 	// Only add if we are actually going to do something about it
 	if (!context->m_failed)
@@ -304,7 +302,7 @@ static void assert_initializer(consult_context_t* context, const term_t* goal, s
 		if (!new_init)
 			return report_out_of_memory_error(context,goal);
 
-		*new_init = (consult_initializer_t){ .m_goal = goal, .m_varcount = varcount };
+		*new_init = (consult_initializer_t){ .m_goal = goal, .m_var_count = var_count };
 		*tail = new_init;
 	}
 }
@@ -312,7 +310,7 @@ static void assert_initializer(consult_context_t* context, const term_t* goal, s
 static void include(consult_context_t* context, const term_t* t);
 static void ensure_loaded(consult_context_t* context, const term_t* t);
 
-static void directive(consult_context_t* context, const term_t* term, size_t varcount)
+static void directive(consult_context_t* context, const term_t* term, size_t var_count)
 {
 	uint64_t d = MASK_DEBUG_INFO(term->m_u64val);
 	switch (d)
@@ -326,7 +324,7 @@ static void directive(consult_context_t* context, const term_t* term, size_t var
 		break;
 
 	case PACK_COMPOUND_BUILTIN(initialization,1):
-		assert_initializer(context,get_first_arg(term,NULL),varcount);
+		assert_initializer(context,get_first_arg(term,NULL),var_count);
 		break;
 
 	case PACK_COMPOUND_BUILTIN(set_prolog_flag,2):
@@ -409,7 +407,7 @@ static void assert_clause(consult_context_t* context, const compile_clause_t* c)
 
 		if (!is_new_pred)
 		{
-			if (!pred->m_discontiguous && pred->m_clauses)
+			if (!pred->m_discontiguous && pred->m_base.m_clauses)
 			{
 				// TODO: Some kind of discontiguous warning
 			}
@@ -513,12 +511,12 @@ static void load_file(consult_context_t* context, const term_t* filename)
 			{
 				// Unpack clause term
 				compile_clause_t clause = { .m_head = term };
-				clause.m_varcount = (clause.m_head++)->m_u64val;
-				for (size_t i = 0; i < clause.m_varcount; ++i)
+				clause.m_var_count = (clause.m_head++)->m_u64val;
+				for (size_t i = 0; i < clause.m_var_count; ++i)
 					clause.m_head = get_next_arg(clause.m_head) + 1;
 							
 				if (MASK_DEBUG_INFO(clause.m_head->m_u64val) == PACK_COMPOUND_EMBED_2(1,':','-'))
-					directive(context,get_first_arg(clause.m_head,NULL),clause.m_varcount);
+					directive(context,get_first_arg(clause.m_head,NULL),clause.m_var_count);
 				else
 				{
 					if (MASK_DEBUG_INFO(clause.m_head->m_u64val) == PACK_COMPOUND_EMBED_2(2,':','-'))
@@ -581,12 +579,31 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	context->m_flags = old_flags;	
 }
 
+static void* inline_predicate_call(void* context, void* param, const term_t* goal, const void* cont)
+{
+	return compile_predicate_call(context,(const compile_predicate_t*)predicate_map_lookup(&((consult_context_t*)param)->m_predicates,goal),goal,cont);
+}
+
+static void compile_statics(void* param, predicate_base_t* p)
+{
+	consult_context_t* context = param;
+	consult_predicate_t* pred = (consult_predicate_t*)p;
+
+	if (!pred->m_base.m_dynamic)
+	{
+		// For each clause
+		for (const compile_clause_t* clause = pred->m_base.m_clauses; clause; clause = clause->m_next)
+		{
+			if (clause->m_body)
+				compile_goal(context->m_context,&inline_predicate_call,context,clause->m_body,clause->m_var_count);
+		}
+	}
+}
+
 static int consult(context_t* context, const term_t* filename)
 {
 	size_t heap_start = heap_top(&context->m_heap);
-
 	prolite_allocator_t local_allocator = heap_allocator(&context->m_heap);
-
 	consult_context_t cc =
 	{
 		.m_context = context,
@@ -603,12 +620,14 @@ static int consult(context_t* context, const term_t* filename)
 	load_file(&cc,filename);
 	if (!cc.m_failed)
 	{
+		predicate_map_enum(&cc.m_predicates,&compile_statics,&cc);
+
 		// TODO: We now have a map of predicates...
 
 		// Initializer context flags must be the consult flags
 		for (consult_initializer_t* init = cc.m_initializers; init ; init = init->m_next)
 		{
-			compile_goal(context,init->m_goal,init->m_varcount);
+			compile_goal(context,&inline_predicate_call,&cc,init->m_goal,init->m_var_count);
 		}
 	}
 	

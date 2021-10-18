@@ -20,23 +20,23 @@ typedef enum prolite_type_flags
 typedef enum optype
 {
 	OP_NOP = 0,
-	OP_END,
-	OP_SUCCEEDS,
 	OP_JMP,
 	OP_GOSUB,
 	OP_RET,
 	OP_BUILTIN,
+	OP_EXTERN,
 	OP_SET_FLAGS,
 	OP_CLEAR_FLAGS,
 	OP_PUSH_CUT,
 	OP_POP_CUT,
 	OP_BRANCH,
 	OP_BRANCH_NOT,
+	OP_PUSH_CONST,
 	OP_PUSH_TERM_REF,
-	OP_SET_VAR,
-	OP_CLEAR_VAR,
 	OP_TYPE_TEST
 } optype_t;
+
+size_t inc_ip(optype_t op);
 
 struct op_arg
 {
@@ -50,26 +50,29 @@ typedef union opcode
 	term_t        m_term;
 } opcode_t;
 
-void compile_goal(context_t* context, const term_t* goal, size_t var_count);
-
 typedef struct compile_clause
 {
 	struct compile_clause* m_next;
 	const term_t*          m_head;
 	const term_t*          m_body;
-	size_t                 m_varcount;
+	size_t                 m_var_count;
 
 } compile_clause_t;
 
 typedef struct compile_predicate
 {
 	predicate_base_t  m_base;
+	_Bool             m_dynamic;
 	compile_clause_t* m_clauses;
 		
 } compile_predicate_t;
 
 static_assert(offsetof(compile_predicate_t,m_base) == 0,"structure members reorganised");
 
-size_t inc_ip(optype_t op);
+typedef void* (*link_fn_t)(void* context, void* param, const term_t* goal, const void* cont);
+
+void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const term_t* goal, size_t var_count);
+
+void* compile_predicate_call(void* context, const compile_predicate_t* pred, const term_t* goal, const void* cont);
 
 #endif // COMPILE_H_

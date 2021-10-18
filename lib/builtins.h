@@ -13,7 +13,7 @@ void prolite_builtin_throw(context_t* context);
 void prolite_builtin_halt(context_t* context);
 void prolite_builtin_user_defined(context_t* context);
 void prolite_builtin_callable(context_t* context);
-void prolite_builtin_occurs_check(context_t* context);
+void prolite_builtin_unify(context_t* context);
 void prolite_builtin_ground(context_t* context);
 void prolite_builtin_term_compare(context_t* context);
 

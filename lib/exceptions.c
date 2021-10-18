@@ -12,7 +12,7 @@ void push_out_of_memory_error(context_t* context, const term_t* t)
 	// TODO
 	assert(0);
 	
-	context->m_flags |= FLAG_THROW;
+	context->m_flags = FLAG_THROW;
 }
 
 void push_instantiation_error(context_t* context, const term_t* t)
@@ -22,7 +22,7 @@ void push_instantiation_error(context_t* context, const term_t* t)
 	// TODO
 	assert(0);
 	
-	context->m_flags |= FLAG_THROW;
+	context->m_flags = FLAG_THROW;
 }
 
 void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
@@ -30,7 +30,7 @@ void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const t
 	// TODO
 	assert(0);
 	
-	context->m_flags |= FLAG_THROW;
+	context->m_flags = FLAG_THROW;
 }
 
 void push_type_error(context_t* context, uint64_t p1, const term_t* t)
@@ -38,7 +38,7 @@ void push_type_error(context_t* context, uint64_t p1, const term_t* t)
 	// TODO
 	assert(0);
 	
-	context->m_flags |= FLAG_THROW;
+	context->m_flags = FLAG_THROW;
 }
 
 void push_domain_error(context_t* context, uint64_t p1, const term_t* t)
@@ -46,7 +46,7 @@ void push_domain_error(context_t* context, uint64_t p1, const term_t* t)
 	// TODO
 	assert(0);
 	
-	context->m_flags |= FLAG_THROW;
+	context->m_flags = FLAG_THROW;
 }
 
 void push_representation_error(context_t* context, uint64_t p1, const term_t* t)
@@ -54,26 +54,29 @@ void push_representation_error(context_t* context, uint64_t p1, const term_t* t)
 	// TODO
 	assert(0);
 	
-	context->m_flags |= FLAG_THROW;
+	context->m_flags = FLAG_THROW;
 }
 
-void builtin_throw(context_t* context, const term_t* arg1) 
+void builtin_throw(context_t* context, builtin_fn_t gosub, const term_t* arg1) 
 {
 	prolite_allocator_t a = heap_allocator(&context->m_heap);
 	size_t var_count = 0;
 	term_t* ball = copy_term(&a,context,arg1,0,&var_count);
 	if (!ball)
-		push_out_of_memory_error(context,arg1);
-	else if (var_count)
+		return push_out_of_memory_error(context,arg1);
+	
+	if (var_count)
 	{
 		allocator_free(&a,ball);
-		push_instantiation_error(context,arg1);
+		return push_instantiation_error(context,arg1);
 	}
-	else
-		context->m_exception = ball;
+	
+	// Don't set FLAG_THROW - it gets set in the gosub
+	context->m_exception = ball;
+	(*gosub)(context);
 }
 
-void builtin_catch(context_t* context, const term_t* arg1) 
+void builtin_catch(context_t* context, builtin_fn_t gosub, const term_t* arg1) 
 {
 	assert(context->m_exception);
 
@@ -88,20 +91,17 @@ void builtin_catch(context_t* context, const term_t* arg1)
 	{
 		prolite_allocator_t a = heap_allocator(&context->m_heap);
 		allocator_free(&a,exception);
-		push_out_of_memory_error(context,arg1);
+		return push_out_of_memory_error(context,arg1);
 	}
-	else
+	
+	// if (unify_terms(context,ball,arg1))
+	// (*gosub)(context);
+	// else
 	{
-		// TODO - unify_terms(context,ball,arg1);
+		// Rethrow...
+		context->m_flags = FLAG_THROW;
 
-		if (context->m_flags & FLAG_FAIL)
-		{
-			// Rethrow...
-			context->m_flags &= ~FLAG_FAIL;
-			context->m_flags |= FLAG_THROW;
-
-			context->m_exception = exception;
-		}
+		context->m_exception = exception;
 	}
 }
 

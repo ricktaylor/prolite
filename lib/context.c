@@ -21,7 +21,7 @@ static void push_flag_value_error(context_t* context, const term_t* flag, const 
 {
 	// TODO
 	
-	context->m_flags |= FLAG_THROW;
+	context->m_flags = FLAG_THROW;
 }
 
 static void set_prolog_flag_inner(context_t* context, const term_t* flag, const term_t* value)
@@ -142,9 +142,11 @@ void directive_set_prolog_flag(context_t* context, const term_t* flag)
 	set_prolog_flag_inner(context,flag,value);
 }
 
-void builtin_set_prolog_flag(context_t* context, const term_t* arg1, const term_t* arg2)
+void builtin_set_prolog_flag(context_t* context, builtin_fn_t gosub, const term_t* arg1, const term_t* arg2)
 {
 	set_prolog_flag_inner(context,arg1,arg2);
+	if (!(context->m_flags & FLAG_THROW))
+		(*gosub)(context);
 }
 
 const term_t* deref_local_var(context_t* context, const term_t* t)
@@ -261,18 +263,22 @@ PROLITE_EXPORT void prolite_context_destroy(prolite_context_t context)
 
 // MOVE THIS!!
 
-void builtin_user_defined(context_t* context)
+void builtin_user_defined(context_t* context, builtin_fn_t gosub)
 {
-
 }
 
-void builtin_asserta(context_t* context, const term_t* arg1)
+void builtin_asserta(context_t* context, builtin_fn_t gosub, const term_t* arg1)
 {
 	
 }
 
-void builtin_assertz(context_t* context, const term_t* arg1)
+void builtin_assertz(context_t* context, builtin_fn_t gosub, const term_t* arg1)
 {
 	
+}
+
+PROLITE_EXPORT void prolite_builtin_unify(context_t* context) 
+{ 
+
 }
 

@@ -53,10 +53,9 @@ typedef struct module
 
 enum exec_flags
 {
-	FLAG_FAIL = 1,
-	FLAG_CUT = 2,
-	FLAG_THROW = 4,
-	FLAG_HALT = 8
+	FLAG_CUT = 1,
+	FLAG_THROW = 2,
+	FLAG_HALT = 4
 };
 typedef uint16_t exec_flags_t;
 

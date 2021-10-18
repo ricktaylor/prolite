@@ -585,6 +585,7 @@ int term_compare(const term_t* t1, const term_t* t2)
 			{
 				// Try again as compound
 				type1 = prolite_compound;
+				type2 = prolite_compound;
 			}
 		}
 	}
@@ -645,6 +646,7 @@ int term_precedes(const term_t* t1, const term_t* t2)
 			{
 				// Try again as compound
 				type1 = prolite_compound;
+				type2 = prolite_compound;
 				r = 0;
 			}
 		}
