@@ -2,89 +2,48 @@
 
 void prolite_builtin_throw(context_t* context);
 
-#define BUILTIN_FUNCTION_DEFN(f) \
-	PROLITE_EXPORT void prolite_builtin_##f(context_t* context) {
-
-#define BUILTIN_FUNCTION_POP \
-	term_t* sp = (term_t*)get_next_arg(arg1); \
-	builtin_fn_t gosub = (sp++)->m_pval;
-	
-#define BUILTIN_FUNCTION_RET \
-	if (context->m_flags & FLAG_THROW) \
-		prolite_builtin_throw(context); \
-	context->m_stack = sp; }
-
-#define BUILTIN_THUNK_0(f) \
-	void builtin_##f(context_t* context, builtin_fn_t gosub); \
-	BUILTIN_FUNCTION_DEFN(f) \
-	term_t* sp = (term_t*)context->m_stack; \
-	builtin_fn_t gosub = (sp++)->m_pval; \
-	context->m_stack = sp; \
-	builtin_##f(context,gosub); \
-	BUILTIN_FUNCTION_RET
-
-#define BUILTIN_THUNK_1(f) \
-	void builtin_##f(context_t* context, builtin_fn_t gosub, const term_t* arg1); \
-	BUILTIN_FUNCTION_DEFN(f) \
-	const term_t* arg1 = context->m_stack; \
-	BUILTIN_FUNCTION_POP \
-	builtin_##f(context,gosub,arg1); \
-	BUILTIN_FUNCTION_RET
-
-#define BUILTIN_THUNK_2(f) \
-	void builtin_##f(context_t* context, builtin_fn_t gosub, const term_t* arg1, const term_t* arg2); \
-	BUILTIN_FUNCTION_DEFN(f) \
-	const term_t* arg2 = context->m_stack; \
-	const term_t* arg1 = get_next_arg(arg2); \
-	BUILTIN_FUNCTION_POP \
-	builtin_##f(context,gosub,arg1,arg2); \
-	BUILTIN_FUNCTION_RET
-
-#define BUILTIN_THUNK_3(f) \
-	void builtin_##f(context_t* context, builtin_fn_t gosub, const term_t* arg1, const term_t* arg2, const term_t* arg3); \
-	BUILTIN_FUNCTION_DEFN(f) \
-	const term_t* arg3 = context->m_stack; \
-	const term_t* arg2 = get_next_arg(arg3); \
-	const term_t* arg1 = get_next_arg(arg2); \
-	BUILTIN_FUNCTION_POP \
-	builtin_##f(context,gosub,arg1,arg2,arg3); \
-	BUILTIN_FUNCTION_RET
-
 #undef DECLARE_BUILTIN_FUNCTION
-#undef DECLARE_BUILTIN_FUNCTION_0
-#undef DECLARE_BUILTIN_FUNCTION_1
-#undef DECLARE_BUILTIN_FUNCTION_2
-#undef DECLARE_BUILTIN_FUNCTION_3
+#define BUILTIN_THUNK(f,n) \
+	void builtin_##f(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]); \
+	PROLITE_EXPORT void prolite_builtin_##f(context_t* context) { \
+		term_t* sp = context->m_stack; \
+		builtin_fn_t gosub = (sp++)->m_pval; \
+		const term_t* args = sp; \
+		context->m_stack = sp + n; \
+		builtin_##f(context,gosub,n,n ? &args : NULL); \
+		if (context->m_flags & FLAG_THROW) \
+			prolite_builtin_throw(context); \
+		context->m_stack = sp; \
+	}	
 
-#define DECLARE_BUILTIN_FUNCTION_0(f,p) BUILTIN_THUNK_0(f)
-#define DECLARE_BUILTIN_FUNCTION_1(f,p) BUILTIN_THUNK_1(f)
-#define DECLARE_BUILTIN_FUNCTION_2(f,p) BUILTIN_THUNK_2(f)
-#define DECLARE_BUILTIN_FUNCTION_3(f,p) BUILTIN_THUNK_3(f)
+#define DECLARE_BUILTIN_FUNCTION_0(f,p) BUILTIN_THUNK(f,0)
+#define DECLARE_BUILTIN_FUNCTION_1(f,p) BUILTIN_THUNK(f,1)
+#define DECLARE_BUILTIN_FUNCTION_2(f,p) BUILTIN_THUNK(f,2)
+#define DECLARE_BUILTIN_FUNCTION_3(f,p) BUILTIN_THUNK(f,3)
 
 #include "builtin_functions.h"
 
 // These are the supporting builtin thunks for some intrinsics
-BUILTIN_THUNK_1(call)
-BUILTIN_THUNK_1(callN)
-BUILTIN_THUNK_1(catch)
-BUILTIN_THUNK_1(throw)
-BUILTIN_THUNK_1(halt)
-BUILTIN_THUNK_2(occurs_check)
-BUILTIN_THUNK_1(callable)
-BUILTIN_THUNK_1(ground)
-BUILTIN_THUNK_2(term_compare)
-BUILTIN_THUNK_1(user_defined)
+BUILTIN_THUNK(call,1)
+BUILTIN_THUNK(callN,1)
+BUILTIN_THUNK(catch,1)
+BUILTIN_THUNK(throw,1)
+BUILTIN_THUNK(halt,1)
+BUILTIN_THUNK(callable,1)
+BUILTIN_THUNK(ground,1)
+BUILTIN_THUNK(term_compare,2)
+BUILTIN_THUNK(type_test,2)
+BUILTIN_THUNK(user_defined,1)
 
 
 // TEMP
 
-void builtin_call(context_t* context, builtin_fn_t gosub, const term_t* arg1) {  }
-void builtin_callN(context_t* context, builtin_fn_t gosub, const term_t* arg1) {  }
-void builtin_halt(context_t* context, builtin_fn_t gosub, const term_t* arg1) {  }
-void builtin_occurs_check(context_t* context, builtin_fn_t gosub, const term_t* arg1, const term_t* arg2) {  }
-void builtin_callable(context_t* context, builtin_fn_t gosub, const term_t* arg1) {  }
-void builtin_ground(context_t* context, builtin_fn_t gosub, const term_t* arg1) {  }
-void builtin_term_compare(context_t* context, builtin_fn_t gosub, const term_t* arg1, const term_t* arg2) {  }
+void builtin_call(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
+void builtin_callN(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
+void builtin_halt(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
+void builtin_callable(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
+void builtin_ground(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
+void builtin_term_compare(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
 
 // END TEMP
 

@@ -15,6 +15,7 @@ void prolite_builtin_user_defined(context_t* context);
 void prolite_builtin_callable(context_t* context);
 void prolite_builtin_unify(context_t* context);
 void prolite_builtin_ground(context_t* context);
+void prolite_builtin_type_test(context_t* context);
 void prolite_builtin_term_compare(context_t* context);
 
 #endif // BUILTINS_H_

@@ -142,9 +142,9 @@ void directive_set_prolog_flag(context_t* context, const term_t* flag)
 	set_prolog_flag_inner(context,flag,value);
 }
 
-void builtin_set_prolog_flag(context_t* context, builtin_fn_t gosub, const term_t* arg1, const term_t* arg2)
+void builtin_set_prolog_flag(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
 {
-	set_prolog_flag_inner(context,arg1,arg2);
+	set_prolog_flag_inner(context,argv[0],argv[1]);
 	if (!(context->m_flags & FLAG_THROW))
 		(*gosub)(context);
 }
@@ -160,6 +160,39 @@ const term_t* deref_local_var(context_t* context, const term_t* t)
 	}
 	return t;
 }
+
+static int unify(context_t* context, const term_t* t1, const term_t* t2, int with_occurs_check)
+{
+	return 0;
+}
+
+PROLITE_EXPORT void prolite_builtin_unify(context_t* context) 
+{
+	term_t* sp = context->m_stack;
+	builtin_fn_t gosub = (sp++)->m_pval;
+	const term_t* args = sp;
+	int with_occurs_check = args[0].m_u64val;
+	size_t var_count = args[1].m_u64val;
+	
+	// There are var_count * 2 args on the stack
+	context->m_stack += 2 + (var_count * 2);
+
+	// Now we can unify...
+	int unified = 1;
+	for (size_t i = 0; i < var_count; ++i)
+	{
+		args += 2;
+
+		if (!unify(context,args,args + 1,with_occurs_check))
+			return;
+	}
+
+	if (unified)
+		(*gosub)(context);
+	
+	context->m_stack = sp;
+}
+
 
 module_t* module_new(context_t* context, const term_t* name)
 {
@@ -263,22 +296,18 @@ PROLITE_EXPORT void prolite_context_destroy(prolite_context_t context)
 
 // MOVE THIS!!
 
-void builtin_user_defined(context_t* context, builtin_fn_t gosub)
+void builtin_user_defined(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
 {
 }
 
-void builtin_asserta(context_t* context, builtin_fn_t gosub, const term_t* arg1)
-{
-	
-}
-
-void builtin_assertz(context_t* context, builtin_fn_t gosub, const term_t* arg1)
+void builtin_asserta(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
 {
 	
 }
 
-PROLITE_EXPORT void prolite_builtin_unify(context_t* context) 
-{ 
-
+void builtin_assertz(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+{
+	
 }
+
 

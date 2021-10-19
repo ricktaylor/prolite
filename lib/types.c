@@ -698,6 +698,11 @@ int term_precedes(const term_t* t1, const term_t* t2)
 	return r;
 }
 
+void builtin_type_test(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) 
+{
+	// TODO:
+}
+
 static const term_t* push_term_inner(context_t* context, const term_t* src, int allow_external, uint64_t** var_mapping, size_t* var_count, jmp_buf* jmp)
 {
 	uint64_t all48;

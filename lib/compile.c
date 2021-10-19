@@ -411,12 +411,16 @@ static cfg_t* compile_or(compile_context_t* context, const continuation_t* goal)
 static cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_t arity, const term_t* arg, const continuation_t* next)
 {
 	cfg_t* c = new_cfg(context);
-	for (size_t i = 0; i < arity; ++i)
+
+	if (arity)
 	{
-		opcode_t* ops = append_opcodes(context,c->m_tail,2);
-		(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
-		ops->m_term.m_pval = deref_var(context,arg);
-		arg = get_next_arg(arg);
+		opcode_t* ops = append_opcodes(context,c->m_tail,2 * arity);
+		for (size_t i = 1; i <= arity; ++i)
+		{
+			ops[(arity - i)*2].m_opcode.m_op = OP_PUSH_TERM_REF;
+			ops[(arity - i)*2 + 1].m_term.m_pval = deref_var(context,arg);
+			arg = get_next_arg(arg);
+		}
 	}
 
 	cfg_t* cont = compile_subgoal(context,next);
@@ -764,24 +768,25 @@ static int compile_unify_term(compile_context_t* context, const term_t* t1, cons
 static cfg_t* compile_unify_end_shim(compile_context_t* context, void* param, const continuation_t* next)
 {
 	unify_info_t* ui = param;
-
-	if (ui->m_var_count == 0)
-		return compile_subgoal(context,next);
-
-	cfg_t* c = compile_builtin(context,&prolite_builtin_unify,0,NULL,next);
-	if (c)
-	{
-		cfg_t* c1 = new_cfg(context);
-		opcode_t* ops = append_opcodes(context,c1->m_tail,4);
-		(ops++)->m_opcode.m_op = OP_PUSH_CONST;
-		(ops++)->m_term.m_u64val = ui->m_var_count;
-		(ops++)->m_opcode.m_op = OP_PUSH_CONST;
-		ops->m_term.m_u64val = ui->m_with_occurs_check;
 	
-		c1->m_always_flags = c->m_always_flags;
+	cfg_t* cont = compile_subgoal(context,next);
+	if (!cont || ui->m_var_count == 0)
+		return cont;
+	
+	opcode_t* ops = append_opcodes(context,cont->m_tail,1);
+	ops->m_opcode.m_op = OP_RET;
 
-		c = goto_next(context,c1,c);
-	}
+	cfg_t* c = new_cfg(context);
+	ops = append_opcodes(context,c->m_tail,7);
+	(ops++)->m_opcode.m_op = OP_PUSH_CONST;
+	(ops++)->m_term.m_u64val = ui->m_var_count;
+	(ops++)->m_opcode.m_op = OP_PUSH_CONST;
+	(ops++)->m_term.m_u64val = ui->m_with_occurs_check;
+	(ops++)->m_opcode.m_op = OP_BUILTIN;
+	(ops++)->m_term.m_pval = &prolite_builtin_unify;
+	ops->m_term.m_pval = cont->m_entry_point;
+
+	c->m_always_flags = cont->m_always_flags;
 
 	return c;
 }
@@ -953,13 +958,26 @@ static cfg_t* compile_head_end_shim(compile_context_t* context, void* param, con
 		if (next_substs && next_substs->m_count)
 		{
 			cfg_t* c1 = new_cfg(context);
-			for (size_t i = next_substs->m_count; i-- > 0;)
+			for (size_t i = next_substs->m_count; i--;)
 			{
-				opcode_t* ops = append_opcodes(context,c1->m_tail,2);
-				(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
+				if (next_substs->m_vals[i])
+				{
+					opcode_t* ops = append_opcodes(context,c1->m_tail,2);
+					(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
+					ops->m_term.m_pval = next_substs->m_vals[i];
+				}
+				else
+				{
+					opcode_t* ops = append_opcodes(context,c1->m_tail,1);
+					ops->m_opcode.m_op = OP_PUSH_NULL;
+					ops->m_opcode.m_arg = 1;
 
-
-				ops->m_term.m_pval = next_substs->m_vals[i];
+					while (ops->m_opcode.m_arg < 0xFFFFFFFF && i > 0 && !next_substs->m_vals[i-1])
+					{
+						++ops->m_opcode.m_arg;
+						--i;
+					}
+				}
 			}
 
 			c1->m_always_flags = c->m_always_flags;
@@ -1170,26 +1188,28 @@ static cfg_t* compile_callable(compile_context_t* context, const continuation_t*
 	}
 }
 
-static cfg_t* compile_type_test(compile_context_t* context, prolite_type_flags_t types, int negate, const term_t* arg, const continuation_t* next)
+static cfg_t* compile_type_test(compile_context_t* context, prolite_type_flags_t types, int negate, const term_t* t, const continuation_t* next)
 {
-	assert(get_term_type(arg) == prolite_var);
-	size_t idx = get_var_index(arg);
-	assert(context->m_substs && idx < context->m_substs->m_count);
-
 	cfg_t* cont = compile_subgoal(context,next);
 	if (!cont)
 		return NULL;
 
-	cfg_t* c_end = new_cfg(context);
-	goto_next(context,cont,c_end);
+	opcode_t* ops = append_opcodes(context,cont->m_tail,1);
+	ops->m_opcode.m_op = OP_RET;
 
 	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode = (struct op_arg){ .m_op = OP_TYPE_TEST, .m_arg = types };
-	(ops++)->m_term.m_u64val = idx;
+	ops = append_opcodes(context,c->m_tail,7);
+	(ops++)->m_opcode.m_op = OP_PUSH_CONST;
+	(ops++)->m_term.m_u64val = types;
+	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
+	(ops++)->m_term.m_pval = t;
+	(ops++)->m_opcode.m_op = OP_BUILTIN;
+	(ops++)->m_term.m_pval = &prolite_builtin_type_test;
 	ops->m_term.m_pval = cont->m_entry_point;
 
-	return goto_next(context,c,c_end);
+	c->m_always_flags = cont->m_always_flags;
+
+	return c;
 }
 
 static cfg_t* compile_var(compile_context_t* context, const continuation_t* goal)
@@ -1409,7 +1429,6 @@ size_t inc_ip(optype_t op)
 		++ip;
 		break;
 
-	case OP_TYPE_TEST:
 	case OP_BUILTIN:
 	case OP_EXTERN:
 		ip += 2;
@@ -1651,9 +1670,11 @@ static const char* builtinName(const builtin_fn_t fn)
 		{ &prolite_builtin_catch, "catch" },
 		{ &prolite_builtin_throw, "throw", },
 		{ &prolite_builtin_halt, "halt" },
-		{ &prolite_builtin_callable, "callable" },
 		{ &prolite_builtin_user_defined, "user_defined" },
+		{ &prolite_builtin_callable, "callable" },
 		{ &prolite_builtin_unify, "unify" },
+		{ &prolite_builtin_ground, "ground" },
+		{ &prolite_builtin_type_test, "type_test" },
 		{ &prolite_builtin_term_compare, "term_compare" }
 	};
 
@@ -1678,31 +1699,6 @@ static void fmtFlags(exec_flags_t v, char* buf)
 
 	if (v & FLAG_HALT)
 		*buf++ = 'H';
-
-	if (buf == s)
-		*buf++ = '0';
-
-	*buf = '\0';
-}
-
-static void fmtTypeFlags(prolite_type_flags_t v, char* buf)
-{
-	char* s = buf;
-
-	if (v & type_flag_double)
-		*buf++ = 'D';
-
-	if (v & type_flag_var)
-		*buf++ = 'V';
-
-	if (v & type_flag_int32)
-		*buf++ = 'I';
-
-	if (v & type_flag_atom)
-		*buf++ = 'A';
-
-	if (v & (type_flag_compound | type_flag_chars | type_flag_charcodes))
-		*buf++ = 'C';
 
 	if (buf == s)
 		*buf++ = '0';
@@ -1868,19 +1864,15 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			fprintf(f,"Push\\ %#"PRIX64,blk->m_ops[i+1].m_term.m_u64val);
 			break;
 
-		case OP_PUSH_TERM_REF:
-			fprintf(f,"Push\\ ");
-			if (!blk->m_ops[i+1].m_term.m_pval)
-				fprintf(f,"NULL");
-			else
-				dumpTerm(context,blk->m_ops[i+1].m_term.m_pval,f);
-			break;
-		
-		case OP_TYPE_TEST:
-			fmtTypeFlags(blk->m_ops[i].m_opcode.m_arg,buf);
-			fprintf(f,"if\\ (Type(local[%zu])\\ ==\\ %s)\\ Jmp",(size_t)blk->m_ops[i+1].m_term.m_u64val,buf);
+		case OP_PUSH_NULL:
+			fprintf(f,"Push\\ NULL * %u",blk->m_ops[i].m_opcode.m_arg);
 			break;
 
+		case OP_PUSH_TERM_REF:
+			fprintf(f,"Push\\ ");
+			dumpTerm(context,blk->m_ops[i+1].m_term.m_pval,f);
+			break;
+		
 		default:
 			fprintf(f,"WTF? %zu",(size_t)blk->m_ops[i].m_term.m_u64val);
 			break;
@@ -1911,7 +1903,6 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0>;\n",blk,i,blk->m_ops[i+1].m_term.m_pval);
 			break;
 
-		case OP_TYPE_TEST:
 		case OP_BUILTIN:
 		case OP_EXTERN:
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i,blk->m_ops[i+2].m_term.m_pval);
@@ -2012,18 +2003,14 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			fprintf(f,"push %#" PRIX64 ";\n",code[1].m_term.m_u64val);
 			break;
 
-		case OP_PUSH_TERM_REF:
-			fprintf(f,"push ");
-			if (!code[1].m_term.m_pval)
-				fprintf(f,"NULL");
-			else
-				dumpTerm(context,code[1].m_term.m_pval,f);
-			fprintf(f,";\n");
+		case OP_PUSH_NULL:
+			fprintf(f,"push NULL * %u",code->m_opcode.m_arg);
 			break;
 
-		case OP_TYPE_TEST:
-			fmtTypeFlags(code->m_opcode.m_arg,buf);
-			fprintf(f,"if (typeof(local[%zu]) & %s) goto %+d (%zu);\n",(size_t)code[1].m_term.m_u64val,buf,(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
+		case OP_PUSH_TERM_REF:
+			fprintf(f,"push ");
+			dumpTerm(context,code[1].m_term.m_pval,f);
+			fprintf(f,";\n");
 			break;
 
 		default:

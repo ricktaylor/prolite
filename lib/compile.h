@@ -32,8 +32,8 @@ typedef enum optype
 	OP_BRANCH,
 	OP_BRANCH_NOT,
 	OP_PUSH_CONST,
-	OP_PUSH_TERM_REF,
-	OP_TYPE_TEST
+	OP_PUSH_NULL,
+	OP_PUSH_TERM_REF
 } optype_t;
 
 size_t inc_ip(optype_t op);

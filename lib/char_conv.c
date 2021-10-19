@@ -106,13 +106,13 @@ void directive_char_conversion(context_t* context, char_conv_table_t* cc, const 
 	set_char_conversion(context,cc,in_char,out_char);
 }
 
-void builtin_char_conversion(context_t* context, builtin_fn_t gosub, const term_t* arg1, const term_t* arg2)
+void builtin_char_conversion(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
 {
-	set_char_conversion(context,&context->m_module->m_char_conversion,arg1,arg2);
+	set_char_conversion(context,&context->m_module->m_char_conversion,argv[0],argv[1]);
 	if (!(context->m_flags & FLAG_THROW))
 		(*gosub)(context);
 }
 
-void builtin_current_char_conversion(context_t* context, builtin_fn_t gosub, const term_t* arg1, const term_t* arg2)
+void builtin_current_char_conversion(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
 {
 }
