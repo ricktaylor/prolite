@@ -455,21 +455,21 @@ const debug_info_t* get_debug_info(const term_t* t)
 
 static int atom_compare(const term_t* a1, const term_t* a2)
 {
-	unsigned int t1 = get_term_subtype(a1);
-	unsigned int t2 = get_term_subtype(a2);
-
-	int r = 0;
-	if (t1 == 3 || t1 == 0 || t2 == 3 || t2 == 0)
+	int r = (a1->m_u64val == a2->m_u64val);
+	if (!r)
 	{
-		string_t s1,s2;
-		get_string(a1,&s1,NULL);
-		get_string(a2,&s2,NULL);
+		unsigned int t1 = get_term_subtype(a1);
+		unsigned int t2 = get_term_subtype(a2);
+		if (t1 == 3 || t1 == 0 || t2 == 3 || t2 == 0)
+		{
+			string_t s1,s2;
+			get_string(a1,&s1,NULL);
+			get_string(a2,&s2,NULL);
 
-		if (s1.m_len == s2.m_len && memcmp(s1.m_str,s2.m_str,s1.m_len) == 0)
-			r = 1;
+			if (s1.m_len == s2.m_len && memcmp(s1.m_str,s2.m_str,s1.m_len) == 0)
+				r = 1;
+		}
 	}
-	else
-		r = (a1->m_u64val == a2->m_u64val);
 
 	return r;
 }
