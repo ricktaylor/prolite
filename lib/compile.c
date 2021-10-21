@@ -1032,21 +1032,18 @@ static cfg_t* compile_dynamic(compile_context_t* context, void* clause, const co
 static cfg_t* compile_extern(compile_context_t* context, void* clause, const continuation_t* next)
 {
 	cfg_t* cont = compile_subgoal(context,next);
-	cfg_t* c_end = new_cfg(context);
 	if (!cont)
-		cont = c_end;
-	else
-		goto_next(context,cont,c_end);
-	
+		cont = new_cfg(context);
+
+	opcode_t* ops = append_opcodes(context,cont->m_tail,1);
+	ops->m_opcode.m_op = OP_RET;
+
 	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,5);
+	ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode.m_op = OP_EXTERN;
 	(ops++)->m_term.m_pval = clause;
-	(ops++)->m_term.m_pval = cont->m_tail;
-	(ops++)->m_opcode.m_op = OP_JMP;
 	ops->m_term.m_pval = cont->m_entry_point;
-	c->m_tail = cont->m_tail;
-	
+
 	c->m_always_flags = cont->m_always_flags;
 
 	return c;
@@ -1092,19 +1089,21 @@ void* compile_predicate_call(void* vc, const compile_predicate_t* pred, const te
 			c = c1;
 		else if (c1)
 		{
-			if (!c_end)
-				c_end = new_cfg(context);
-
-			if (!(c1->m_always_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT)))
-				add_branch(context,c1,OP_BRANCH,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
-			else
-				c->m_always_flags = c1->m_always_flags;
+			c->m_always_flags = c1->m_always_flags;
 			
 			goto_next(context,c,c1);
 		}
 
 		if (c && (c->m_always_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT)))
 			break;
+
+		if (c && clause->m_next)
+		{
+			if (!c_end)
+				c_end = new_cfg(context);
+
+			add_branch(context,c,OP_BRANCH,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+		}
 	}
 
 	if (c && c_end)
@@ -1484,10 +1483,6 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			next = (const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
 			break;
 
-		case OP_EXTERN:
-			next = (const cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval;
-			break;
-
 		default:
 			break;
 		}
@@ -1519,6 +1514,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			break;
 
 		case OP_BUILTIN:
+		case OP_EXTERN:
 			{
 				const cfg_block_t* next = blk->m_ops[i+2].m_term.m_pval;
 				walk_cfgs(context,blks,next);
@@ -1812,13 +1808,13 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"Builtin\\ %s\\ Gosub",builtinName(blk->m_ops[i+1].m_term.m_pval));
+			fprintf(f,"Builtin\\ %s|<f%zu> Continue",builtinName(blk->m_ops[i+1].m_term.m_pval),i+1);
 			break;
 
 		case OP_EXTERN:
-			fprintf(f,"if !Extern\\ ");
+			fprintf(f,"Call\\ ");
 			dumpPI(((compile_clause_t*)blk->m_ops[i+1].m_term.m_pval)->m_head,f);
-			fprintf(f,"\\ then\\ Goto");
+			fprintf(f,"|<f%zu> Continue",i+1);
 			break;
 
 		case OP_SET_FLAGS:
@@ -1893,11 +1889,8 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i,blk->m_ops[i+2].m_term.m_pval);
-			break;
-
 		case OP_EXTERN:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0>;\n",blk,i,blk->m_ops[i+2].m_term.m_pval);
+			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i+1,blk->m_ops[i+2].m_term.m_pval);
 			break;
 
 		default:
@@ -1954,13 +1947,13 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"builtin(%s) gosub %+d (%zu);\n",builtinName(code[1].m_term.m_pval),(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
+			fprintf(f,"builtin(%s) continue %+d (%zu);\n",builtinName(code[1].m_term.m_pval),(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
 			break;
 
 		case OP_EXTERN:
-			fprintf(f,"if !extern(");
+			fprintf(f,"call(");
 			dumpPI(((compile_clause_t*)code[1].m_term.m_pval)->m_head,f);
-			fprintf(f,") goto %+d (%zu);\n",(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
+			fprintf(f,") continue %+d (%zu);\n",(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
 			break;
 
 		case OP_SET_FLAGS:
