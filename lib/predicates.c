@@ -14,11 +14,7 @@ static uint64_t predicate_key(const term_t* pred, int* is_sub_tree)
 	if (sub_type == 0 || sub_type == 3)
 	{
 		string_t s;
-		if (type == prolite_atom)
-			get_string(pred,&s,NULL);
-		else
-			get_predicate(pred,&s,NULL,NULL);
-
+		get_predicate(pred,&s,NULL,NULL);
 		if (s.m_len <= 8)
 		{
 			union short_str_key
@@ -108,9 +104,13 @@ static void callback2(void* p, uint64_t k, void* v)
 
 static void enum_callback(void* p, uint64_t k, void* v)
 {
+	struct callback_param* cp = p;	
 	unsigned int sub_type = get_term_subtype(&(term_t){ .m_u64val = k });
 	if (sub_type == 0 || sub_type == 3)
-		btree_enum(&(btree_t){ .m_allocator = ((struct callback_param*)p)->m_bt->m_allocator, .m_root = v},&callback2,p);
+		btree_enum(&(btree_t){ .m_allocator = cp->m_bt->m_allocator, .m_root = v},&callback2,p);
+	else
+		(*cp->m_callback)(cp->m_param,v);
+
 }
 
 void predicate_map_enum(predicate_map_t* pm, void (*callback)(void* param, predicate_base_t* pred), void* param)
@@ -130,6 +130,8 @@ static void clear_callback(void* p, uint64_t k, void* v)
 	unsigned int sub_type = get_term_subtype(&(term_t){ .m_u64val = k });
 	if (sub_type == 0 || sub_type == 3)
 		btree_clear(&(btree_t){ .m_allocator = cp->m_bt->m_allocator, .m_root = v},cp->m_callback ? &callback2 : NULL,cp);
+	else if (cp->m_callback)
+		(*cp->m_callback)(cp->m_param,v);
 }
 
 void predicate_map_clear(predicate_map_t* pm, void (*callback)(void* param, predicate_base_t* pred), void* param)

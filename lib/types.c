@@ -220,7 +220,14 @@ void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_in
 	uint64_t all48;
 	prolite_type_t type;
 	int have_debug_info;
-	t = unpack_term(t,&type,&have_debug_info,&all48);
+	const term_t* t1 = unpack_term(t,&type,&have_debug_info,&all48);
+
+	if (type == prolite_atom)
+	{
+		if (arity)
+			*arity = 0;
+		return get_string(t,str,debug_info);
+	}
 
 	assert(type == prolite_compound);
 
@@ -244,7 +251,7 @@ void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_in
 		str->m_str = str->m_data;
 
 		if (debug_info && have_debug_info)
-			*debug_info = (const debug_info_t*)t;
+			*debug_info = (const debug_info_t*)t1;
 		break;
 
 	case 1:
@@ -254,14 +261,14 @@ void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_in
 		*str = s_builtin_strings[(uint32_t)all48];
 
 		if (debug_info && have_debug_info)
-			*debug_info = (const debug_info_t*)t;
+			*debug_info = (const debug_info_t*)t1;
 		break;
 
 	case 0:
 		if (arity)
 			*arity = (all48 & MAX_ARITY);
 
-		get_string(t,str,debug_info);
+		get_string(t1,str,debug_info);
 		break;
 	}
 }
