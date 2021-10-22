@@ -1108,7 +1108,11 @@ void* compile_predicate_call(void* vc, const compile_predicate_t* pred, const te
 	}
 
 	if (c && c_end)
+	{
+		complete_cse(context,&cse);
+
 		goto_next(context,c,c_end);
+	}
 
 	return c;
 }
