@@ -1546,28 +1546,6 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 			case OP_NOP:
 				break;
 
-			/*case OP_RET:
-				if (blk->m_count == 1)
-				{
-					// See if there is a replacement we can reuse
-					int found = 0;
-					for (const opcode_t* c = start; c < code; c += inc_ip(code->m_opcode.m_op))
-					{
-						if (c->m_opcode.m_op == OP_RET)
-						{
-							found = 1;
-							blks->m_blks[j].m_offset = (c - start);
-							break;
-						}
-					}
-
-					if (!found)
-						*code++ = blk->m_ops[i];
-				}
-				else
-					*code++ = blk->m_ops[i];
-				break;*/
-
 			case OP_JMP:
 				if (j == blks->m_count-1 || blk->m_ops[i+1].m_term.m_pval != blks->m_blks[j+1].m_blk)
 				{
@@ -1715,7 +1693,7 @@ struct std_output
 	FILE* m_file;
 };
 
-static int std_output_stream_write(struct prolite_stream* s, const void* src, size_t len, prolite_stream_error_t* err)
+static int std_output_stream_write_slash(struct prolite_stream* s, const void* src, size_t len, prolite_stream_error_t* err)
 {
 	struct std_output* stream = (struct std_output*)s;
 
@@ -1746,6 +1724,16 @@ static int std_output_stream_write(struct prolite_stream* s, const void* src, si
 	return 1;
 }
 
+static int std_output_stream_write(struct prolite_stream* s, const void* src, size_t len, prolite_stream_error_t* err)
+{
+	struct std_output* stream = (struct std_output*)s;
+
+	if (!fwrite(src,len,1,stream->m_file))
+		return feof(stream->m_file) ? 0 : -1;
+
+	return 1;
+}
+
 static void dumpPI(const term_t* t, FILE* f)
 {
 	size_t arity;
@@ -1754,11 +1742,11 @@ static void dumpPI(const term_t* t, FILE* f)
 	fprintf(f,"%.*s/%zu",(int)s.m_len,s.m_str,arity);
 }
 
-static void dumpTerm(context_t* context, const term_t* t, FILE* f)
+static void dumpTerm(context_t* context, const term_t* t, FILE* f, int backslash)
 {
 	struct std_output stream =
 	{
-		.m_base.m_fn_write = &std_output_stream_write,
+		.m_base.m_fn_write = backslash ? &std_output_stream_write_slash : &std_output_stream_write,
 		.m_file = f
 	};
 
@@ -1855,7 +1843,7 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 
 		case OP_PUSH_TERM_REF:
 			fprintf(f,"Push\\ ");
-			dumpTerm(context,blk->m_ops[i+1].m_term.m_pval,f);
+			dumpTerm(context,blk->m_ops[i+1].m_term.m_pval,f,1);
 			break;
 		
 		default:
@@ -1989,12 +1977,12 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			break;
 
 		case OP_PUSH_NULL:
-			fprintf(f,"push NULL * %u",code->m_opcode.m_arg);
+			fprintf(f,"push NULL * %u;\n",code->m_opcode.m_arg);
 			break;
 
 		case OP_PUSH_TERM_REF:
 			fprintf(f,"push ");
-			dumpTerm(context,code[1].m_term.m_pval,f);
+			dumpTerm(context,code[1].m_term.m_pval,f,0);
 			fprintf(f,";\n");
 			break;
 
