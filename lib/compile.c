@@ -421,18 +421,19 @@ static cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_
 	}
 
 	cfg_t* cont = compile_subgoal(context,next);
-	if (!cont)
-		cont = new_cfg(context);
+	if (cont && cont->m_entry_point->m_count)
+	{
+		opcode_t* ops = append_opcodes(context,cont->m_tail,1);
+		ops->m_opcode.m_op = OP_RET;
+	}
 
-	opcode_t* ops = append_opcodes(context,cont->m_tail,1);
-	ops->m_opcode.m_op = OP_RET;
-
-	ops = append_opcodes(context,c->m_tail,3);
+	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
 	(ops++)->m_term.m_pval = fn;
-	ops->m_term.m_pval = cont->m_entry_point;
+	ops->m_term.m_pval = (cont && cont->m_entry_point->m_count) ? cont->m_entry_point : NULL;
 
-	c->m_always_flags = cont->m_always_flags;
+	if (cont)
+		c->m_always_flags = cont->m_always_flags;
 
 	return c;
 }
@@ -1033,19 +1034,20 @@ static cfg_t* compile_dynamic(compile_context_t* context, void* clause, const co
 static cfg_t* compile_extern(compile_context_t* context, void* clause, const continuation_t* next)
 {
 	cfg_t* cont = compile_subgoal(context,next);
-	if (!cont)
-		cont = new_cfg(context);
-
-	opcode_t* ops = append_opcodes(context,cont->m_tail,1);
-	ops->m_opcode.m_op = OP_RET;
+	if (cont && cont->m_entry_point->m_count)
+	{
+		opcode_t* ops = append_opcodes(context,cont->m_tail,1);
+		ops->m_opcode.m_op = OP_RET;
+	}
 
 	cfg_t* c = new_cfg(context);
-	ops = append_opcodes(context,c->m_tail,3);
+	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode.m_op = OP_EXTERN;
 	(ops++)->m_term.m_pval = clause;
-	ops->m_term.m_pval = cont->m_entry_point;
+	ops->m_term.m_pval = (cont && cont->m_entry_point->m_count) ? cont->m_entry_point : NULL;
 
-	c->m_always_flags = cont->m_always_flags;
+	if (cont)
+		c->m_always_flags = cont->m_always_flags;
 
 	return c;
 }
@@ -1527,8 +1529,11 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 		case OP_EXTERN:
 			{
 				const cfg_block_t* next = blk->m_ops[i+2].m_term.m_pval;
-				walk_cfgs(context,blks,next);
-				move_cfg(blks,blk,next);
+				if (next)
+				{
+					walk_cfgs(context,blks,next);
+					move_cfg(blks,blk,next);
+				}
 			}
 			break;
 
@@ -1610,15 +1615,28 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 		case OP_EXTERN:
 			if (!code[2].m_term.m_pval)
 			{
-				// Find a RET
-				for (const opcode_t* c = start; c < code; c += inc_ip(code->m_opcode.m_op))
+				// Find an exisiting RET
+				const opcode_t* c = code;
+				while (c < end && c->m_opcode.m_op != OP_RET)
+					c += inc_ip(c->m_opcode.m_op);
+
+				if (c->m_opcode.m_op != OP_RET)
 				{
-					if (c->m_opcode.m_op == OP_RET)
+					// Find closest
+					for (const opcode_t* c2 = start; c2 < code; c2 += inc_ip(c2->m_opcode.m_op))
 					{
-						code[2].m_term.m_u64val = (c - code);
-						break;
-					}
+						if (c2->m_opcode.m_op == OP_RET)
+							c = c2;					
+					}						
 				}
+				
+				if (c->m_opcode.m_op != OP_RET)
+				{
+					c = end;
+					(end++)->m_opcode.m_op = OP_RET;
+				}					
+
+				code[2].m_term.m_u64val = c - (code + 2);
 			}
 			else
 			{
@@ -1813,13 +1831,16 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"Builtin\\ %s|<f%zu> Continue",builtinName(blk->m_ops[i+1].m_term.m_pval),i+1);
+			fprintf(f,"Builtin\\ %s",builtinName(blk->m_ops[i+1].m_term.m_pval));
+			if (blk->m_ops[i+2].m_term.m_pval)
+				fprintf(f,"|<f%zu> Continue",i+1);
 			break;
 
 		case OP_EXTERN:
 			fprintf(f,"Call\\ ");
 			dumpPI(((compile_clause_t*)blk->m_ops[i+1].m_term.m_pval)->m_head,f);
-			fprintf(f,"|<f%zu> Continue",i+1);
+			if (blk->m_ops[i+2].m_term.m_pval)
+				fprintf(f,"|<f%zu> Continue",i+1);
 			break;
 
 		case OP_SET_FLAGS:
@@ -1895,7 +1916,8 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 
 		case OP_BUILTIN:
 		case OP_EXTERN:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i+1,blk->m_ops[i+2].m_term.m_pval);
+			if (blk->m_ops[i+2].m_term.m_pval)
+				fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i+1,blk->m_ops[i+2].m_term.m_pval);
 			break;
 
 		default:
