@@ -18,9 +18,10 @@ typedef struct cfg_block_info
 
 typedef struct cfg_vec
 {
-	size_t            m_count;
-	size_t            m_total;
-	cfg_block_info_t* m_blks;
+	size_t             m_count;
+	size_t             m_total;
+	cfg_block_info_t** m_blks;
+	btree_t            m_index;
 } cfg_vec_t;
 
 typedef struct cfg
@@ -1435,10 +1436,10 @@ static void move_cfg(cfg_vec_t* blks, const cfg_block_t* blk, const cfg_block_t*
 	size_t next_index = -1;
 	for (size_t j = 0; j < blks->m_count; ++j)
 	{
-		if (blks->m_blks[j].m_blk == next)
+		if (blks->m_blks[j]->m_blk == next)
 			next_index = j;
 
-		if (blks->m_blks[j].m_blk == blk)
+		if (blks->m_blks[j]->m_blk == blk)
 			index = j;
 
 		if (next_index != -1 && index != -1)
@@ -1447,25 +1448,30 @@ static void move_cfg(cfg_vec_t* blks, const cfg_block_t* blk, const cfg_block_t*
 
 	if (next_index < index)
 	{
-		cfg_block_info_t t = blks->m_blks[index];
-		memmove(&blks->m_blks[next_index+1],&blks->m_blks[next_index],(index - next_index) * sizeof(cfg_block_info_t));
+		cfg_block_info_t* t = blks->m_blks[index];
+		memmove(&blks->m_blks[next_index+1],&blks->m_blks[next_index],(index - next_index) * sizeof(cfg_block_info_t*));
 		blks->m_blks[next_index] = t;
 	}
 }
 
 static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_block_t* blk)
 {
-	for (size_t i=0; i < blks->m_count; ++i)
+	cfg_block_info_t* bi = heap_malloc(context->m_heap,sizeof(cfg_block_info_t));
+	if (!bi)
+		longjmp(context->m_jmp,1);
+
+	*bi = (cfg_block_info_t){ .m_blk = blk };
+	if (btree_insert(&blks->m_index,(uintptr_t)blk,bi) != bi)
 	{
-		if (blk == blks->m_blks[i].m_blk)
-			return;
+		heap_free(context->m_heap,bi,sizeof(cfg_block_info_t));
+		return;
 	}
 
-	blks->m_blks = heap_realloc(context->m_heap,blks->m_blks,blks->m_count * sizeof(cfg_block_info_t),(blks->m_count + 1) * sizeof(cfg_block_info_t));
+	blks->m_blks = heap_realloc(context->m_heap,blks->m_blks,blks->m_count * sizeof(cfg_block_info_t*),(blks->m_count + 1) * sizeof(cfg_block_info_t*));
 	if (!blks->m_blks)
 		longjmp(context->m_jmp,1);
 
-	blks->m_blks[blks->m_count++] = (cfg_block_info_t){ .m_blk = blk, .m_offset = 0 };
+	blks->m_blks[blks->m_count++] = bi;
 	blks->m_total += blk->m_count;
 
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
@@ -1534,8 +1540,8 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 	opcode_t* start = code;
 	for (size_t j = 0; j < blks->m_count; ++j)
 	{
-		const cfg_block_t* blk = blks->m_blks[j].m_blk;
-		blks->m_blks[j].m_offset = (code - start);
+		const cfg_block_t* blk = blks->m_blks[j]->m_blk;
+		blks->m_blks[j]->m_offset = (code - start);
 
 		for (size_t i = 0; i < blk->m_count; )
 		{
@@ -1547,7 +1553,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 				break;
 
 			case OP_JMP:
-				if (j == blks->m_count-1 || blk->m_ops[i+1].m_term.m_pval != blks->m_blks[j+1].m_blk)
+				if (j == blks->m_count-1 || blk->m_ops[i+1].m_term.m_pval != blks->m_blks[j+1]->m_blk)
 				{
 					memcpy(code,blk->m_ops + i,len * sizeof(*code));
 					code += len;
@@ -1589,25 +1595,32 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 		case OP_BRANCH:
 		case OP_BRANCH_NOT:
 		case OP_GOSUB:
-			for (size_t j = 0; j < blks->m_count; ++j)
 			{
-				if (blks->m_blks[j].m_blk == code[1].m_term.m_pval)
-				{
-					code[1].m_term.m_u64val = blks->m_blks[j].m_offset - (code + 1 - start);
-					break;
-				}
+				const cfg_block_info_t* blk = btree_lookup(&blks->m_index,(uintptr_t)code[1].m_term.m_pval);
+				assert(blk);			
+				code[1].m_term.m_u64val = blk->m_offset - (code + 1 - start);
 			}
 			break;
 
 		case OP_BUILTIN:
 		case OP_EXTERN:
-			for (size_t j = 0; j < blks->m_count; ++j)
+			if (!code[2].m_term.m_pval)
 			{
-				if (blks->m_blks[j].m_blk == code[2].m_term.m_pval)
+				// Find a RET
+				for (const opcode_t* c = start; c < code; c += inc_ip(code->m_opcode.m_op))
 				{
-					code[2].m_term.m_u64val = blks->m_blks[j].m_offset - (code + 2 - start);
-					break;
+					if (c->m_opcode.m_op == OP_RET)
+					{
+						code[2].m_term.m_u64val = (c - code);
+						break;
+					}
 				}
+			}
+			else
+			{
+				const cfg_block_info_t* blk = btree_lookup(&blks->m_index,(uintptr_t)code[2].m_term.m_pval);
+				assert(blk);
+				code[2].m_term.m_u64val = blk->m_offset - (code + 2 - start);
 			}
 			break;
 
@@ -1894,9 +1907,9 @@ void dumpCFG(context_t* context, const cfg_vec_t* blks, const char* filename)
 	fprintf(f,"digraph cfg {\n\tstart [shape=point];\n");
 
 	for (size_t i=0; i < blks->m_count; ++i)
-		dumpCFGBlock(context,blks->m_blks[i].m_blk,f);
+		dumpCFGBlock(context,blks->m_blks[i]->m_blk,f);
 
-	fprintf(f,"\tstart -> N%p:<f0>;\n}",blks->m_blks[0].m_blk);
+	fprintf(f,"\tstart -> N%p:<f0>;\n}",blks->m_blks[0]->m_blk);
 
 	fclose(f);
 }
@@ -2024,7 +2037,8 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 		opcode_t* ops = append_opcodes(&cc,c->m_tail,1);
 		ops->m_opcode.m_op = OP_RET;
 
-		cfg_vec_t blks = {0};
+		prolite_allocator_t a = heap_allocator(&context->m_heap);
+		cfg_vec_t blks = { .m_index.m_allocator = &a };
 		walk_cfgs(&cc,&blks,c->m_entry_point);
 
 #if ENABLE_TESTS
