@@ -82,7 +82,7 @@ term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str
 		}
 		else if (external)
 		{
-			(--stack)->m_pval = (void*)str;
+			(--stack)->m_pval = str;
 			(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0xC000) << 32) | len);
 		}
 		else
