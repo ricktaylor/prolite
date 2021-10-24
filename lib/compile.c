@@ -172,10 +172,10 @@ static cfg_t* goto_next(compile_context_t* context, cfg_t* c, cfg_t* next)
 	return c;
 }
 
-static cfg_t* add_branch(compile_context_t* context, cfg_t* c, optype_t branch, exec_flags_t flags, cfg_t* next)
+static cfg_t* add_branch(compile_context_t* context, cfg_t* c, exec_flags_t flags, cfg_t* next)
 {
 	opcode_t* ops = append_opcodes(context,c->m_tail,2);
-	ops->m_opcode.m_op = branch;
+	ops->m_opcode.m_op = OP_BRANCH;
 	(ops++)->m_opcode.m_arg = flags;
 	(ops++)->m_term.m_pval = next->m_entry_point;
 
@@ -312,7 +312,6 @@ size_t inc_ip(optype_t op)
 	case OP_PUSH_CONST:
 	case OP_PUSH_TERM_REF:
 	case OP_BRANCH:
-	case OP_BRANCH_NOT:
 		++ip;
 		break;
 
@@ -371,7 +370,6 @@ static int cfg_compare_blk(btree_t* index, const cfg_block_t* blk1, const cfg_bl
 			break;
 
 		case OP_BRANCH:
-		case OP_BRANCH_NOT:
 			if (blk1->m_ops[i].m_opcode.m_arg != blk2->m_ops[i].m_opcode.m_arg ||
 				!cfg_compare_blk(index,blk1->m_ops[i+1].m_term.m_pval,blk2->m_ops[i+1].m_term.m_pval))
 			{
@@ -486,7 +484,6 @@ static cfg_t* compile_cse(compile_context_t* context, void* param, const continu
 		ops->m_term.m_pval = cc;
 
 		c1->m_always_flags = c->m_always_flags;
-
 		c1->m_tail = new_cfg_block(context);
 
 		c = c1;
@@ -572,19 +569,19 @@ static cfg_t* compile_or(compile_context_t* context, const continuation_t* goal)
 			.m_next = next
 		});
 
+		complete_cse(context,&cse);
+
 		if (c2)
 		{
 			cfg_t* c_end = new_cfg(context);
 			goto_next(context,c2,c_end);
 
-			add_branch(context,c,OP_BRANCH,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
-			goto_next(context,c,c2);
-
+			add_branch(context,c,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+			
 			c->m_always_flags = c2->m_always_flags;
+			goto_next(context,c,c2);
 		}
 	}
-
-	complete_cse(context,&cse);
 
 	return c;
 }
@@ -759,9 +756,8 @@ static cfg_t* compile_resume(compile_context_t* context, void* param, const cont
 	cfg_t* cont = compile_call_inner(context,param,goal);
 	if (cont)
 	{
-		goto_next(context,c,cont);
-
 		c->m_always_flags = cont->m_always_flags;
+		goto_next(context,c,cont);
 	}
 
 	return c;
@@ -785,7 +781,7 @@ static cfg_t* compile_catch(compile_context_t* context, const continuation_t* go
 			cfg_t* c_end = new_cfg(context);
 			goto_next(context,c_catch,c_end);
 
-			add_branch(context,c,OP_BRANCH,FLAG_THROW,c_catch);
+			add_branch(context,c,FLAG_THROW,c_catch);
 			goto_next(context,c,c_end);
 		}
 
@@ -804,7 +800,14 @@ static cfg_t* compile_repeat(compile_context_t* context, const continuation_t* g
 	}
 
 	if (!(c->m_always_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT)))
-		add_branch(context,c,OP_BRANCH_NOT,FLAG_CUT | FLAG_THROW | FLAG_HALT,c);
+	{
+		cfg_t* c_end = new_cfg(context);
+
+		add_branch(context,c,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+		
+		goto_next(context,c,c);		
+		c->m_tail = c_end->m_entry_point;
+	}		
 
 	return c;
 }
@@ -863,7 +866,6 @@ static cfg_t* compile_unify_shim(compile_context_t* context, void* param, const 
 		ops->m_term.m_pval = goals[1];
 
 		c1->m_always_flags = c->m_always_flags;
-
 		c = goto_next(context,c1,c);
 	}
 
@@ -1053,7 +1055,6 @@ static cfg_t* compile_not_unifiable(compile_context_t* context, const continuati
 	else if (c2)
 	{
 		c2->m_always_flags = c->m_always_flags;
-
 		c = goto_next(context,c2,c);
 	}
 
@@ -1148,7 +1149,6 @@ static cfg_t* compile_head_end_shim(compile_context_t* context, void* param, con
 			}
 
 			c1->m_always_flags = c->m_always_flags;
-
 			c = goto_next(context,c1,c);
 		}
 	}
@@ -1281,7 +1281,6 @@ void* compile_predicate_call(void* vc, const compile_predicate_t* pred, const te
 		else if (c1)
 		{
 			c->m_always_flags = c1->m_always_flags;
-
 			goto_next(context,c,c1);
 		}
 
@@ -1293,7 +1292,7 @@ void* compile_predicate_call(void* vc, const compile_predicate_t* pred, const te
 			if (!c_end)
 				c_end = new_cfg(context);
 
-			add_branch(context,c,OP_BRANCH,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+			add_branch(context,c,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
 		}
 	}
 
@@ -1336,10 +1335,10 @@ static cfg_t* compile_not_proveable(compile_context_t* context, const continuati
 			cfg_t* c_end = new_cfg(context);
 			goto_next(context,c,c_end);
 
-			c1->m_always_flags = c->m_always_flags;
+			add_branch(context,c1,FLAG_THROW | FLAG_HALT,c_end);
 
-			c = add_branch(context,c1,OP_BRANCH_NOT,FLAG_THROW | FLAG_HALT,c);
-			goto_next(context,c,c_end);
+			c1->m_always_flags = c->m_always_flags;
+			c = goto_next(context,c1,c);
 		}
 	}
 
@@ -1595,31 +1594,6 @@ static cfg_t* compile_subgoal(compile_context_t* context, const continuation_t* 
 	return c;
 }
 
-static void move_cfg(cfg_vec_t* blks, const cfg_block_t* blk, const cfg_block_t* next)
-{
-	// Try to place into some kind of sort order...
-	size_t index = -1;
-	size_t next_index = -1;
-	for (size_t j = 0; j < blks->m_count; ++j)
-	{
-		if (blks->m_blks[j]->m_blk == next)
-			next_index = j;
-
-		if (blks->m_blks[j]->m_blk == blk)
-			index = j;
-
-		if (next_index != -1 && index != -1)
-			break;
-	}
-
-	if (next_index < index)
-	{
-		cfg_block_info_t* t = blks->m_blks[index];
-		memmove(&blks->m_blks[next_index+1],&blks->m_blks[next_index],(index - next_index) * sizeof(cfg_block_info_t*));
-		blks->m_blks[next_index] = t;
-	}
-}
-
 static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_block_t* blk)
 {
 	cfg_block_info_t* bi = heap_malloc(context->m_heap,sizeof(cfg_block_info_t));
@@ -1650,8 +1624,39 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			break;
 
 		case OP_JMP:
+			next = (const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
+			break;
+
+		default:
+			break;
+		}
+
+		if (next && *next)
+		{
+			// Rewrite JMP -> JMP
+			while ((*next)->m_count == 2 &&
+				(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
+			{
+				*next = (*next)->m_ops[1].m_term.m_pval;
+			}
+
+			walk_cfgs(context,blks,*next);
+		}
+	}
+
+	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
+	{
+		const cfg_block_t** next = NULL;
+		switch (blk->m_ops[i].m_opcode.m_op)
+		{
+		case OP_NOP:
+			--blks->m_total;
+			break;
+
 		case OP_BRANCH:
-		case OP_BRANCH_NOT:
+			next = (const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
+			break;
+
 		case OP_GOSUB:
 			next = (const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
 			break;
@@ -1675,7 +1680,6 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, const cfg_blo
 			}
 
 			walk_cfgs(context,blks,*next);
-			move_cfg(blks,blk,*next);
 		}
 	}
 }
@@ -1721,11 +1725,27 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 			case OP_NOP:
 				break;
 
-			case OP_JMP:
-				if (j == blks->m_count-1 || blk->m_ops[i+1].m_term.m_pval != blks->m_blks[j+1]->m_blk)
+			case OP_RET:
+				if (j == blks->m_count-1 || 
+					blks->m_blks[j+1]->m_blk->m_count != 1 ||
+					blks->m_blks[j+1]->m_blk->m_ops->m_opcode.m_op != OP_RET)
 				{
-					memcpy(code,blk->m_ops + i,len * sizeof(*code));
-					code += len;
+					(code++)->m_opcode = (struct op_arg){ .m_op = OP_RET };
+				}
+				break;
+
+			case OP_JMP:
+				if (j == blks->m_count-1)
+				{
+					if (blks->m_blks[j+1]->m_blk->m_count == 1 && blks->m_blks[j+1]->m_blk->m_ops->m_opcode.m_op == OP_RET)
+					{
+						(code++)->m_opcode = (struct op_arg){ .m_op = OP_RET };
+					}
+					else if (blk->m_ops[i+1].m_term.m_pval != blks->m_blks[j+1]->m_blk)
+					{
+						memcpy(code,blk->m_ops + i,len * sizeof(*code));
+						code += len;
+					}
 				}
 				break;
 
@@ -1746,7 +1766,6 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 		{
 		case OP_JMP:
 		case OP_BRANCH:
-		case OP_BRANCH_NOT:
 		case OP_GOSUB:
 			{
 				const cfg_block_info_t* blk = btree_lookup(&blks->m_index,(uintptr_t)code[1].m_term.m_pval);
@@ -1985,11 +2004,6 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			fprintf(f,"Branch \\%s",buf);
 			break;
 
-		case OP_BRANCH_NOT:
-			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
-			fprintf(f,"Branch !\\%s",buf);
-			break;
-
 		case OP_PUSH_CONST:
 			fprintf(f,"Push\\ Const\\ %"PRIu64,blk->m_ops[i+1].m_term.m_u64val);
 			break;
@@ -2018,11 +2032,6 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 		case OP_BRANCH:
 			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"%s\"];\n",blk,i,blk->m_ops[i+1].m_term.m_pval,buf);
-			break;
-
-		case OP_BRANCH_NOT:
-			fmtFlags(blk->m_ops[i].m_opcode.m_arg,buf);
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"!%s\"];\n",blk,i,blk->m_ops[i+1].m_term.m_pval,buf);
 			break;
 
 		case OP_GOSUB:
@@ -2129,11 +2138,6 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 		case OP_BRANCH:
 			fmtFlags(code->m_opcode.m_arg,buf);
 			fprintf(f,"if (flags & %s) goto %+d (%zu);\n",buf,(int)code[1].m_term.m_u64val,(size_t)((code + 1 - start) + (int64_t)code[1].m_term.m_u64val));
-			break;
-
-		case OP_BRANCH_NOT:
-			fmtFlags(code->m_opcode.m_arg,buf);
-			fprintf(f,"if (!(flags & %s)) goto %+d (%zu);\n",buf,(int)code[1].m_term.m_u64val,(size_t)((code + 1 - start) + (int64_t)code[1].m_term.m_u64val));
 			break;
 
 		case OP_PUSH_CONST:
