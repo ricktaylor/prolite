@@ -56,8 +56,6 @@ typedef struct cse_cfg
 {
 	size_t        m_refcount;
 	cfg_t*        m_cfg;
-	const term_t* m_subgoal;
-
 } cse_cfg_t;
 
 typedef struct cse_info
@@ -87,7 +85,7 @@ static opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, si
 			longjmp(context->m_jmp,1);
 
 		ret = blk->m_ops + blk->m_count;
-		memset(ret,0,count);
+		memset(ret,0,count * sizeof(opcode_t));
 		blk->m_count += count;
 	}
 	return ret;
@@ -243,13 +241,7 @@ static cfg_t* compile_once_shim(compile_context_t* context, void* param, const c
 		*(uint8_t*)param = c->m_always_flags;
 
 		if (!(c->m_always_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT)))
-		{
-			opcode_t* ops = append_opcodes(context,c->m_tail,2);
-			(ops++)->m_opcode.m_op = OP_PUSH_CUT;
-			ops->m_opcode = (struct op_arg){ .m_op = OP_SET_FLAGS, .m_arg = FLAG_CUT};
-
-			c->m_always_flags |= FLAG_CUT;
-		}
+			set_flags(context,c,FLAG_CUT);
 	}
 
 	return c;
@@ -417,15 +409,15 @@ static cfg_t* compile_cse(compile_context_t* context, void* param, const continu
 {
 	cse_info_t* cse = param;
 	size_t heap_start = heap_top(context->m_heap);
+	
 	cse_cfg_t* cc = NULL;
-	cfg_t* c = NULL;
-
-	if (goal && !goal->m_next && !goal->m_shim && goal->m_term)
+	cfg_t* c = compile_subgoal(context,goal);
+	if (c && c->m_entry_point->m_count >= 4)
 	{
 		for (size_t i = 0; i < cse->m_count; ++i)
 		{
 			cse_cfg_t* cc1 = (cse_cfg_t*)cse->m_stubs[i]->m_entry_point->m_ops[0].m_term.m_pval;
-			if (term_compare(cc1->m_subgoal,goal->m_term))
+			if (cfg_compare(context,cc1->m_cfg,c))
 			{
 				++cc1->m_refcount;
 				cc = cc1;
@@ -434,41 +426,18 @@ static cfg_t* compile_cse(compile_context_t* context, void* param, const continu
 				break;
 			}
 		}
-	}
-	
-	if (!cc)
-	{
-		c = compile_subgoal(context,goal);
-		if (c && c->m_entry_point->m_count >= 3)
+
+		if (!cc)
 		{
-			for (size_t i = 0; i < cse->m_count; ++i)
-			{
-				cse_cfg_t* cc1 = (cse_cfg_t*)cse->m_stubs[i]->m_entry_point->m_ops[0].m_term.m_pval;
-				if (cfg_compare(context,cc1->m_cfg,c))
-				{
-					++cc1->m_refcount;
-					cc = cc1;
-					c = cc1->m_cfg;
-					heap_reset(context->m_heap,heap_start);
-					break;
-				}
-			}
-
+			cc = heap_malloc(context->m_heap,sizeof(cse_cfg_t));
 			if (!cc)
-			{
-				cc = heap_malloc(context->m_heap,sizeof(cse_cfg_t));
-				if (!cc)
-					longjmp(context->m_jmp,1);
+				longjmp(context->m_jmp,1);
 
-				cc->m_refcount = 1;
-				cc->m_cfg = c;
-
-				if (goal && !goal->m_next && !goal->m_shim)
-					cc->m_subgoal = goal->m_term;
-			}
+			cc->m_refcount = 1;
+			cc->m_cfg = c;
 		}
 	}
-
+	
 	if (cc)
 	{
 		cfg_t* c1 = new_cfg(context);
@@ -579,7 +548,7 @@ static cfg_t* compile_or(compile_context_t* context, const continuation_t* goal)
 			goto_next(context,c2,c_end);
 
 			add_branch(context,c,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
-			
+
 			c->m_always_flags = c2->m_always_flags;
 			goto_next(context,c,c2);
 		}
@@ -806,10 +775,10 @@ static cfg_t* compile_repeat(compile_context_t* context, const continuation_t* g
 		cfg_t* c_end = new_cfg(context);
 
 		add_branch(context,c,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
-		
-		goto_next(context,c,c);		
+
+		goto_next(context,c,c);
 		c->m_tail = c_end->m_entry_point;
-	}		
+	}
 
 	return c;
 }
@@ -1220,10 +1189,10 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 static cfg_t* compile_extern(compile_context_t* context, void* clause, const continuation_t* next)
 {
 	cfg_t* cont = compile_subgoal(context,next);
-	
+
 	if (!((compile_clause_t*)clause)->m_body)
 		return cont;
-	
+
 	if (cont)
 	{
 		opcode_t* ops = append_opcodes(context,cont->m_tail,1);
@@ -1274,7 +1243,7 @@ void* compile_predicate_call(void* vc, const compile_predicate_t* pred, const te
 	for (const compile_clause_t* clause = pred->m_clauses; clause; clause = clause->m_next)
 	{
 		next->m_term = (const term_t*)clause;
-		
+
 		cfg_t* c1;
 		if (type == prolite_atom)
 			c1 = compile_subgoal(context,next);
@@ -1621,7 +1590,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 
 	int have_branches = 0;
 	int have_gosubs = 0;
-	
+
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
 		cfg_block_t** gosub = NULL;
@@ -1665,7 +1634,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 					*next = (*next)->m_ops[1].m_term.m_pval;
 				}
 				have_branches = 1;
-			}			
+			}
 			break;
 
 		case OP_GOSUB:
@@ -1676,7 +1645,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 		case OP_EXTERN:
 			gosub = (cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval;
 			break;
-			
+
 		default:
 			break;
 		}
@@ -1713,7 +1682,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 
 				// Rewrite GOSUB -> GOSUB
 				while ((*gosub)->m_count == 3 &&
-					(*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB && 
+					(*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB &&
 					(*gosub)->m_ops[2].m_opcode.m_op == OP_RET)
 				{
 					*gosub = (cfg_block_t*)(*gosub)->m_ops[1].m_term.m_pval;
@@ -1737,24 +1706,20 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 	{
 		for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 		{
-			cfg_block_t* gosub = NULL;
 			switch (blk->m_ops[i].m_opcode.m_op)
 			{
 			case OP_GOSUB:
-				gosub = (cfg_block_t*)blk->m_ops[i+1].m_term.m_pval;
+				walk_cfgs(context,blks,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
 				break;
 
 			case OP_BUILTIN:
 			case OP_EXTERN:
-				gosub = (cfg_block_t*)blk->m_ops[i+2].m_term.m_pval;
+				walk_cfgs(context,blks,(cfg_block_t*)blk->m_ops[i+2].m_term.m_pval);
 				break;
 
 			default:
 				break;
 			}
-
-			if (gosub)
-				walk_cfgs(context,blks,gosub);
 		}
 	}
 }
@@ -1777,7 +1742,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 				break;
 
 			case OP_RET:
-				if (j == blks->m_count-1 || 
+				if (j == blks->m_count-1 ||
 					blks->m_blks[j+1]->m_blk->m_count != 1 ||
 					blks->m_blks[j+1]->m_blk->m_ops->m_opcode.m_op != OP_RET)
 				{
@@ -2264,7 +2229,7 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 		prolite_allocator_t a = heap_allocator(&context->m_heap);
 		cfg_vec_t blks = { .m_index.m_allocator = &a };
 		walk_cfgs(&cc,&blks,c->m_entry_point);
-		
+
 #if ENABLE_TESTS
 		dumpCFG(context,&blks,"./cfg.dot");
 #endif
