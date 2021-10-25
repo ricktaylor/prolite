@@ -2127,7 +2127,7 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 
 		case OP_EXTERN:
 			fprintf(f,"call(");
-			dumpPI(((compile_clause_t*)code[1].m_term.m_pval)->m_head,f);
+			dumpPI(((const compile_clause_t*)code[1].m_term.m_pval)->m_head,f);
 			fprintf(f,") ");
 			if (code[2].m_term.m_u64val)
 				fprintf(f,"gosub %+d (%zu)",(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
