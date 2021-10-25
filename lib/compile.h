@@ -20,6 +20,7 @@ typedef enum prolite_type_flags
 typedef enum optype
 {
 	OP_NOP = 0,
+	OP_CONTINUE,
 	OP_JMP,
 	OP_BRANCH,
 	OP_GOSUB,
