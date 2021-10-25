@@ -124,7 +124,7 @@ static cfg_t* set_flags(compile_context_t* context, cfg_t* c, exec_flags_t flags
 	else
 	{
 		opcode_t* ops = append_opcodes(context,c->m_tail,1);
-		ops->m_opcode = (struct op_arg){ .m_op = OP_SET_FLAGS, .m_arg = flags};
+		ops->m_opcode = (op_arg_t){ .m_op = OP_SET_FLAGS, .m_arg = flags};
 	}
 
 	c->m_always_flags |= flags;
@@ -152,7 +152,7 @@ static cfg_t* clear_flags(compile_context_t* context, cfg_t* c, exec_flags_t fla
 	else
 	{
 		opcode_t* ops = append_opcodes(context,c->m_tail,1);
-		ops->m_opcode = (struct op_arg){ .m_op = OP_CLEAR_FLAGS, .m_arg = flags};
+		ops->m_opcode = (op_arg_t){ .m_op = OP_CLEAR_FLAGS, .m_arg = flags};
 	}
 
 	c->m_always_flags &= ~flags;
@@ -1613,9 +1613,9 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 				// Rewrite JMP -> RET => RET
 				if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
 				{
-					blk->m_ops[i].m_opcode = (struct op_arg){ .m_op = OP_RET };
+					blk->m_ops[i].m_opcode = (op_arg_t){ .m_op = OP_RET };
 					if (i != blk->m_count - 2)
-						blk->m_ops[i+1].m_opcode = (struct op_arg){ .m_op = OP_NOP };
+						blk->m_ops[i+1].m_opcode = (op_arg_t){ .m_op = OP_NOP };
 					else
 						--blk->m_count;
 				}
@@ -1675,7 +1675,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 					// Rewrite JMP -> RET => RET
 					if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
 					{
-						(*gosub)->m_ops[2].m_opcode = (struct op_arg){ .m_op = OP_RET };
+						(*gosub)->m_ops[2].m_opcode = (op_arg_t){ .m_op = OP_RET };
 						--(*gosub)->m_count;
 					}
 				}
@@ -1746,7 +1746,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 					blks->m_blks[j+1]->m_blk->m_count != 1 ||
 					blks->m_blks[j+1]->m_blk->m_ops->m_opcode.m_op != OP_RET)
 				{
-					(code++)->m_opcode = (struct op_arg){ .m_op = OP_RET };
+					(code++)->m_opcode = (op_arg_t){ .m_op = OP_RET };
 				}
 				break;
 

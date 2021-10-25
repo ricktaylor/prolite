@@ -38,16 +38,16 @@ typedef enum optype
 
 size_t inc_ip(optype_t op);
 
-struct op_arg
+typedef struct op_arg
 {
 	optype_t m_op;
 	uint32_t m_arg;
-};
+} op_arg_t;
 
 typedef union opcode
 {
-	struct op_arg m_opcode;
-	term_t        m_term;
+	op_arg_t m_opcode;
+	term_t   m_term;
 } opcode_t;
 
 typedef struct compile_clause
