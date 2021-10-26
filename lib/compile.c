@@ -71,6 +71,19 @@ typedef struct cse_info
 	cse_previous_t* m_previous;
 } cse_info_t;
 
+typedef struct cce_previous
+{
+	cfg_t*              m_cfg;
+	substitutions_t*    m_substs;
+	struct cce_previous* m_next;
+} cce_previous_t;
+
+typedef struct cce_info
+{
+	cse_info_t     m_cse;
+	cce_previous_t* m_previous;
+} cce_info_t;
+
 static cfg_block_t* new_cfg_block(compile_context_t* context)
 {
 	cfg_block_t* b = heap_malloc(context->m_heap,sizeof(cfg_block_t));
@@ -413,11 +426,13 @@ static int cfg_compare(compile_context_t* context, const cfg_t* c1, const cfg_t*
 	return r;
 }
 
-static cfg_t* compile_cse(compile_context_t* context, void* param, const continuation_t* goal)
+static cfg_t* compile_cse(compile_context_t* context, void* param, const continuation_t* next)
 {
+	// Common Sub-expression Elimination (CSE)
+
 	size_t heap_start = heap_top(context->m_heap);
 	
-	cfg_t* c = compile_subgoal(context,goal);
+	cfg_t* c = compile_subgoal(context,next);
 	if (c && c->m_entry_point->m_count >= 4)
 	{
 		cse_info_t* cse = param;
@@ -478,18 +493,18 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 	{
 		assert(stub->m_cfg->m_entry_point->m_count == 1);
 
-		cse_previous_t* cc = (cse_previous_t*)stub->m_cfg->m_entry_point->m_ops[0].m_term.m_pval;
-		if (cc->m_refcount > 1)
+		cse_previous_t* prev = (cse_previous_t*)stub->m_cfg->m_entry_point->m_ops[0].m_term.m_pval;
+		if (prev->m_refcount > 1)
 		{
-			if (!cc->m_cfg->m_tail->m_count || cc->m_cfg->m_tail->m_ops[cc->m_cfg->m_tail->m_count-1].m_opcode.m_op != OP_RET)
+			if (!prev->m_cfg->m_tail->m_count || prev->m_cfg->m_tail->m_ops[prev->m_cfg->m_tail->m_count-1].m_opcode.m_op != OP_RET)
 			{
-				opcode_t* ops = append_opcodes(context,cc->m_cfg->m_tail,1);
+				opcode_t* ops = append_opcodes(context,prev->m_cfg->m_tail,1);
 				ops->m_opcode.m_op = OP_RET;
 			}
 
 			stub->m_cfg->m_entry_point->m_ops[0].m_opcode.m_op = OP_GOSUB;
 			opcode_t* ops = append_opcodes(context,stub->m_cfg->m_entry_point,3);
-			(ops++)->m_term.m_pval = cc->m_cfg->m_entry_point;
+			(ops++)->m_term.m_pval = prev->m_cfg->m_entry_point;
 			(ops++)->m_opcode.m_op = OP_JMP;
 			ops->m_term.m_pval = stub->m_cfg->m_tail;
 		}
@@ -497,9 +512,9 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 		{
 			stub->m_cfg->m_entry_point->m_ops[0].m_opcode.m_op = OP_JMP;
 			opcode_t* ops = append_opcodes(context,stub->m_cfg->m_entry_point,1);
-			ops->m_term.m_pval = cc->m_cfg->m_entry_point;
+			ops->m_term.m_pval = prev->m_cfg->m_entry_point;
 
-			ops = append_opcodes(context,cc->m_cfg->m_tail,2);
+			ops = append_opcodes(context,prev->m_cfg->m_tail,2);
 			(ops++)->m_opcode.m_op = OP_JMP;
 			ops->m_term.m_pval = stub->m_cfg->m_tail;
 		}
@@ -735,12 +750,12 @@ static cfg_t* compile_callN(compile_context_t* context, const continuation_t* go
 	return c;
 }
 
-static cfg_t* compile_resume(compile_context_t* context, void* param, const continuation_t* goal)
+static cfg_t* compile_resume(compile_context_t* context, void* param, const continuation_t* next)
 {
 	cfg_t* c = new_cfg(context);
 	clear_flags(context,c,FLAG_THROW);
 
-	cfg_t* cont = compile_call_inner(context,param,goal);
+	cfg_t* cont = compile_call_inner(context,param,next);
 	if (cont)
 	{
 		c->m_always_flags = cont->m_always_flags;
@@ -1185,8 +1200,6 @@ static cfg_t* compile_extern(compile_context_t* context, void* clause, const con
 
 static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const compile_clause_t* clause, const continuation_t* next)
 {
-	term_t* sp = context->m_stack;
-
 	substitutions_t* prev_substs = context->m_substs;
 	if (context->m_substs)
 	{
@@ -1198,6 +1211,8 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 
 		context->m_substs = substs;
 	}
+
+	term_t* sp = context->m_stack;
 
 	substitutions_t* next_substs = NULL;
 	if (clause->m_var_count)
@@ -1228,7 +1243,7 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	};
 
 	if (!clause->m_body)
-		cont->m_next = cont->m_next->m_next->m_next;
+		cont->m_next = next;
 
 	cfg_t* c = NULL;
 	const continuation_t* cont2 = compile_unify_head_term(context,goal,clause->m_head,next_substs,&ui,cont);
@@ -1241,9 +1256,104 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	}
 
 	context->m_substs = prev_substs;
-
 	context->m_stack = sp;
 
+	return c;
+}
+
+static int match_substs(const compile_context_t* context, const substitutions_t* other_substs, const term_t* ct, const term_t* ot)
+{
+	if (ct == ot)
+		return 1;
+
+	if (!ct || !ot)
+		return 0;
+	
+	prolite_type_t ctype = get_term_type(ct);
+	while (ctype == prolite_var)
+	{
+		assert(get_var_index(ct) < context->m_substs->m_count);
+		const term_t* n = context->m_substs->m_vals[get_var_index(ct)];
+		if (!n)
+			break;
+		ct = n;
+		ctype = get_term_type(ct);
+	}
+
+	prolite_type_t otype = get_term_type(ot);
+	while (otype == prolite_var)
+	{
+		assert(get_var_index(ot) < other_substs->m_count);
+		const term_t* n = other_substs->m_vals[get_var_index(ot)];
+		if (!n)
+			break;
+		ot = n;
+		otype = get_term_type(ot);
+	}
+
+	// TODO char_codes etc
+
+	if (ctype != otype)
+		return 0;
+
+	if (ctype != prolite_compound)
+		return term_compare(ct,ot);
+
+	if (!predicate_compare(ct,ot))
+		return 0;
+		
+	size_t arity;
+	ct = get_first_arg(ct,&arity);
+	ot = get_first_arg(ot,NULL);
+
+	for (size_t i = 0; i < arity; ++i)
+	{
+		if (!match_substs(context,other_substs,ct,ot))
+			return 0;
+		
+		ct = get_next_arg(ct);
+		ot = get_next_arg(ot);
+	}
+	return 1;
+}
+
+static cfg_t* compile_cce(compile_context_t* context, void* param, const continuation_t* next)
+{
+	// Common Continuation Elimination (CCE)
+
+	cce_info_t* cce = param;
+
+	for (cce_previous_t* p = cce->m_previous; p; p=p->m_next)
+	{
+		int matched = 0;
+		if (!p->m_substs && !context->m_substs)
+			matched = 1;
+		else if (p->m_substs->m_count == context->m_substs->m_count)
+		{
+			matched = 1;
+			for (size_t i=0; matched && i < p->m_substs->m_count; ++i)
+				matched = match_substs(context,p->m_substs,context->m_substs->m_vals[i],p->m_substs->m_vals[i]);
+		}
+		
+		if (matched)
+			return p->m_cfg;
+	}
+
+	cfg_t* c = compile_cse(context,&cce->m_cse,next);
+	if (c)
+	{
+		cce_previous_t* p = heap_malloc(context->m_heap,sizeof(cce_previous_t));
+		if (!p)
+			longjmp(context->m_jmp,1);
+
+		*p = (cce_previous_t){
+			.m_cfg = c,
+			.m_substs = context->m_substs,
+			.m_next = cce->m_previous
+		};
+		cce->m_previous = p;
+	}
+	
 	return c;
 }
 
@@ -1257,15 +1367,17 @@ void* inline_predicate_call(void* vc, const compile_predicate_t* pred, const ter
 	if (pred->m_dynamic || !pred->m_clauses)
 		return compile_builtin(context,&prolite_builtin_user_defined,1,goal,vnext);
 
-	cse_info_t cse = {0};
+	cce_info_t cce = {0};
 	const continuation_t* next = &(continuation_t){
-		.m_shim = &compile_cse,
-		.m_term = (const term_t*)&cse,
+		.m_shim = &compile_cce,
+		.m_term = (const term_t*)&cce,
 		.m_next = vnext
 	};
 
 	if (!pred->m_clauses->m_next)
 		next = vnext;
+
+	term_t* sp = context->m_stack;
 
 	cfg_t* c_end = NULL;
 	cfg_t* c = NULL;
@@ -1295,7 +1407,9 @@ void* inline_predicate_call(void* vc, const compile_predicate_t* pred, const ter
 	if (c && c_end)
 		goto_next(context,c,c_end);
 
-	complete_cse(context,&cse);
+	complete_cse(context,&cce.m_cse);
+
+	context->m_stack = sp;
 
 	return c;
 }
