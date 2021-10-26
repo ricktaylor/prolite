@@ -339,6 +339,7 @@ static int cfg_compare_blk(btree_t* index, const cfg_block_t* blk1, const cfg_bl
 		switch (blk1->m_ops[i].m_opcode.m_op)
 		{
 		case OP_PUSH_NULL:
+		case OP_POP:
 		case OP_CLEAR_FLAGS:
 		case OP_SET_FLAGS:
 			if (blk1->m_ops[i].m_opcode.m_arg != blk2->m_ops[i].m_opcode.m_arg)
@@ -582,6 +583,13 @@ static cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_
 	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
 	(ops++)->m_term.m_pval = fn;
+
+	while (arity)
+	{
+		opcode_t* ops = append_opcodes(context,c->m_tail,1);
+		ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = (arity > 0xFFFFFFFF ? 0xFFFFFFFF : arity) };
+		arity -= ops->m_opcode.m_arg;
+	}
 
 	if (cont)
 	{
@@ -943,6 +951,13 @@ static cfg_t* compile_unify_end_shim(compile_context_t* context, void* param, co
 	(ops++)->m_term.m_pval = &prolite_builtin_unify;
 	ops->m_term.m_pval = cont->m_entry_point;
 
+	for (size_t a = ui->m_var_count + 2; a != 0;)
+	{
+		opcode_t* ops = append_opcodes(context,c->m_tail,1);
+		ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = (a > 0xFFFFFFFF ? 0xFFFFFFFF : a) };
+		a -= ops->m_opcode.m_arg;
+	}
+
 	c->m_always_flags = cont->m_always_flags;
 
 	return c;
@@ -1121,6 +1136,13 @@ static cfg_t* compile_head_end_shim(compile_context_t* context, void* param, con
 
 			c1->m_always_flags = c->m_always_flags;
 			c = goto_next(context,c1,c);
+
+			for (size_t a = next_substs->m_count; a != 0;)
+			{
+				opcode_t* ops = append_opcodes(context,c->m_tail,1);
+				ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = (a > 0xFFFFFFFF ? 0xFFFFFFFF : a) };
+				a -= ops->m_opcode.m_arg;
+			}
 		}
 	}
 	return c;
@@ -1332,15 +1354,16 @@ static cfg_t* compile_type_test(compile_context_t* context, prolite_type_flags_t
 	ops->m_opcode.m_op = OP_RET;
 
 	cfg_t* c = new_cfg(context);
-	ops = append_opcodes(context,c->m_tail,7);
+	ops = append_opcodes(context,c->m_tail,8);
 	(ops++)->m_opcode.m_op = OP_PUSH_CONST;
 	(ops++)->m_term.m_u64val = types;
 	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
 	(ops++)->m_term.m_pval = t;
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
 	(ops++)->m_term.m_pval = &prolite_builtin_type_test;
-	ops->m_term.m_pval = cont->m_entry_point;
-
+	(ops++)->m_term.m_pval = cont->m_entry_point;
+	ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = 2 };
+	
 	c->m_always_flags = cont->m_always_flags;
 
 	return c;
@@ -2009,12 +2032,16 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_PUSH_NULL:
-			fprintf(f,"Push\\ NULL * %u",blk->m_ops[i].m_opcode.m_arg);
+			fprintf(f,"Push\\ NULL\\ *\\ %u",blk->m_ops[i].m_opcode.m_arg);
 			break;
 
 		case OP_PUSH_TERM_REF:
 			fprintf(f,"Push\\ ");
 			dumpTerm(context,blk->m_ops[i+1].m_term.m_pval,f,1);
+			break;
+
+		case OP_POP:
+			fprintf(f,"Pop\\ %u",blk->m_ops[i].m_opcode.m_arg);
 			break;
 
 		default:
@@ -2156,6 +2183,10 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			fprintf(f,"push ");
 			dumpTerm(context,code[1].m_term.m_pval,f,0);
 			fprintf(f,";\n");
+			break;
+
+		case OP_POP:
+			fprintf(f,"pop %u;\n",code->m_opcode.m_arg);
 			break;
 
 		default:

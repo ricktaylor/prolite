@@ -33,7 +33,8 @@ typedef enum optype
 	OP_POP_CUT,
 	OP_PUSH_CONST,
 	OP_PUSH_NULL,
-	OP_PUSH_TERM_REF
+	OP_PUSH_TERM_REF,
+	OP_POP
 } optype_t;
 
 size_t inc_ip(optype_t op);
