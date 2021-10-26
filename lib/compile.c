@@ -54,14 +54,21 @@ typedef struct continuation
 
 typedef struct cse_cfg
 {
-	size_t        m_refcount;
-	cfg_t*        m_cfg;
+	cfg_t*          m_cfg;
+	struct cse_cfg* m_next;
 } cse_cfg_t;
+
+typedef struct cse_previous
+{
+	size_t               m_refcount;
+	cfg_t*               m_cfg;
+	struct cse_previous* m_next;
+} cse_previous_t;
 
 typedef struct cse_info
 {
-	size_t  m_count;
-	cfg_t** m_stubs;
+	cse_cfg_t*      m_stubs;
+	cse_previous_t* m_previous;
 } cse_info_t;
 
 static cfg_block_t* new_cfg_block(compile_context_t* context)
@@ -408,50 +415,53 @@ static int cfg_compare(compile_context_t* context, const cfg_t* c1, const cfg_t*
 
 static cfg_t* compile_cse(compile_context_t* context, void* param, const continuation_t* goal)
 {
-	cse_info_t* cse = param;
 	size_t heap_start = heap_top(context->m_heap);
 	
-	cse_cfg_t* cc = NULL;
 	cfg_t* c = compile_subgoal(context,goal);
 	if (c && c->m_entry_point->m_count >= 4)
 	{
-		for (size_t i = 0; i < cse->m_count; ++i)
+		cse_info_t* cse = param;
+		cse_previous_t* prev = NULL;
+		for (cse_previous_t* p = cse->m_previous; p; p=p->m_next)
 		{
-			cse_cfg_t* cc1 = (cse_cfg_t*)cse->m_stubs[i]->m_entry_point->m_ops[0].m_term.m_pval;
-			if (cfg_compare(context,cc1->m_cfg,c))
+			if (cfg_compare(context,p->m_cfg,c))
 			{
-				++cc1->m_refcount;
-				cc = cc1;
-				c = cc1->m_cfg;
+				++p->m_refcount;
+				prev = p;
+				c = p->m_cfg;
 				heap_reset(context->m_heap,heap_start);
 				break;
 			}
 		}
 
-		if (!cc)
+		if (!prev)
 		{
-			cc = heap_malloc(context->m_heap,sizeof(cse_cfg_t));
-			if (!cc)
+			prev = heap_malloc(context->m_heap,sizeof(cse_previous_t));
+			if (!prev)
 				longjmp(context->m_jmp,1);
 
-			cc->m_refcount = 1;
-			cc->m_cfg = c;
+			*prev = (cse_previous_t){
+				.m_refcount = 1,
+				.m_cfg = c,
+				.m_next = cse->m_previous
+			};
+			cse->m_previous = prev;
 		}
-	}
 	
-	if (cc)
-	{
 		cfg_t* c1 = new_cfg(context);
 
-		cfg_t** new_stubs = heap_realloc(context->m_heap,cse->m_stubs,cse->m_count * sizeof(cfg_t*),(cse->m_count + 1) * sizeof(cfg_t*));
-		if (!new_stubs)
+		cse_cfg_t* stub = heap_malloc(context->m_heap,sizeof(cse_cfg_t));
+		if (!stub)
 			longjmp(context->m_jmp,1);
 
-		cse->m_stubs = new_stubs;
-		cse->m_stubs[cse->m_count++] = c1;
-
+		*stub = (cse_cfg_t){
+			.m_cfg = c1, 
+			.m_next = cse->m_stubs
+		};
+		cse->m_stubs = stub;
+		
 		opcode_t* ops = append_opcodes(context,c1->m_entry_point,1);
-		ops->m_term.m_pval = cc;
+		ops->m_term.m_pval = prev;
 
 		c1->m_always_flags = c->m_always_flags;
 		c1->m_tail = new_cfg_block(context);
@@ -464,11 +474,11 @@ static cfg_t* compile_cse(compile_context_t* context, void* param, const continu
 
 static void complete_cse(compile_context_t* context, cse_info_t* cse)
 {
-	for (size_t i = 0; i < cse->m_count; ++i)
+	for (cse_cfg_t* stub = cse->m_stubs; stub; stub = stub->m_next)
 	{
-		assert(cse->m_stubs[i]->m_entry_point->m_count == 1);
+		assert(stub->m_cfg->m_entry_point->m_count == 1);
 
-		cse_cfg_t* cc = (cse_cfg_t*)cse->m_stubs[i]->m_entry_point->m_ops[0].m_term.m_pval;
+		cse_previous_t* cc = (cse_previous_t*)stub->m_cfg->m_entry_point->m_ops[0].m_term.m_pval;
 		if (cc->m_refcount > 1)
 		{
 			if (!cc->m_cfg->m_tail->m_count || cc->m_cfg->m_tail->m_ops[cc->m_cfg->m_tail->m_count-1].m_opcode.m_op != OP_RET)
@@ -477,25 +487,23 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 				ops->m_opcode.m_op = OP_RET;
 			}
 
-			cse->m_stubs[i]->m_entry_point->m_ops[0].m_opcode.m_op = OP_GOSUB;
-			opcode_t* ops = append_opcodes(context,cse->m_stubs[i]->m_entry_point,3);
+			stub->m_cfg->m_entry_point->m_ops[0].m_opcode.m_op = OP_GOSUB;
+			opcode_t* ops = append_opcodes(context,stub->m_cfg->m_entry_point,3);
 			(ops++)->m_term.m_pval = cc->m_cfg->m_entry_point;
 			(ops++)->m_opcode.m_op = OP_JMP;
-			ops->m_term.m_pval = cse->m_stubs[i]->m_tail;
+			ops->m_term.m_pval = stub->m_cfg->m_tail;
 		}
 		else
 		{
-			cse->m_stubs[i]->m_entry_point->m_ops[0].m_opcode.m_op = OP_JMP;
-			opcode_t* ops = append_opcodes(context,cse->m_stubs[i]->m_entry_point,1);
+			stub->m_cfg->m_entry_point->m_ops[0].m_opcode.m_op = OP_JMP;
+			opcode_t* ops = append_opcodes(context,stub->m_cfg->m_entry_point,1);
 			ops->m_term.m_pval = cc->m_cfg->m_entry_point;
 
 			ops = append_opcodes(context,cc->m_cfg->m_tail,2);
 			(ops++)->m_opcode.m_op = OP_JMP;
-			ops->m_term.m_pval = cse->m_stubs[i]->m_tail;
+			ops->m_term.m_pval = stub->m_cfg->m_tail;
 		}
 	}
-
-	heap_free(context->m_heap,cse->m_stubs,cse->m_count * sizeof(cse_cfg_t*));
 }
 
 static cfg_t* compile_or(compile_context_t* context, const continuation_t* goal)
