@@ -579,9 +579,9 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	context->m_flags = old_flags;	
 }
 
-static void* inline_predicate_call(void* context, void* param, const term_t* goal, const void* cont)
+static void* inline_call(void* context, void* param, const term_t* goal, const void* cont)
 {
-	return compile_predicate_call(context,(const compile_predicate_t*)predicate_map_lookup(&((consult_context_t*)param)->m_predicates,goal),goal,cont);
+	return inline_predicate_call(context,(const compile_predicate_t*)predicate_map_lookup(&((consult_context_t*)param)->m_predicates,goal),goal,cont);
 }
 
 static void compile_statics(void* param, predicate_base_t* p)
@@ -627,7 +627,7 @@ static int consult(context_t* context, const term_t* filename)
 		// Initializer context flags must be the consult flags
 		for (consult_initializer_t* init = cc.m_initializers; init ; init = init->m_next)
 		{
-			compile_goal(context,&inline_predicate_call,&cc,init->m_goal,init->m_var_count);
+			compile_goal(context,&inline_call,&cc,init->m_goal,init->m_var_count);
 		}
 	}
 	

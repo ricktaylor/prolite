@@ -1247,7 +1247,7 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	return c;
 }
 
-void* compile_predicate_call(void* vc, const compile_predicate_t* pred, const term_t* goal, const void* vnext)
+void* inline_predicate_call(void* vc, const compile_predicate_t* pred, const term_t* goal, const void* vnext)
 {
 	compile_context_t* context = vc;
 

@@ -74,6 +74,6 @@ typedef void* (*link_fn_t)(void* context, void* param, const term_t* goal, const
 
 void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const term_t* goal, size_t var_count);
 
-void* compile_predicate_call(void* context, const compile_predicate_t* pred, const term_t* goal, const void* cont);
+void* inline_predicate_call(void* context, const compile_predicate_t* pred, const term_t* goal, const void* cont);
 
 #endif // COMPILE_H_
