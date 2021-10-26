@@ -541,8 +541,6 @@ static cfg_t* compile_or(compile_context_t* context, const continuation_t* goal)
 			.m_next = next
 		});
 
-		complete_cse(context,&cse);
-
 		if (c2)
 		{
 			cfg_t* c_end = new_cfg(context);
@@ -554,6 +552,8 @@ static cfg_t* compile_or(compile_context_t* context, const continuation_t* goal)
 			goto_next(context,c,c2);
 		}
 	}
+
+	complete_cse(context,&cse);
 
 	return c;
 }
@@ -1175,7 +1175,7 @@ static cfg_t* compile_extern(compile_context_t* context, void* clause, const con
 	return c;
 }
 
-static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const compile_clause_t* clause, const continuation_t* next, cse_info_t* cse)
+static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const compile_clause_t* clause, const continuation_t* next)
 {
 	term_t* sp = context->m_stack;
 
@@ -1214,11 +1214,7 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 			.m_next = &(continuation_t){
 				.m_shim = &compile_extern,
 				.m_term = (const term_t*)clause,
-				.m_next = &(continuation_t){
-					.m_shim = &compile_cse,
-					.m_term = (const term_t*)cse,
-					.m_next = next
-				}
+				.m_next = next
 			}
 		}
 	};
@@ -1243,22 +1239,31 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	return c;
 }
 
-void* compile_predicate_call(void* vc, const compile_predicate_t* pred, const term_t* goal, const void* next)
+void* compile_predicate_call(void* vc, const compile_predicate_t* pred, const term_t* goal, const void* vnext)
 {
 	compile_context_t* context = vc;
 
 	if (!pred)
 		return NULL;
 
-	if (pred->m_dynamic)
-		return compile_builtin(context,&prolite_builtin_user_defined,1,goal,next);
+	if (pred->m_dynamic || !pred->m_clauses)
+		return compile_builtin(context,&prolite_builtin_user_defined,1,goal,vnext);
 
 	cse_info_t cse = {0};
+	const continuation_t* next = &(continuation_t){
+		.m_shim = &compile_cse,
+		.m_term = (const term_t*)&cse,
+		.m_next = vnext
+	};
+
+	if (!pred->m_clauses->m_next)
+		next = vnext;
+
 	cfg_t* c_end = NULL;
 	cfg_t* c = NULL;
 	for (const compile_clause_t* clause = pred->m_clauses; clause; clause = clause->m_next)
 	{
-		cfg_t* c1 = compile_head(context,goal,clause,next,&cse);
+		cfg_t* c1 = compile_head(context,goal,clause,next);
 		if (!c)
 			c = c1;
 		else if (c1)
