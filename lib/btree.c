@@ -53,7 +53,7 @@ void* btree_lookup(const btree_t* bt, uint64_t key)
 		size_t i = binary_search(page,key);
 		if (!page->m_internal)
 		{
-			if (i > page->m_count || page->m_keys[i] != key)
+			if (i >= page->m_count || page->m_keys[i] != key)
 				return NULL;
 
 			return values(page)[i];
