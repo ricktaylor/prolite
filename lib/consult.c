@@ -459,7 +459,7 @@ static prolite_stream_t* stream_open(consult_context_t* context, const term_t* t
 	return s;
 }
 
-static void load_file(consult_context_t* context, const term_t* filename)
+static void load_file(consult_context_t* context, const term_t* filename, token_t* buffer)
 {
 	// Check for recursive inclusion
 	for (consult_file_t* f = context->m_includes;f != NULL; f = f->m_next)
@@ -475,6 +475,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 	parser_t parser = 
 	{
 		.m_context = context->m_context,
+		.m_buffer = buffer,
 		.m_flags = context->m_parser->m_flags,
 		.m_operators = context->m_parser->m_operators,
 		.m_char_conversion = context->m_parser->m_char_conversion,
@@ -538,7 +539,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 
 static void include(consult_context_t* context, const term_t* t)
 {
-	load_file(context,t);
+	load_file(context,t,context->m_parser->m_buffer);
 }
 
 static void ensure_loaded(consult_context_t* context, const term_t* t)
@@ -570,8 +571,10 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	
 	char_conv_table_t old_conv = context->m_char_conversion;
 	context->m_char_conversion.m_root = NULL;
-		
-	load_file(context,t);
+
+	token_t buffer = {0};		
+	load_file(context,t,&buffer);
+	allocator_free(context->m_context->m_heap.m_allocator,buffer.m_str);
 
 	context->m_operators = old_ops;
 	context->m_char_conversion = old_conv;
@@ -610,13 +613,16 @@ static int consult(context_t* context, const term_t* filename)
 		.m_operators.m_allocator = &local_allocator,
 		.m_char_conversion.m_allocator = &local_allocator,
 		.m_flags = g_default_prolog_flags,
-		.m_parser = &(parser_t){0}
+		.m_parser = &(parser_t){ 
+			.m_buffer = &(token_t){0}
+		}
 	};
 	cc.m_parser->m_flags = &cc.m_flags;
 	cc.m_parser->m_operators = &cc.m_operators;
 	cc.m_parser->m_char_conversion = &cc.m_char_conversion;
 
-	load_file(&cc,filename);
+	load_file(&cc,filename,cc.m_parser->m_buffer);
+	allocator_free(context->m_heap.m_allocator,cc.m_parser->m_buffer->m_str);
 	if (!cc.m_failed)
 	{
 		predicate_map_enum(&cc.m_predicates,&compile_statics,&cc);

@@ -22,8 +22,7 @@ typedef struct parser
 {
 	context_t*        m_context;
 	prolite_stream_t* m_s;
-	unsigned char     m_buffer[128];
-	unsigned int      m_buffer_len;
+	token_t*          m_buffer;
 	line_info_t       m_line_info;
 	jmp_buf           m_jmp;
 	unsigned          m_eof : 1;

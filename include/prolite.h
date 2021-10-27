@@ -25,6 +25,7 @@ typedef struct prolite_allocator
 {
     void*  m_user_data;
     void* (*m_fn_malloc)(void* user_data, size_t bytes);
+    void* (*m_fn_realloc)(void* user_data, void* ptr, size_t bytes);
 	void  (*m_fn_free)(void* user_data, void* ptr);
 } prolite_allocator_t;
 

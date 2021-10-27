@@ -1390,10 +1390,6 @@ static token_type_t token_next(parser_t* parser, token_t* token)
 
 	do
 	{
-		const unsigned char* start;
-		const unsigned char* p;
-		const unsigned char* pe;
-
 		if (!parser->m_eof)
 		{
 			unsigned char c;
@@ -1413,20 +1409,38 @@ static token_type_t token_next(parser_t* parser, token_t* token)
 				}
 			}
 			else
-				parser->m_buffer[parser->m_buffer_len++] = c;
+			{
+				if (parser->m_buffer->m_alloc == parser->m_buffer->m_len)
+				{
+					size_t new_size = (parser->m_buffer->m_alloc == 0 ? 16 : parser->m_buffer->m_alloc * 2);
+					unsigned char* new_str = allocator_realloc(parser->m_context->m_heap.m_allocator,parser->m_buffer->m_str,new_size);
+					if (!new_str)
+					{
+						allocator_free(parser->m_context->m_heap.m_allocator,parser->m_buffer->m_str);
+						parser->m_buffer->m_str = NULL;
+						parser->m_buffer->m_len = parser->m_buffer->m_alloc = 0;
+						longjmp(parser->m_jmp,1);
+					}
+
+					parser->m_buffer->m_alloc = new_size;
+					parser->m_buffer->m_str = new_str;
+				}
+
+				parser->m_buffer->m_str[parser->m_buffer->m_len++] = c;
+			}
 		}
 
-		p = start = parser->m_buffer;
-		pe = start + parser->m_buffer_len;
+		const unsigned char* p = parser->m_buffer->m_str;
+		const unsigned char* pe = p + parser->m_buffer->m_len;
 
 		tok = parse_token(parser,&state,&p,pe,token);
 
 		if (p == pe)
-			parser->m_buffer_len = 0;
-		else if (p > start)
+			parser->m_buffer->m_len = 0;
+		else if (p > parser->m_buffer->m_str)
 		{
-			memmove(parser->m_buffer,parser->m_buffer + (p - start),pe - p);
-			parser->m_buffer_len = pe - p;
+			memmove(parser->m_buffer->m_str,p,pe - p);
+			parser->m_buffer->m_len = pe - p;
 		}
 	}
 	while (tok == tokNeedMore);
