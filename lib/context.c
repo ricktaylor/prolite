@@ -166,25 +166,23 @@ static int unify(context_t* context, const term_t* t1, const term_t* t2, int wit
 	return 0;
 }
 
-PROLITE_EXPORT void prolite_builtin_unify(context_t* context) 
+static void builtin_unify(context_t* context, int with_occurs_check) 
 {
 	term_t* sp = context->m_stack;
 	builtin_fn_t gosub = (sp++)->m_pval;
+	size_t var_count = (sp++)->m_u64val;
 	const term_t* args = sp;
-	int with_occurs_check = args[0].m_u64val;
-	size_t var_count = args[1].m_u64val;
 	
 	// There are var_count * 2 args on the stack
-	context->m_stack += 2 + (var_count * 2);
+	context->m_stack += (var_count * 2);
 
 	// Now we can unify...
 	int unified = 1;
-	for (size_t i = 0; i < var_count; ++i)
+	for (size_t i = 0; unified && i < var_count; ++i)
 	{
+		unified = unify(context,args,args + 1,with_occurs_check);
+		
 		args += 2;
-
-		if (!unify(context,args,args + 1,with_occurs_check))
-			return;
 	}
 
 	if (unified)
@@ -193,6 +191,15 @@ PROLITE_EXPORT void prolite_builtin_unify(context_t* context)
 	context->m_stack = sp;
 }
 
+PROLITE_EXPORT void prolite_builtin_unify(context_t* context) 
+{
+	builtin_unify(context,0);
+}
+
+PROLITE_EXPORT void prolite_builtin_unify_with_occurs_check(context_t* context)
+{
+	builtin_unify(context,1);
+}
 
 module_t* module_new(context_t* context, const term_t* name)
 {

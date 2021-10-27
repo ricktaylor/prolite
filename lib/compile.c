@@ -962,16 +962,14 @@ static cfg_t* compile_unify_end_shim(compile_context_t* context, void* param, co
 	ops->m_opcode.m_op = OP_RET;
 
 	cfg_t* c = new_cfg(context);
-	ops = append_opcodes(context,c->m_tail,7);
+	ops = append_opcodes(context,c->m_tail,5);
 	(ops++)->m_opcode.m_op = OP_PUSH_CONST;
 	(ops++)->m_term.m_u64val = ui->m_var_count;
-	(ops++)->m_opcode.m_op = OP_PUSH_CONST;
-	(ops++)->m_term.m_u64val = ui->m_with_occurs_check;
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
-	(ops++)->m_term.m_pval = &prolite_builtin_unify;
+	(ops++)->m_term.m_pval = ui->m_with_occurs_check ? &prolite_builtin_unify_with_occurs_check : &prolite_builtin_unify;
 	ops->m_term.m_pval = cont->m_entry_point;
 
-	for (size_t a = ui->m_var_count + 2; a != 0;)
+	for (size_t a = (ui->m_var_count*2) + 1; a != 0;)
 	{
 		opcode_t* ops = append_opcodes(context,c->m_tail,1);
 		ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = (a > 0xFFFFFFFF ? 0xFFFFFFFF : a) };
@@ -1962,6 +1960,7 @@ static const char* builtinName(const builtin_fn_t fn)
 		{ &prolite_builtin_user_defined, "user_defined" },
 		{ &prolite_builtin_callable, "callable" },
 		{ &prolite_builtin_unify, "unify" },
+		{ &prolite_builtin_unify_with_occurs_check, "unify_with_occurs_check" },
 		{ &prolite_builtin_ground, "ground" },
 		{ &prolite_builtin_type_test, "type_test" },
 		{ &prolite_builtin_term_compare, "term_compare" }
