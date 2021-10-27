@@ -510,8 +510,7 @@ static void load_file(consult_context_t* context, const term_t* filename)
 			else
 			{
 				// Unpack clause term
-				compile_clause_t clause = { .m_head = term };
-				clause.m_var_count = (clause.m_head++)->m_u64val;
+				compile_clause_t clause = { .m_var_count = term->m_u64val, .m_head = term+1 };
 				for (size_t i = 0; i < clause.m_var_count; ++i)
 					clause.m_head = get_next_arg(clause.m_head) + 1;
 							
@@ -595,7 +594,7 @@ static void compile_statics(void* param, predicate_base_t* p)
 		for (const compile_clause_t* clause = pred->m_base.m_clauses; clause; clause = clause->m_next)
 		{
 			if (clause->m_body)
-				compile_goal(context->m_context,&inline_predicate_call,context,clause->m_body,clause->m_var_count);
+				compile_goal(context->m_context,&inline_call,context,clause->m_body,clause->m_var_count);
 		}
 	}
 }
