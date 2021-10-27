@@ -200,14 +200,13 @@ static cfg_t* add_branch(compile_context_t* context, cfg_t* c, exec_flags_t flag
 	return c;
 }
 
-static cfg_t* append_ret(compile_context_t* context, cfg_t* c)
+static void append_ret(compile_context_t* context, cfg_block_t* c)
 {
-	if (!c->m_tail->m_count || c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op != OP_RET)
+	if (!c->m_count || c->m_ops[c->m_count-1].m_opcode.m_op != OP_RET)
 	{
-		opcode_t* ops = append_opcodes(context,c->m_tail,1);
+		opcode_t* ops = append_opcodes(context,c,1);
 		ops->m_opcode.m_op = OP_RET;
 	}
-	return c;
 }
 
 static const term_t* deref_var(compile_context_t* context, const term_t* goal)
@@ -506,7 +505,7 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 		cse_previous_t* prev = (cse_previous_t*)stub->m_cfg->m_entry_point->m_ops[0].m_term.m_pval;
 		if (prev->m_refcount > 1)
 		{
-			append_ret(context,prev->m_cfg);
+			append_ret(context,prev->m_cfg->m_tail);
 			
 			stub->m_cfg->m_entry_point->m_ops[0].m_opcode.m_op = OP_GOSUB;
 			opcode_t* ops = append_opcodes(context,stub->m_cfg->m_entry_point,3);
@@ -610,9 +609,8 @@ static cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_
 	if (cont)
 	{
 		ops->m_term.m_pval = cont->m_entry_point;
-		c->m_always_flags = cont->m_always_flags;
-
-		append_ret(context,cont);
+		
+		append_ret(context,cont->m_tail);
 	}
 
 	while (arity)
@@ -963,7 +961,7 @@ static cfg_t* compile_unify_end_shim(compile_context_t* context, void* param, co
 	if (!cont || ui->m_var_count == 0)
 		return cont;
 
-	append_ret(context,cont);
+	append_ret(context,cont->m_tail);
 
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,5);
@@ -980,8 +978,9 @@ static cfg_t* compile_unify_end_shim(compile_context_t* context, void* param, co
 		a -= ops->m_opcode.m_arg;
 	}
 
-	c->m_always_flags = cont->m_always_flags;
-
+	if (ui->m_with_occurs_check)
+		c->m_always_flags = cont->m_always_flags & FLAG_THROW;
+	
 	return c;
 }
 
@@ -1170,27 +1169,55 @@ static cfg_t* compile_head_end_shim(compile_context_t* context, void* param, con
 	return c;
 }
 
+static cfg_t* compile_continue(compile_context_t* context, void* param, const struct continuation* next)
+{
+	assert(!next);
+
+	cfg_t* c = new_cfg(context);
+	opcode_t* ops = append_opcodes(context,c->m_entry_point,1);
+	ops->m_opcode.m_op = OP_CONTINUE;
+
+	return c;
+}
+
 static cfg_t* compile_extern(compile_context_t* context, void* clause, const continuation_t* next)
 {
 	cfg_t* cont = compile_subgoal(context,next);
 
 	if (!((const compile_clause_t*)clause)->m_body)
-		return cont;
-
-	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_EXTERN;
-	(ops++)->m_term.m_pval = clause;
-
-	if (cont)
 	{
-		ops->m_term.m_pval = cont->m_entry_point;
-		c->m_always_flags = cont->m_always_flags;
+		if (cont)
+		{
+			cfg_t* c = new_cfg(context);
+			opcode_t* ops = append_opcodes(context,c->m_tail,2);
+			(ops++)->m_opcode.m_op = OP_GOSUB;
+			ops->m_term.m_pval = cont->m_entry_point;
+			
+			c->m_always_flags = cont->m_always_flags;
 
-		append_ret(context,cont);
+			append_ret(context,cont->m_tail);
+
+			cont = c;
+		}
 	}
+	else
+	{
+		cfg_t* c = new_cfg(context);
+		opcode_t* ops = append_opcodes(context,c->m_tail,3);
+		(ops++)->m_opcode.m_op = OP_EXTERN;
+		(ops++)->m_term.m_pval = clause;
 
-	return c;
+		if (cont)
+		{
+			ops->m_term.m_pval = cont->m_entry_point;
+
+			append_ret(context,cont->m_tail);
+		}
+
+		cont = c;
+	}
+	
+	return cont;
 }
 
 static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const compile_clause_t* clause, const continuation_t* next)
@@ -1238,16 +1265,16 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	};
 
 	if (!clause->m_body)
-		cont->m_next = next;
+		cont->m_next = cont->m_next->m_next;
 
 	cfg_t* c = NULL;
 	const continuation_t* cont2 = compile_unify_head_term(context,goal,clause->m_head,next_substs,&ui,cont);
 	if (cont2)
 	{
 		if (cont2 == cont)
-			c = compile_subgoal(context,cont->m_next);
-		else
-			c = compile_subgoal(context,cont2);
+			cont2 = cont->m_next;
+			
+		c = compile_subgoal(context,cont2);
 	}
 
 	context->m_substs = prev_substs;
@@ -1399,10 +1426,10 @@ void* inline_predicate_call(void* vc, const compile_predicate_t* pred, const ter
 		}
 	}
 
+	complete_cse(context,&cce.m_cse);
+
 	if (c && c_end)
 		goto_next(context,c,c_end);
-
-	complete_cse(context,&cce.m_cse);
 
 	context->m_stack = sp;
 
@@ -1472,7 +1499,7 @@ static cfg_t* compile_type_test(compile_context_t* context, prolite_type_flags_t
 	if (!cont)
 		return NULL;
 
-	append_ret(context,cont);
+	append_ret(context,cont->m_tail);
 
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,8);
@@ -2119,7 +2146,7 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			fprintf(f,"Call\\ ");
 			dumpPI(((const compile_clause_t*)blk->m_ops[i+1].m_term.m_pval)->m_head,f);
 			if (blk->m_ops[i+2].m_term.m_pval)
-				fprintf(f,"|<f%zu> Gosub",i+1);
+				fprintf(f,"\\ %p|<f%zu> Gosub",blk->m_ops[i+2].m_term.m_pval,i+1);
 			break;
 
 		case OP_SET_FLAGS:
@@ -2262,7 +2289,7 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			dumpPI(((const compile_clause_t*)code[1].m_term.m_pval)->m_head,f);
 			fprintf(f,") ");
 			if (code[2].m_term.m_u64val)
-				fprintf(f,"gosub %+d (%zu)",(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
+				fprintf(f,"%p gosub %+d (%zu)",code[1].m_term.m_pval,(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
 			fprintf(f,";\n");
 			break;
 
@@ -2317,17 +2344,6 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 }
 #endif // ENABLE_TESTS
 
-static cfg_t* compile_continue(compile_context_t* context, void* param, const struct continuation* next)
-{
-	assert(!next);
-
-	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_entry_point,1);
-	ops->m_opcode.m_op = OP_CONTINUE;
-
-	return c;
-}
-
 void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const term_t* goal, size_t var_count)
 {
 	size_t heap_start = heap_top(&context->m_heap);
@@ -2359,8 +2375,7 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 		if (!c)
 			c = new_cfg(&cc);
 
-		opcode_t* ops = append_opcodes(&cc,c->m_tail,1);
-		ops->m_opcode.m_op = OP_RET;
+		append_ret(&cc,c->m_tail);
 
 		prolite_allocator_t a = heap_allocator(&context->m_heap);
 		cfg_vec_t blks = { .m_index.m_allocator = &a };
