@@ -596,29 +596,26 @@ static cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_
 		}
 	}
 
-	cfg_t* cont = compile_subgoal(context,next);
-	if (cont)
-	{
-		opcode_t* ops = append_opcodes(context,cont->m_tail,1);
-		ops->m_opcode.m_op = OP_RET;
-	}
-
 	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
 	(ops++)->m_term.m_pval = fn;
+
+	cfg_t* cont = compile_subgoal(context,next);
+	if (cont)
+	{
+		ops->m_term.m_pval = cont->m_entry_point;
+		c->m_always_flags = cont->m_always_flags;
+
+		ops = append_opcodes(context,cont->m_tail,1);
+		ops->m_opcode.m_op = OP_RET;
+	}
 
 	while (arity)
 	{
 		opcode_t* ops = append_opcodes(context,c->m_tail,1);
 		ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = (arity > 0xFFFFFFFF ? 0xFFFFFFFF : arity) };
 		arity -= ops->m_opcode.m_arg;
-	}
-
-	if (cont)
-	{
-		ops->m_term.m_pval = cont->m_entry_point;
-		c->m_always_flags = cont->m_always_flags;
-	}
+	}	
 
 	return c;
 }
@@ -1178,12 +1175,6 @@ static cfg_t* compile_extern(compile_context_t* context, void* clause, const con
 	if (!((const compile_clause_t*)clause)->m_body)
 		return cont;
 
-	if (cont)
-	{
-		opcode_t* ops = append_opcodes(context,cont->m_tail,1);
-		ops->m_opcode.m_op = OP_RET;
-	}
-
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,3);
 	(ops++)->m_opcode.m_op = OP_EXTERN;
@@ -1193,6 +1184,12 @@ static cfg_t* compile_extern(compile_context_t* context, void* clause, const con
 	{
 		ops->m_term.m_pval = cont->m_entry_point;
 		c->m_always_flags = cont->m_always_flags;
+
+		if (!cont->m_tail->m_count || cont->m_tail->m_ops[cont->m_tail->m_count-1].m_opcode.m_op != OP_RET)
+		{
+			ops = append_opcodes(context,cont->m_tail,1);
+			ops->m_opcode.m_op = OP_RET;
+		}
 	}
 
 	return c;
@@ -1751,10 +1748,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 				if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
 				{
 					blk->m_ops[i].m_opcode = (struct op_arg){ .m_op = OP_RET };
-					if (i != blk->m_count - 2)
-						blk->m_ops[i+1].m_opcode = (struct op_arg){ .m_op = OP_NOP };
-					else
-						--blk->m_count;
+					--blk->m_count;
 				}
 				else
 					walk_cfgs(context,blks,*next);
@@ -1796,12 +1790,11 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 				*gosub = (cfg_block_t*)(*gosub)->m_ops[1].m_term.m_pval;
 			}
 
-			// Rewrite GOSUB -> { GOSUB, RET } => GOSUB
 			while ((*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB)
 			{
+				// Rewrite { GOSUB, JMP -> JMP } => { GOSUB -> JMP }
 				if ((*gosub)->m_count == 4 && (*gosub)->m_ops[2].m_opcode.m_op == OP_JMP)
 				{
-					// Rewrite JMP -> JMP => JMP
 					cfg_block_t** next = (cfg_block_t**)&(*gosub)->m_ops[3].m_term.m_pval;
 					while ((*next)->m_count == 2 &&
 						(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
@@ -1809,7 +1802,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 						*next = (cfg_block_t*)(*next)->m_ops[1].m_term.m_pval;
 					}
 
-					// Rewrite JMP -> RET => RET
+					// Rewrite { GOSUB, JMP -> RET => ( GOSUB, RET }
 					if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
 					{
 						(*gosub)->m_ops[2].m_opcode = (struct op_arg){ .m_op = OP_RET };
@@ -1817,7 +1810,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 					}
 				}
 
-				// Rewrite GOSUB -> GOSUB
+				// Rewrite GOSUB -> { GOSUB, RET } => GOSUB
 				while ((*gosub)->m_count == 3 &&
 					(*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB &&
 					(*gosub)->m_ops[2].m_opcode.m_op == OP_RET)
