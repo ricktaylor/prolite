@@ -200,6 +200,16 @@ static cfg_t* add_branch(compile_context_t* context, cfg_t* c, exec_flags_t flag
 	return c;
 }
 
+static cfg_t* append_ret(compile_context_t* context, cfg_t* c)
+{
+	if (!c->m_tail->m_count || c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op != OP_RET)
+	{
+		opcode_t* ops = append_opcodes(context,c->m_tail,1);
+		ops->m_opcode.m_op = OP_RET;
+	}
+	return c;
+}
+
 static const term_t* deref_var(compile_context_t* context, const term_t* goal)
 {
 	if (get_term_type(goal) == prolite_var)
@@ -496,12 +506,8 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 		cse_previous_t* prev = (cse_previous_t*)stub->m_cfg->m_entry_point->m_ops[0].m_term.m_pval;
 		if (prev->m_refcount > 1)
 		{
-			if (!prev->m_cfg->m_tail->m_count || prev->m_cfg->m_tail->m_ops[prev->m_cfg->m_tail->m_count-1].m_opcode.m_op != OP_RET)
-			{
-				opcode_t* ops = append_opcodes(context,prev->m_cfg->m_tail,1);
-				ops->m_opcode.m_op = OP_RET;
-			}
-
+			append_ret(context,prev->m_cfg);
+			
 			stub->m_cfg->m_entry_point->m_ops[0].m_opcode.m_op = OP_GOSUB;
 			opcode_t* ops = append_opcodes(context,stub->m_cfg->m_entry_point,3);
 			(ops++)->m_term.m_pval = prev->m_cfg->m_entry_point;
@@ -606,8 +612,7 @@ static cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_
 		ops->m_term.m_pval = cont->m_entry_point;
 		c->m_always_flags = cont->m_always_flags;
 
-		ops = append_opcodes(context,cont->m_tail,1);
-		ops->m_opcode.m_op = OP_RET;
+		append_ret(context,cont);
 	}
 
 	while (arity)
@@ -958,11 +963,10 @@ static cfg_t* compile_unify_end_shim(compile_context_t* context, void* param, co
 	if (!cont || ui->m_var_count == 0)
 		return cont;
 
-	opcode_t* ops = append_opcodes(context,cont->m_tail,1);
-	ops->m_opcode.m_op = OP_RET;
+	append_ret(context,cont);
 
 	cfg_t* c = new_cfg(context);
-	ops = append_opcodes(context,c->m_tail,5);
+	opcode_t* ops = append_opcodes(context,c->m_tail,5);
 	(ops++)->m_opcode.m_op = OP_PUSH_CONST;
 	(ops++)->m_term.m_u64val = ui->m_var_count;
 	(ops++)->m_opcode.m_op = OP_BUILTIN;
@@ -1183,11 +1187,7 @@ static cfg_t* compile_extern(compile_context_t* context, void* clause, const con
 		ops->m_term.m_pval = cont->m_entry_point;
 		c->m_always_flags = cont->m_always_flags;
 
-		if (!cont->m_tail->m_count || cont->m_tail->m_ops[cont->m_tail->m_count-1].m_opcode.m_op != OP_RET)
-		{
-			ops = append_opcodes(context,cont->m_tail,1);
-			ops->m_opcode.m_op = OP_RET;
-		}
+		append_ret(context,cont);
 	}
 
 	return c;
@@ -1472,11 +1472,10 @@ static cfg_t* compile_type_test(compile_context_t* context, prolite_type_flags_t
 	if (!cont)
 		return NULL;
 
-	opcode_t* ops = append_opcodes(context,cont->m_tail,1);
-	ops->m_opcode.m_op = OP_RET;
+	append_ret(context,cont);
 
 	cfg_t* c = new_cfg(context);
-	ops = append_opcodes(context,c->m_tail,8);
+	opcode_t* ops = append_opcodes(context,c->m_tail,8);
 	(ops++)->m_opcode.m_op = OP_PUSH_CONST;
 	(ops++)->m_term.m_u64val = types;
 	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
