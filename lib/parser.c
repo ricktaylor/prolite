@@ -1458,6 +1458,9 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 
 	if (*next_type == tokFloat)
 	{
+		// Ensure we are NUL terminated
+		token_append_char(parser,next,'\0');
+
 		double dval;
 		errno = 0;
 		dval = strtod((const char*)next->m_str,NULL);
