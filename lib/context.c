@@ -271,6 +271,9 @@ void context_delete(context_t* c)
 {
 	module_delete(c->m_module);
 	//stack_delete(c->m_call_stack);
+	
+	heap_t h = c->m_heap;
+	heap_destroy(&h);
 }
 
 const prolite_environment_t g_default_env = 
