@@ -2037,14 +2037,28 @@ static int std_output_stream_write_slash(struct prolite_stream* s, const void* s
 	const char* str = src;
 	while (len)
 	{
-		const char* c = memchr(str,' ',len);
+		const char* c = NULL;
+		for (const char* s = " >"; *s != '\0'; ++s)
+		{
+			const char* c1 = memchr(str,*s,len);
+			if (c1)
+			{
+				if (!c)
+					c = c1;
+				else if (c1 < c)
+					c = c1;
+			}
+		}
 		if (c)
 		{
 			if (c > str && !fwrite(str,c - str,1,stream->m_file))
 				return feof(stream->m_file) ? 0 : -1;
 
-			if (!fwrite("\\ ",2,1,stream->m_file))
+			if (!fwrite("\\",1,1,stream->m_file) ||
+				!fwrite(c,1,1,stream->m_file))
+			{
 				return feof(stream->m_file) ? 0 : -1;
+			}
 
 			len -= (c - str) + 1;
 			str = c + 1;
