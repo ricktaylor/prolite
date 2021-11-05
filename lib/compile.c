@@ -209,7 +209,7 @@ static void append_ret(compile_context_t* context, cfg_block_t* c)
 	}
 }
 
-static const term_t* deref_var(compile_context_t* context, const term_t* goal)
+const term_t* compile_deref_var(compile_context_t* context, const term_t* goal)
 {
 	if (get_term_type(goal) == prolite_var)
 	{
@@ -217,7 +217,7 @@ static const term_t* deref_var(compile_context_t* context, const term_t* goal)
 		assert(context->m_substs && idx < context->m_substs->m_count);
 		const term_t* g = context->m_substs->m_vals[idx];
 		if (g)
-			goal = deref_var(context,g);
+			goal = compile_deref_var(context,g);
 	}
 	return goal;
 }
@@ -596,7 +596,7 @@ static cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_
 		for (size_t i = 1; i <= arity; ++i)
 		{
 			ops[(arity - i)*2].m_opcode.m_op = OP_PUSH_TERM_REF;
-			ops[(arity - i)*2 + 1].m_term.m_pval = deref_var(context,arg);
+			ops[(arity - i)*2 + 1].m_term.m_pval = compile_deref_var(context,arg);
 			arg = get_next_arg(arg);
 		}
 	}
@@ -657,7 +657,7 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 				size_t arity;
 				for (const term_t* p = get_first_arg(goal,&arity); arity--; p = get_next_arg(p))
 				{
-					if (!compile_is_callable(context,deref_var(context,p)))
+					if (!compile_is_callable(context,compile_deref_var(context,p)))
 						return 0;
 				}
 			}
@@ -694,7 +694,7 @@ static cfg_t* compile_call_inner(compile_context_t* context, const term_t* goal,
 {
 	uint8_t inner_flags = 0;
 	continuation_t cont = {
-		.m_term = deref_var(context,goal),
+		.m_term = compile_deref_var(context,goal),
 		.m_next = &(continuation_t){
 			.m_shim = &compile_call_shim,
 			.m_term = (const term_t*)&inner_flags,
@@ -835,7 +835,7 @@ static int compile_occurs_check(compile_context_t* context, const term_t* t1, co
 
 			for (size_t i = 0; i < arity; ++i)
 			{
-				if (compile_occurs_check(context,t1,deref_var(context,t2)))
+				if (compile_occurs_check(context,t1,compile_deref_var(context,t2)))
 					return 1;
 
 				t2 = get_next_arg(t2);
@@ -933,7 +933,7 @@ static const continuation_t* compile_unify_term(compile_context_t* context, cons
 
 			for (size_t i = 0; i < arity; ++i)
 			{
-				next = compile_unify_term(context,deref_var(context,t1),deref_var(context,t2),ui,next);
+				next = compile_unify_term(context,compile_deref_var(context,t1),compile_deref_var(context,t2),ui,next);
 				if (!next)
 					break;
 
@@ -986,8 +986,8 @@ static cfg_t* compile_unify_end_shim(compile_context_t* context, void* param, co
 
 static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, const term_t* t2, cfg_t* (*fn)(compile_context_t*,const continuation_t*), const continuation_t* next, int with_occurs_check)
 {
-	t1 = deref_var(context,t1);
-	t2 = deref_var(context,t2);
+	t1 = compile_deref_var(context,t1);
+	t2 = compile_deref_var(context,t2);
 
 	if (compile_occurs_check(context,t1,t2))
 		return NULL;
@@ -1017,7 +1017,7 @@ static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, 
 	};
 
 	cfg_t* c = NULL;
-	const continuation_t* cont2 = compile_unify_term(context,deref_var(context,t1),deref_var(context,t2),&ui,cont);
+	const continuation_t* cont2 = compile_unify_term(context,compile_deref_var(context,t1),compile_deref_var(context,t2),&ui,cont);
 	if (cont2)
 	{
 		if (cont2 == cont)
@@ -1078,7 +1078,7 @@ static const continuation_t* compile_unify_head_term(compile_context_t* context,
 		assert(next_substs && idx < next_substs->m_count);
 
 		if (next_substs->m_vals[idx] != NULL)
-			return compile_unify_term(context,t1,deref_var(context,next_substs->m_vals[idx]),ui,next);
+			return compile_unify_term(context,t1,compile_deref_var(context,next_substs->m_vals[idx]),ui,next);
 
 		next_substs->m_vals[idx] = t1;
 		return next;
@@ -1104,7 +1104,7 @@ static const continuation_t* compile_unify_head_term(compile_context_t* context,
 
 			for (size_t i = 0; i < arity; ++i)
 			{
-				next = compile_unify_head_term(context,deref_var(context,t1),t2,next_substs,ui,next);
+				next = compile_unify_head_term(context,compile_deref_var(context,t1),t2,next_substs,ui,next);
 				if (!next)
 					break;
 
@@ -1479,7 +1479,7 @@ static cfg_t* compile_not_proveable(compile_context_t* context, const continuati
 
 static cfg_t* compile_callable(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 	switch (compile_is_callable(context,g1))
 	{
 	case 1:
@@ -1519,7 +1519,7 @@ static cfg_t* compile_type_test(compile_context_t* context, prolite_type_flags_t
 
 static cfg_t* compile_var(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 
 	if (get_term_type(g1) != prolite_var)
 		return NULL;
@@ -1529,7 +1529,7 @@ static cfg_t* compile_var(compile_context_t* context, const continuation_t* goal
 
 static cfg_t* compile_atom(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -1545,7 +1545,7 @@ static cfg_t* compile_atom(compile_context_t* context, const continuation_t* goa
 
 static cfg_t* compile_integer(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -1561,7 +1561,7 @@ static cfg_t* compile_integer(compile_context_t* context, const continuation_t* 
 
 static cfg_t* compile_float(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -1577,7 +1577,7 @@ static cfg_t* compile_float(compile_context_t* context, const continuation_t* go
 
 static cfg_t* compile_atomic(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -1595,7 +1595,7 @@ static cfg_t* compile_atomic(compile_context_t* context, const continuation_t* g
 
 static cfg_t* compile_compound(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -1613,7 +1613,7 @@ static cfg_t* compile_compound(compile_context_t* context, const continuation_t*
 
 static cfg_t* compile_nonvar(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 	if (get_term_type(g1) == prolite_var)
 		return compile_type_test(context,type_flag_var,1,g1,goal->m_next);
 
@@ -1622,7 +1622,7 @@ static cfg_t* compile_nonvar(compile_context_t* context, const continuation_t* g
 
 static cfg_t* compile_number(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
@@ -1639,7 +1639,7 @@ static cfg_t* compile_number(compile_context_t* context, const continuation_t* g
 
 static int compile_is_ground(compile_context_t* context, const term_t* goal)
 {
-	goal = deref_var(context,goal);
+	goal = compile_deref_var(context,goal);
 	prolite_type_t t = get_term_type(goal);
 	if (t == prolite_var)
 		return 0;
@@ -1658,7 +1658,7 @@ static int compile_is_ground(compile_context_t* context, const term_t* goal)
 
 static cfg_t* compile_ground(compile_context_t* context, const continuation_t* goal)
 {
-	const term_t* g1 = deref_var(context,get_first_arg(goal->m_term,NULL));
+	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 
 	if (compile_is_ground(context,g1))
 		return compile_subgoal(context,goal->m_next);
