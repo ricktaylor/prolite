@@ -99,9 +99,10 @@ void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const te
 	}
 
 	if (!ball)
+	{
 		push_out_of_memory_error(context,NULL);
-
-	ball = context->m_stack;
+		ball = context->m_stack;
+	}
 
 	// Clear throw flag
 	context->m_flags &= ~FLAG_THROW;
@@ -111,7 +112,7 @@ void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const te
 	// 	return (*gosub)(context);
 
 	// Rethrow...
-	builtin_throw(context,context->m_stack);
+	builtin_throw(context,ball);
 }
 
 struct stack_output
