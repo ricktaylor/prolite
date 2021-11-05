@@ -29,7 +29,6 @@ void prolite_builtin_throw(context_t* context);
 BUILTIN_THUNK(call,1)
 BUILTIN_THUNK(callN,1)
 BUILTIN_THUNK(catch,1)
-BUILTIN_THUNK(throw,1)
 BUILTIN_THUNK(halt,1)
 BUILTIN_THUNK(callable,1)
 BUILTIN_THUNK(ground,1)

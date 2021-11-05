@@ -7,8 +7,6 @@ void push_out_of_memory_error(context_t* context, const term_t* t)
 {
 	// 't' just gives us debug info
 
-	// It would be nice to be able to avoid malloc calls here
-
 	// TODO
 	assert(0);
 	
@@ -67,53 +65,53 @@ void builtin_halt(context_t* context, builtin_fn_t gosub, size_t argc, const ter
 	context->m_flags |= FLAG_HALT;
 }
 
-void builtin_throw(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) 
+static void builtin_throw(context_t* context, const term_t* arg) 
 {
-	assert(!gosub);
-	
 	prolite_allocator_t a = heap_allocator(&context->m_heap);
 	size_t var_count = 0;
-	term_t* ball = copy_term(&a,context,argv[0],0,&var_count);
-	if (!ball)
-		return push_out_of_memory_error(context,argv[0]);
-	
-	if (var_count)
+	term_t* ball = copy_term(&a,context,arg,0,&var_count);
+	if (ball && var_count)
 	{
 		allocator_free(&a,ball);
-		return push_instantiation_error(context,argv[0]);
+		push_instantiation_error(context,arg);
+		ball = copy_term(&a,context,context->m_stack,0,&var_count);
 	}
 	
 	context->m_flags |= FLAG_THROW;
 	context->m_exception = ball;
 }
 
+PROLITE_EXPORT void prolite_builtin_throw(context_t* context) 
+{
+	builtin_throw(context,deref_local_var(context,context->m_stack+1));
+}
+
 void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) 
 {
-	assert(context->m_exception);
+	term_t* ball = NULL;
+	if (context->m_exception)
+	{
+		ball = push_term(context,context->m_exception,0,NULL);
 
+		prolite_allocator_t a = heap_allocator(&context->m_heap);
+		allocator_free(&a,context->m_exception);
+		context->m_exception = NULL;
+	}
+
+	if (!ball)
+		push_out_of_memory_error(context,NULL);
+		
+	ball = context->m_stack;
+	
 	// Clear throw flag
 	context->m_flags &= ~FLAG_THROW;
 
-	term_t* exception = context->m_exception;
-	context->m_exception = NULL;
-
-	term_t* ball = push_term(context,exception,0,NULL);
-	if (!ball)
-	{
-		prolite_allocator_t a = heap_allocator(&context->m_heap);
-		allocator_free(&a,exception);
-		return push_out_of_memory_error(context,argv[0]);
-	}
+	// TODO!
+	// if (unify_terms(context,ball,argv[0]))
+	// return (*gosub)(context);
 	
-	// if (unify_terms(context,ball,arg1))
-	// (*gosub)(context);
-	// else
-	{
-		// Rethrow...
-		context->m_flags = FLAG_THROW;
-
-		context->m_exception = exception;
-	}
+	// Rethrow...
+	builtin_throw(context,context->m_stack);
 }
 
 struct stack_output
