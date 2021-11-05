@@ -1986,8 +1986,7 @@ static const char* builtinName(const builtin_fn_t fn)
 		{ &prolite_builtin_unify, "unify" },
 		{ &prolite_builtin_unify_with_occurs_check, "unify_with_occurs_check" },
 		{ &prolite_builtin_ground, "ground" },
-		{ &prolite_builtin_type_test, "type_test" },
-		{ &prolite_builtin_term_compare, "term_compare" }
+		{ &prolite_builtin_type_test, "type_test" }
 	};
 
 	for (size_t i=0; i < sizeof(bns)/sizeof(bns[0]); ++i)

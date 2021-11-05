@@ -142,11 +142,11 @@ void directive_set_prolog_flag(context_t* context, const term_t* flag)
 	set_prolog_flag_inner(context,flag,value);
 }
 
-void builtin_set_prolog_flag(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+void builtin_set_prolog_flag(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
 {
 	set_prolog_flag_inner(context,argv[0],argv[1]);
 	if (!(context->m_flags & FLAG_THROW))
-		(*gosub)(context);
+		builtin_gosub(context,gosub);
 }
 
 const term_t* deref_local_var(context_t* context, const term_t* t)
@@ -166,39 +166,29 @@ static int unify(context_t* context, const term_t* t1, const term_t* t2, int wit
 	return 0;
 }
 
-static void builtin_unify(context_t* context, int with_occurs_check) 
+static void builtin_unify(context_t* context, const void* gosub, int with_occurs_check, size_t var_count, const term_t* args) 
 {
-	term_t* sp = context->m_stack;
-	builtin_fn_t gosub = (sp++)->m_pval;
-	size_t var_count = (sp++)->m_u64val;
-	const term_t* args = sp;
-	
-	// There are var_count * 2 args on the stack
-	context->m_stack += (var_count * 2);
-
 	// Now we can unify...
 	int unified = 1;
 	for (size_t i = 0; unified && i < var_count; ++i)
 	{
-		unified = unify(context,args,args + 1,with_occurs_check);
+		unified = unify(context,deref_local_var(context,args[0].m_pval),deref_local_var(context,args[1].m_pval),with_occurs_check);
 		
 		args += 2;
 	}
 
 	if (unified)
-		(*gosub)(context);
-	
-	context->m_stack = sp;
+		builtin_gosub(context,gosub);
 }
 
-PROLITE_EXPORT void prolite_builtin_unify(context_t* context) 
+PROLITE_EXPORT void prolite_builtin_unify(context_t* context, const void* gosub) 
 {
-	builtin_unify(context,0);
+	builtin_unify(context,gosub,0,context->m_stack->m_u64val,context->m_stack+1);
 }
 
-PROLITE_EXPORT void prolite_builtin_unify_with_occurs_check(context_t* context)
+PROLITE_EXPORT void prolite_builtin_unify_with_occurs_check(context_t* context, const void* gosub)
 {
-	builtin_unify(context,1);
+	builtin_unify(context,gosub,1,context->m_stack->m_u64val,context->m_stack+1);
 }
 
 module_t* module_new(context_t* context, const term_t* name)
@@ -306,16 +296,16 @@ PROLITE_EXPORT void prolite_context_destroy(prolite_context_t context)
 
 // MOVE THIS!!
 
-void builtin_user_defined(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+void builtin_user_defined(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
 {
 }
 
-void builtin_asserta(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+void builtin_asserta(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
 {
 	
 }
 
-void builtin_assertz(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+void builtin_assertz(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
 {
 	
 }

@@ -283,7 +283,7 @@ static void assert_clause(context_t* context, const term_t* t, int z)
 
 }
 
-void builtin_assert(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+void builtin_assert(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
 {
 	const term_t* goal = (context->m_stack--)->m_pval;
 	const builtin_fn_t gosub = (context->m_stack--)->m_pval;
@@ -293,7 +293,7 @@ void builtin_assert(context_t* context, builtin_fn_t gosub, size_t argc, const t
 	assert_clause(context,deref_local_var(context,get_first_arg(goal,NULL)),assertz);
 }
 
-void builtin_user_defined(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+void builtin_user_defined(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
 {
 	return !!(context->m_flags & FLAG_THROW);
 }

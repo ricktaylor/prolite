@@ -497,14 +497,14 @@ void directive_op(context_t* context, operator_table_t* ops, const term_t* goal)
 	set_op(context,ops,p,s,op);
 }
 
-void builtin_op(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+void builtin_op(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
 {
 	set_op(context,&context->m_module->m_operators,argv[0],argv[1],argv[2]);
 	if (!(context->m_flags & FLAG_THROW))
-		(*gosub)(context);
+		builtin_gosub(context,gosub);
 }
 
-void builtin_current_op(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+void builtin_current_op(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
 {
 
 }
