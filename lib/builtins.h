@@ -1,7 +1,7 @@
 #ifndef BUILTINS_H_
 #define BUILTINS_H_
 
-#define DECLARE_BUILTIN_FUNCTION(f,p,a) \
+#define DECLARE_BUILTIN_FUNCTION(f,a,p) \
 void prolite_builtin_##f(context_t* context);
 
 #include "builtin_functions.h"

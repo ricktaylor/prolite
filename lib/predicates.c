@@ -152,7 +152,7 @@ int predicate_is_builtin(const term_t* pred)
 #define DECLARE_BUILTIN_INTRINSIC(f,p) \
 	case (p):
 
-#define DECLARE_BUILTIN_FUNCTION(f,p,a) \
+#define DECLARE_BUILTIN_FUNCTION(f,a,p) \
 	case (p):
 
 #include "builtin_functions.h"
@@ -237,7 +237,7 @@ void term_to_clause(context_t* context, const term_t* t, clause_t* clause)
 	case (n):
 
 #undef DECLARE_BUILTIN_FUNCTION
-#define DECLARE_BUILTIN_FUNCTION(f,p,a) \
+#define DECLARE_BUILTIN_FUNCTION(f,a,p) \
 	case (p):
 
 #include "builtin_functions.h"

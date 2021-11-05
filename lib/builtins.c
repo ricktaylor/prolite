@@ -2,26 +2,26 @@
 
 void prolite_builtin_throw(context_t* context);
 
+#define ARG_EXPAND_0
+#define ARG_EXPAND_1 deref_local_var(context,sp[1].m_pval)
+#define ARG_EXPAND_2 ARG_EXPAND_1, deref_local_var(context,sp[2].m_pval)
+#define ARG_EXPAND_3 ARG_EXPAND_2, deref_local_var(context,sp[3].m_pval)
+
 #undef DECLARE_BUILTIN_FUNCTION
 #define BUILTIN_THUNK(f,n) \
 	void builtin_##f(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]); \
 	PROLITE_EXPORT void prolite_builtin_##f(context_t* context) { \
 		term_t* sp = context->m_stack; \
-		builtin_fn_t gosub = (sp++)->m_pval; \
-		const term_t* args = sp; \
-		context->m_stack = sp + n; \
-		for (size_t i = 0; i < n; ++i) \
-			args[i] = deref_local_var(context,args[i]); \
-		builtin_##f(context,gosub,n,&args); \
+		builtin_fn_t gosub = sp->m_pval; \
+		const term_t* args[] = { ARG_EXPAND_##n }; \
+		context->m_stack = sp + n + 1; \
+		builtin_##f(context,gosub,n,args); \
 		if (context->m_flags & FLAG_THROW) \
 			prolite_builtin_throw(context); \
 		context->m_stack = sp; \
 	}
 
-#define DECLARE_BUILTIN_FUNCTION_0(f,p) BUILTIN_THUNK(f,0)
-#define DECLARE_BUILTIN_FUNCTION_1(f,p) BUILTIN_THUNK(f,1)
-#define DECLARE_BUILTIN_FUNCTION_2(f,p) BUILTIN_THUNK(f,2)
-#define DECLARE_BUILTIN_FUNCTION_3(f,p) BUILTIN_THUNK(f,3)
+#define DECLARE_BUILTIN_FUNCTION(f,a,p) BUILTIN_THUNK(f,a)
 
 #include "builtin_functions.h"
 

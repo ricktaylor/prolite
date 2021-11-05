@@ -1685,7 +1685,7 @@ static cfg_t* compile_subterm(compile_context_t* context, const continuation_t* 
 	case (p): c = compile_##f(context,goal); break;
 
 #undef DECLARE_BUILTIN_FUNCTION
-#define DECLARE_BUILTIN_FUNCTION(f,p,a) \
+#define DECLARE_BUILTIN_FUNCTION(f,a,p) \
 	case (p): c = compile_builtin(context,&prolite_builtin_##f,a,a ? get_first_arg(goal->m_term,NULL) : NULL,goal->m_next); break;
 
 #include "builtin_functions.h"
@@ -1963,7 +1963,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 #define DECLARE_BUILTIN_INTRINSIC(f,p)
 
 #undef DECLARE_BUILTIN_FUNCTION
-#define DECLARE_BUILTIN_FUNCTION(f,p,a) \
+#define DECLARE_BUILTIN_FUNCTION(f,a,p) \
 	{ &prolite_builtin_##f, #f },
 
 static const char* builtinName(const builtin_fn_t fn)
