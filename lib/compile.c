@@ -2360,6 +2360,7 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 
 void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const term_t* goal, size_t var_count)
 {
+	term_t* sp = context->m_stack;
 	size_t heap_start = heap_top(&context->m_heap);
 	compile_context_t cc =
 	{
@@ -2424,6 +2425,10 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 			memcpy(context->m_stack,code,blks.m_total * sizeof(opcode_t));
 		}
 		(--context->m_stack)->m_u64val = blks.m_total;
+	}
+	else
+	{
+		context->m_stack = sp;
 	}
 
 	fprintf(stdout,"Mem: %zu\n",heap_top(&context->m_heap) - heap_start);
