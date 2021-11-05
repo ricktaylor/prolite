@@ -11,13 +11,12 @@ void prolite_builtin_throw(context_t* context);
 #define BUILTIN_THUNK(f,n) \
 	void builtin_##f(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]); \
 	PROLITE_EXPORT void prolite_builtin_##f(context_t* context) { \
-		builtin_fn_t gosub = context->m_stack->m_pval; \
 		const term_t* args[] = { ARG_EXPAND_##n }; \
-		builtin_##f(context,gosub,n,args); \
-		if (context->m_flags & FLAG_THROW) { \
+		term_t* sp = context->m_stack; \
+		builtin_##f(context,context->m_stack->m_pval,n,args); \
+		if (context->m_flags & FLAG_THROW) \
 			prolite_builtin_throw(context); \
-			++context->m_stack; \
-		} \
+		context->m_stack = sp; \
 	}
 
 #define DECLARE_BUILTIN_FUNCTION(f,a,p) BUILTIN_THUNK(f,a)

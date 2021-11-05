@@ -9,7 +9,7 @@ void push_out_of_memory_error(context_t* context, const term_t* t)
 
 	// TODO
 	assert(0);
-	
+
 	context->m_flags = FLAG_THROW;
 }
 
@@ -19,7 +19,7 @@ void push_instantiation_error(context_t* context, const term_t* t)
 
 	// TODO
 	assert(0);
-	
+
 	context->m_flags = FLAG_THROW;
 }
 
@@ -27,7 +27,7 @@ void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const t
 {
 	// TODO
 	assert(0);
-	
+
 	context->m_flags = FLAG_THROW;
 }
 
@@ -35,7 +35,7 @@ void push_type_error(context_t* context, uint64_t p1, const term_t* t)
 {
 	// TODO
 	assert(0);
-	
+
 	context->m_flags = FLAG_THROW;
 }
 
@@ -43,7 +43,7 @@ void push_domain_error(context_t* context, uint64_t p1, const term_t* t)
 {
 	// TODO
 	assert(0);
-	
+
 	context->m_flags = FLAG_THROW;
 }
 
@@ -51,7 +51,7 @@ void push_representation_error(context_t* context, uint64_t p1, const term_t* t)
 {
 	// TODO
 	assert(0);
-	
+
 	context->m_flags = FLAG_THROW;
 }
 
@@ -61,11 +61,11 @@ void builtin_halt(context_t* context, builtin_fn_t gosub, size_t argc, const ter
 
 	// TODO
 	assert(0);
-	
+
 	context->m_flags |= FLAG_HALT;
 }
 
-static void builtin_throw(context_t* context, const term_t* arg) 
+static void builtin_throw(context_t* context, const term_t* arg)
 {
 	prolite_allocator_t a = heap_allocator(&context->m_heap);
 	size_t var_count = 0;
@@ -76,20 +76,18 @@ static void builtin_throw(context_t* context, const term_t* arg)
 		push_instantiation_error(context,arg);
 		ball = copy_term(&a,context,context->m_stack,0,&var_count);
 	}
-	
+
 	context->m_flags |= FLAG_THROW;
 	context->m_exception = ball;
 }
 
-PROLITE_EXPORT void prolite_builtin_throw(context_t* context) 
+PROLITE_EXPORT void prolite_builtin_throw(context_t* context)
 {
 	builtin_throw(context,deref_local_var(context,context->m_stack+1));
 }
 
-void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) 
+void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
 {
-	term_t* sp = context->m_stack;
-
 	term_t* ball = NULL;
 	if (context->m_exception)
 	{
@@ -102,20 +100,18 @@ void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const te
 
 	if (!ball)
 		push_out_of_memory_error(context,NULL);
-		
+
 	ball = context->m_stack;
-	
+
 	// Clear throw flag
 	context->m_flags &= ~FLAG_THROW;
 
 	// TODO!
 	// if (unify_terms(context,ball,argv[0]))
-	// 	(*gosub)(context);
-	// else
-	// Rethrow...
-	// 	builtin_throw(context,context->m_stack);
+	// 	return (*gosub)(context);
 
-	context->m_stack = sp;
+	// Rethrow...
+	builtin_throw(context,context->m_stack);
 }
 
 struct stack_output
@@ -143,7 +139,7 @@ static int stack_stream_write(struct prolite_stream* s, const void* src, size_t 
 					*err = prolite_stream_error_no_room;
 				return 0;
 			}
-			
+
 			stream->m_alloc = new_size;
 			stream->m_ptr = p;
 		}
@@ -156,7 +152,7 @@ static int stack_stream_write(struct prolite_stream* s, const void* src, size_t 
 
 void unhandled_exception(context_t* context, const operator_table_t* ops)
 {
-	struct stack_output s = 
+	struct stack_output s =
 	{
 		.m_base.m_fn_write = &stack_stream_write,
 		.m_heap = &context->m_heap
@@ -164,7 +160,7 @@ void unhandled_exception(context_t* context, const operator_table_t* ops)
 
 	const term_t* exception = context->m_stack;
 	term_t* sp = (term_t*)get_next_arg(exception);
-			
+
 	do
 	{
 		context->m_flags &= ~FLAG_THROW;
@@ -179,6 +175,6 @@ void unhandled_exception(context_t* context, const operator_table_t* ops)
 
 	if (s.m_alloc)
 		heap_free(s.m_heap,s.m_ptr,s.m_alloc);
-		
+
 	context->m_stack = sp;
 }
