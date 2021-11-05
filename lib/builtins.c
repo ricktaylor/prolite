@@ -1,6 +1,6 @@
 #include "context.h"
 
-void prolite_builtin_throw(context_t* context);
+void builtin_throw(context_t* context);
 
 #define ARG_EXPAND_0
 #define ARG_EXPAND_1 deref_local_var(context,context->m_stack[1].m_pval)
@@ -14,9 +14,10 @@ void prolite_builtin_throw(context_t* context);
 		const term_t* args[] = { ARG_EXPAND_##n }; \
 		term_t* sp = context->m_stack; \
 		builtin_##f(context,context->m_stack->m_pval,n,args); \
-		if (context->m_flags & FLAG_THROW) \
-			prolite_builtin_throw(context); \
-		context->m_stack = sp; \
+		if (context->m_flags & FLAG_THROW) { \
+			builtin_throw(context); \
+			context->m_stack = sp; \
+		} \
 	}
 
 #define DECLARE_BUILTIN_FUNCTION(f,a,p) BUILTIN_THUNK(f,a)

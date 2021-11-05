@@ -65,7 +65,7 @@ void builtin_halt(context_t* context, builtin_fn_t gosub, size_t argc, const ter
 	context->m_flags |= FLAG_HALT;
 }
 
-static void builtin_throw(context_t* context, const term_t* arg)
+static void builtin_throw_inner(context_t* context, const term_t* arg)
 {
 	prolite_allocator_t a = heap_allocator(&context->m_heap);
 	size_t var_count = 0;
@@ -81,13 +81,20 @@ static void builtin_throw(context_t* context, const term_t* arg)
 	context->m_exception = ball;
 }
 
+void builtin_throw(context_t* context)
+{
+	builtin_throw_inner(context,deref_local_var(context,context->m_stack));
+}
+
 PROLITE_EXPORT void prolite_builtin_throw(context_t* context)
 {
-	builtin_throw(context,deref_local_var(context,context->m_stack+1));
+	builtin_throw_inner(context,deref_local_var(context,(context->m_stack+1)->m_pval));
 }
 
 void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
 {
+	term_t* sp = context->m_stack;
+
 	term_t* ball = NULL;
 	if (context->m_exception)
 	{
@@ -109,10 +116,12 @@ void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const te
 
 	// TODO!
 	// if (unify_terms(context,ball,argv[0]))
-	// 	return (*gosub)(context);
+	// 	(*gosub)(context);
+	// else
+	// 	Rethrow...
+		builtin_throw_inner(context,ball);
 
-	// Rethrow...
-	builtin_throw(context,ball);
+	context->m_stack = sp;
 }
 
 struct stack_output
