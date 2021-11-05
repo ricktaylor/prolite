@@ -625,19 +625,26 @@ static cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_
 
 static cfg_t* compile_throw(compile_context_t* context, const continuation_t* goal)
 {
-	cfg_t* c = compile_builtin(context,&prolite_builtin_throw,1,get_first_arg(goal->m_term,NULL),NULL);
-	return set_flags(context,c,FLAG_THROW);
+	cfg_t* c = compile_builtin(context,&prolite_builtin_throw,1,get_first_arg(goal->m_term,NULL),&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+	c->m_always_flags |= FLAG_THROW;
+	return c;
 }
 
 static cfg_t* compile_halt(compile_context_t* context, const continuation_t* goal)
 {
 	cfg_t* c;
 	if (get_term_type(goal->m_term) == prolite_atom)
+	{
 		c = new_cfg(context);
+		set_flags(context,c,FLAG_HALT);
+	}
 	else
-		c = compile_builtin(context,&prolite_builtin_halt,1,get_first_arg(goal->m_term,NULL),NULL);
+	{
+		c = compile_builtin(context,&prolite_builtin_halt,1,get_first_arg(goal->m_term,NULL),&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+		c->m_always_flags |= FLAG_HALT;
+	}
 
-	return set_flags(context,c,FLAG_HALT);
+	return c;
 }
 
 static int compile_is_callable(compile_context_t* context, const term_t* goal)

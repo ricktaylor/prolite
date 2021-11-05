@@ -57,8 +57,20 @@ void push_representation_error(context_t* context, uint64_t p1, const term_t* t)
 	context->m_flags = FLAG_THROW;
 }
 
+void builtin_halt(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[])
+{
+	assert(!gosub);
+
+	// TODO
+	assert(0);
+	
+	context->m_flags |= FLAG_HALT;
+}
+
 void builtin_throw(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) 
 {
+	assert(!gosub);
+	
 	prolite_allocator_t a = heap_allocator(&context->m_heap);
 	size_t var_count = 0;
 	term_t* ball = copy_term(&a,context,argv[0],0,&var_count);
@@ -71,9 +83,8 @@ void builtin_throw(context_t* context, builtin_fn_t gosub, size_t argc, const te
 		return push_instantiation_error(context,argv[0]);
 	}
 	
-	// Don't set FLAG_THROW - it gets set in the gosub
+	context->m_flags |= FLAG_THROW;
 	context->m_exception = ball;
-	(*gosub)(context);
 }
 
 void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) 

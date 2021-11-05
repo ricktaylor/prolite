@@ -42,7 +42,6 @@ BUILTIN_THUNK(user_defined,1)
 
 void builtin_call(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
 void builtin_callN(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
-void builtin_halt(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
 void builtin_callable(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
 void builtin_ground(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
 void builtin_term_compare(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) {  }
