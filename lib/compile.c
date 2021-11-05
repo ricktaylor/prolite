@@ -1746,9 +1746,8 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 	blks->m_blks[blks->m_count++] = bi;
 	blks->m_total += blk->m_count;
 
-	int have_branches = 0;
-	int have_gosubs = 0;
-
+	int do_again = 0;
+	
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
 		cfg_block_t** gosub = NULL;
@@ -1788,7 +1787,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 				{
 					*next = (*next)->m_ops[1].m_term.m_pval;
 				}
-				have_branches = 1;
+				do_again = 1;
 			}
 			break;
 
@@ -1843,25 +1842,17 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 				}
 			}
 
-			have_gosubs = 1;
+			do_again = 1;
 		}
 	}
 
-	if (have_branches)
-	{
-		for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
-		{
-			if (blk->m_ops[i].m_opcode.m_op == OP_BRANCH)
-				walk_cfgs(context,blks,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
-		}
-	}
-
-	if (have_gosubs)
+	if (do_again)
 	{
 		for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 		{
 			switch (blk->m_ops[i].m_opcode.m_op)
 			{
+			case OP_BRANCH:
 			case OP_GOSUB:
 				walk_cfgs(context,blks,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
 				break;
