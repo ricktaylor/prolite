@@ -88,6 +88,8 @@ PROLITE_EXPORT void prolite_builtin_throw(context_t* context)
 
 void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const term_t* argv[]) 
 {
+	term_t* sp = context->m_stack;
+
 	term_t* ball = NULL;
 	if (context->m_exception)
 	{
@@ -108,10 +110,12 @@ void builtin_catch(context_t* context, builtin_fn_t gosub, size_t argc, const te
 
 	// TODO!
 	// if (unify_terms(context,ball,argv[0]))
-	// return (*gosub)(context);
-	
+	// 	(*gosub)(context);
+	// else
 	// Rethrow...
-	builtin_throw(context,context->m_stack);
+	// 	builtin_throw(context,context->m_stack);
+
+	context->m_stack = sp;
 }
 
 struct stack_output
