@@ -10,11 +10,13 @@ void prolite_builtin_throw(context_t* context);
 		builtin_fn_t gosub = (sp++)->m_pval; \
 		const term_t* args = sp; \
 		context->m_stack = sp + n; \
-		builtin_##f(context,gosub,n,n ? &args : NULL); \
+		for (size_t i = 0; i < n; ++i) \
+			args[i] = deref_local_var(context,args[i]); \
+		builtin_##f(context,gosub,n,&args); \
 		if (context->m_flags & FLAG_THROW) \
 			prolite_builtin_throw(context); \
 		context->m_stack = sp; \
-	}	
+	}
 
 #define DECLARE_BUILTIN_FUNCTION_0(f,p) BUILTIN_THUNK(f,0)
 #define DECLARE_BUILTIN_FUNCTION_1(f,p) BUILTIN_THUNK(f,1)
