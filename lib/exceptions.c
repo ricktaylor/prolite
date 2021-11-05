@@ -90,7 +90,7 @@ PROLITE_EXPORT void prolite_builtin_throw(context_t* context, const void* gosub)
 {
 	assert(!gosub);
 
-	builtin_throw_inner(context,deref_local_var(context,(context->m_stack+1)->m_pval));
+	builtin_throw_inner(context,deref_local_var(context,context->m_stack->m_pval));
 }
 
 void builtin_catch(context_t* context, const void* gosub, size_t argc, const term_t* argv[])

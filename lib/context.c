@@ -168,17 +168,26 @@ static int unify(context_t* context, const term_t* t1, const term_t* t2, int wit
 
 static void builtin_unify(context_t* context, const void* gosub, int with_occurs_check, size_t var_count, const term_t* args) 
 {
+	term_t* sp = context->m_stack;
+
 	// Now we can unify...
 	int unified = 1;
-	for (size_t i = 0; unified && i < var_count; ++i)
+	for (size_t i = 0; unified && i < var_count && !(context->m_flags & FLAG_THROW); ++i)
 	{
 		unified = unify(context,deref_local_var(context,args[0].m_pval),deref_local_var(context,args[1].m_pval),with_occurs_check);
 		
 		args += 2;
 	}
 
-	if (unified)
-		builtin_gosub(context,gosub);
+	if (context->m_flags & FLAG_THROW) 
+	{
+		builtin_throw(context);
+	
+		// Pop the gosub and argument
+		context->m_stack = sp;
+	}
+	else if (unified)
+		builtin_gosub(context,gosub);	
 }
 
 PROLITE_EXPORT void prolite_builtin_unify(context_t* context, const void* gosub) 

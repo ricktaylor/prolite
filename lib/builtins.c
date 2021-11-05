@@ -1,7 +1,5 @@
 #include "context.h"
 
-void builtin_throw(context_t* context);
-
 #define ARG_EXPAND_0
 #define ARG_EXPAND_1 deref_local_var(context,context->m_stack[0].m_pval)
 #define ARG_EXPAND_2 ARG_EXPAND_1, deref_local_var(context,context->m_stack[1].m_pval)

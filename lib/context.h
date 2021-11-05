@@ -84,6 +84,7 @@ extern const prolite_environment_t g_default_env;
 
 typedef void (*builtin_fn_t)(context_t* context, const void* gosub);
 void builtin_gosub(context_t* context, const void* gosub);
+void builtin_throw(context_t* context);
 
 const term_t* deref_local_var(context_t* context, const term_t* t);
 
