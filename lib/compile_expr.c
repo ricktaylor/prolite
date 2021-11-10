@@ -197,10 +197,42 @@ static cfg_t* combine_binary_op(compile_context_t* context, optype_t op, cfg_t* 
 	{
 		if (*regs1 == regs2)
 		{
-			opcode_t* ops = append_opcodes(context,c1->m_tail,3);
-			(ops++)->m_opcode.m_op = op;
-			(ops++)->m_term.m_u64val = *regs1;
-			(ops++)->m_term.m_u64val = *regs1 - 1;
+			int adjusted = 0;
+			if (c1->m_tail->m_count >= 3)
+			{
+				switch (c1->m_tail->m_ops[c1->m_tail->m_count-3].m_opcode.m_op)
+				{
+				case OP_LOAD_IREG:
+				case OP_SET_IREG:
+					if (op == OP_MOV_I)
+					{
+						adjusted = 1;
+						++c1->m_tail->m_ops[c1->m_tail->m_count-2].m_term.m_u64val;
+					}
+					break;
+
+				case OP_SET_DREG:
+				case OP_LOAD_DREG:
+				case OP_CVT_I2D:
+					if (op == OP_MOV_D)
+					{
+						adjusted = 1;
+						++c1->m_tail->m_ops[c1->m_tail->m_count-2].m_term.m_u64val;
+					}
+					break;
+
+				default:
+					break;
+				}
+			}
+
+			if (!adjusted)
+			{
+				opcode_t* ops = append_opcodes(context,c1->m_tail,3);
+				(ops++)->m_opcode.m_op = op;
+				(ops++)->m_term.m_u64val = *regs1;
+				(ops++)->m_term.m_u64val = *regs1 - 1;
+			}
 			++(*regs1);
 		}
 		*result = *regs1;
@@ -746,6 +778,7 @@ static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, c
 	(ops++)->m_term.m_pval = &prolite_builtin_expression;
 	//ops->m_term.m_pval = NULL;
 
+	subst->m_is_double = 0;
 	cfg_t* c_int = compile_subgoal(context,next);
 	
 	subst->m_is_double = 1;
