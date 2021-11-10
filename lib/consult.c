@@ -581,6 +581,8 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	context->m_flags = old_flags;	
 }
 
+#include <stdio.h>
+
 static void* inline_call(void* context, void* param, const term_t* goal, const void* cont)
 {
 	return inline_predicate_call(context,(const compile_predicate_t*)predicate_map_lookup(&((consult_context_t*)param)->m_predicates,goal),goal,cont);
@@ -597,7 +599,14 @@ static void compile_statics(void* param, predicate_base_t* p)
 		for (const compile_clause_t* clause = pred->m_base.m_clauses; clause; clause = clause->m_next)
 		{
 			if (clause->m_body)
+			{
+				string_t s;
+				size_t arity;
+				get_predicate(clause->m_head,&s,&arity,NULL);
+				fprintf(stdout,"=======================\nCompiling %.*s/%zu\n",(int)s.m_len,s.m_str,arity);
+				
 				compile_goal(context->m_context,&inline_call,context,clause->m_body,clause->m_var_count);
+			}
 		}
 	}
 }

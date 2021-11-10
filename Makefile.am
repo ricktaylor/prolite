@@ -26,9 +26,11 @@ libprolite_la_SOURCES = \
 	lib/char_conv.c \
 	lib/consult.c \
 	lib/exceptions.c \
-	lib/write_term.c
+	lib/write_term.c \
+	lib/compile_expr.c
 
 libprolite_la_LDFLAGS = -version-number $(shell echo $(VERSION) | grep -oP '^\d+.\d+.\d+' | sed 's/\./:/g')
+libprolite_la_LIBADD = -lm
 
 bin_PROGRAMS = prolite
 

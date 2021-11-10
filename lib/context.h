@@ -82,11 +82,18 @@ typedef struct context
 
 extern const prolite_environment_t g_default_env;
 
-typedef void (*builtin_fn_t)(context_t* context, const void* gosub);
-void builtin_gosub(context_t* context, const void* gosub);
+typedef void (*builtin_fn_t)(context_t* context, const term_t* gosub);
+void builtin_gosub(context_t* context, const term_t* gosub);
 void builtin_throw(context_t* context);
 
 const term_t* deref_local_var(context_t* context, const term_t* t);
+int unify_terms(context_t* context, const term_t* t1, const term_t* t2, int with_occurs_check);
+
+static inline void* stack_malloc(term_t** stack, size_t bytes)
+{
+	(*stack) -= bytes_to_cells(bytes,sizeof(term_t));
+	return *stack;
+}
 
 term_t* push_term(context_t* context, const term_t* src, int allow_external, size_t* var_count);
 term_t* copy_term(prolite_allocator_t* allocator, context_t* context, const term_t* src, int allow_external, size_t* var_count);
@@ -100,6 +107,7 @@ void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const t
 void push_type_error(context_t* context, uint64_t p1, const term_t* t);
 void push_domain_error(context_t* context, uint64_t p1, const term_t* t);
 void push_representation_error(context_t* context, uint64_t p1, const term_t* t);
+void push_evaluable_error(context_t* context, const term_t* t);
 
 void unhandled_exception(context_t* context, const operator_table_t* ops);
 

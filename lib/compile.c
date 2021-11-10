@@ -4,12 +4,6 @@
 #include <string.h>
 #include <stdarg.h>
 
-typedef struct cfg_block
-{
-	size_t    m_count;
-	opcode_t* m_ops;
-} cfg_block_t;
-
 typedef struct cfg_block_info
 {
 	intptr_t           m_offset;
@@ -23,34 +17,6 @@ typedef struct cfg_vec
 	cfg_block_info_t** m_blks;
 	btree_t            m_index;
 } cfg_vec_t;
-
-typedef struct cfg
-{
-	cfg_block_t* m_entry_point;
-	cfg_block_t* m_tail;
-	uint8_t      m_always_flags;
-} cfg_t;
-
-typedef struct compile_context
-{
-	term_t*          m_stack;
-	heap_t*          m_heap;
-	substitutions_t* m_substs;
-	jmp_buf          m_jmp;
-	link_fn_t        m_link_fn;
-	void*            m_link_param;
-} compile_context_t;
-
-struct continuation;
-
-typedef cfg_t* (*shim_fn_t)(compile_context_t* context, void* param, const struct continuation* next);
-
-typedef struct continuation
-{
-	const term_t*              m_term;
-	shim_fn_t                  m_shim;
-	const struct continuation* m_next;
-} continuation_t;
 
 typedef struct cse_cfg
 {
@@ -95,7 +61,7 @@ static cfg_block_t* new_cfg_block(compile_context_t* context)
 	return b;
 }
 
-static opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, size_t count)
+opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, size_t count)
 {
 	opcode_t* ret = blk->m_ops;
 	if (count)
@@ -108,10 +74,11 @@ static opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, si
 		memset(ret,0,count * sizeof(opcode_t));
 		blk->m_count += count;
 	}
+
 	return ret;
 }
 
-static cfg_t* new_cfg(compile_context_t* context)
+cfg_t* new_cfg(compile_context_t* context)
 {
 	cfg_t* c = heap_malloc(context->m_heap,sizeof(cfg_t));
 	if (!c)
@@ -180,7 +147,7 @@ static cfg_t* clear_flags(compile_context_t* context, cfg_t* c, exec_flags_t fla
 	return c;
 }
 
-static cfg_t* goto_next(compile_context_t* context, cfg_t* c, cfg_t* next)
+cfg_t* goto_next(compile_context_t* context, cfg_t* c, cfg_t* next)
 {
 	opcode_t* ops = append_opcodes(context,c->m_tail,2);
 	(ops++)->m_opcode.m_op = OP_JMP;
@@ -190,7 +157,7 @@ static cfg_t* goto_next(compile_context_t* context, cfg_t* c, cfg_t* next)
 	return c;
 }
 
-static cfg_t* add_branch(compile_context_t* context, cfg_t* c, exec_flags_t flags, cfg_t* next)
+cfg_t* add_branch(compile_context_t* context, cfg_t* c, exec_flags_t flags, cfg_t* next)
 {
 	opcode_t* ops = append_opcodes(context,c->m_tail,2);
 	ops->m_opcode.m_op = OP_BRANCH;
@@ -200,7 +167,7 @@ static cfg_t* add_branch(compile_context_t* context, cfg_t* c, exec_flags_t flag
 	return c;
 }
 
-static void append_ret(compile_context_t* context, cfg_block_t* c)
+void append_ret(compile_context_t* context, cfg_block_t* c)
 {
 	if (!c->m_count || c->m_ops[c->m_count-1].m_opcode.m_op != OP_RET)
 	{
@@ -221,8 +188,6 @@ const term_t* compile_deref_var(compile_context_t* context, const term_t* goal)
 	}
 	return goal;
 }
-
-static cfg_t* compile_subgoal(compile_context_t* context, const continuation_t* goal);
 
 static cfg_t* compile_true(compile_context_t* context, const continuation_t* goal)
 {
@@ -262,12 +227,12 @@ static cfg_t* compile_and(compile_context_t* context, const continuation_t* goal
 	});
 }
 
-static cfg_t* compile_once_shim(compile_context_t* context, void* param, const continuation_t* next)
+static cfg_t* compile_once_shim(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
 	cfg_t* c = compile_subgoal(context,next);
 	if (c)
 	{
-		*(uint8_t*)param = c->m_always_flags;
+		*(uint8_t*)term = c->m_always_flags;
 
 		if (!(c->m_always_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT)))
 			set_flags(context,c,FLAG_CUT);
@@ -339,6 +304,28 @@ size_t inc_ip(optype_t op)
 	case OP_BUILTIN:
 	case OP_EXTERN:
 		ip += 2;
+		break;
+
+	case OP_PUSH_IREG:
+	case OP_PUSH_DREG:
+		++ip;
+		break;
+	
+	case OP_SET_IREG:
+	case OP_SET_DREG:
+	case OP_LOAD_IREG:
+	case OP_LOAD_DREG:
+	case OP_MOV_I:
+	case OP_MOV_D:
+	case OP_CVT_I2D:
+		ip += 2;
+		break;
+		
+	case OP_ADD_I:
+	case OP_ADD_D:
+	case OP_SUB_I:
+	case OP_SUB_D:
+		ip += 3;
 		break;
 
 	default:
@@ -435,7 +422,7 @@ static int cfg_compare(compile_context_t* context, const cfg_t* c1, const cfg_t*
 	return r;
 }
 
-static cfg_t* compile_cse(compile_context_t* context, void* param, const continuation_t* next)
+static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
 	// Common Sub-expression Elimination (CSE)
 
@@ -444,7 +431,7 @@ static cfg_t* compile_cse(compile_context_t* context, void* param, const continu
 	cfg_t* c = compile_subgoal(context,next);
 	if (c && c->m_entry_point->m_count >= 4)
 	{
-		cse_info_t* cse = param;
+		cse_info_t* cse = (cse_info_t*)term;
 		cse_previous_t* prev = NULL;
 		for (cse_previous_t* p = cse->m_previous; p; p=p->m_next)
 		{
@@ -586,7 +573,7 @@ static cfg_t* compile_or(compile_context_t* context, const continuation_t* goal)
 	return c;
 }
 
-static cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_t arity, const term_t* arg, const continuation_t* next)
+cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_t arity, const term_t* arg, const continuation_t* next)
 {
 	cfg_t* c = new_cfg(context);
 
@@ -680,12 +667,12 @@ static int compile_is_callable(compile_context_t* context, const term_t* goal)
 	}
 }
 
-static cfg_t* compile_call_shim(compile_context_t* context, void* param, const continuation_t* next)
+static cfg_t* compile_call_shim(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
 	cfg_t* c = compile_subgoal(context,next);
 	if (c)
 	{
-		*(uint8_t*)param = c->m_always_flags;
+		*(uint8_t*)term = c->m_always_flags;
 
 		if (!(c->m_always_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT)))
 		{
@@ -757,12 +744,12 @@ static cfg_t* compile_callN(compile_context_t* context, const continuation_t* go
 	return c;
 }
 
-static cfg_t* compile_resume(compile_context_t* context, void* param, const continuation_t* next)
+static cfg_t* compile_resume(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
 	cfg_t* c = new_cfg(context);
 	clear_flags(context,c,FLAG_THROW);
 
-	cfg_t* cont = compile_call_inner(context,param,next);
+	cfg_t* cont = compile_call_inner(context,term,next);
 	if (cont)
 	{
 		c->m_always_flags = cont->m_always_flags;
@@ -857,9 +844,9 @@ static int compile_occurs_check(compile_context_t* context, const term_t* t1, co
 	return 0;
 }
 
-static cfg_t* compile_unify_shim(compile_context_t* context, void* param, const continuation_t* next)
+static cfg_t* compile_unify_shim(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
-	const term_t** goals = param;
+	const term_t** goals = (const term_t**)term;
 
 	size_t idx = get_var_index(goals[0]);
 	assert(context->m_substs && idx < context->m_substs->m_count);
@@ -896,9 +883,8 @@ static const continuation_t* compile_unify_var(compile_context_t* context, const
 
 	++ui->m_var_count;
 
-	context->m_stack -= bytes_to_cells(sizeof(continuation_t),sizeof(term_t));
-	continuation_t* c = (continuation_t*)context->m_stack;
-
+	continuation_t* c = stack_malloc(&context->m_stack,sizeof(continuation_t));
+	
 	(--context->m_stack)->m_pval = t2;
 	(--context->m_stack)->m_pval = t1;
 
@@ -960,9 +946,9 @@ static const continuation_t* compile_unify_term(compile_context_t* context, cons
 	return NULL;
 }
 
-static cfg_t* compile_unify_end_shim(compile_context_t* context, void* param, const continuation_t* next)
+static cfg_t* compile_unify_end_shim(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
-	unify_info_t* ui = param;
+	unify_info_t* ui = (unify_info_t*)term;
 
 	cfg_t* cont = compile_subgoal(context,next);
 	if (!cont || ui->m_var_count == 0)
@@ -1004,18 +990,15 @@ static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, 
 	substitutions_t* prev_substs = context->m_substs;
 	if (context->m_substs)
 	{
-		context->m_stack -= bytes_to_cells(sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count),sizeof(term_t));
-		substitutions_t* substs = (substitutions_t*)context->m_stack;
-
+		substitutions_t* substs = stack_malloc(&context->m_stack,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
 		substs->m_count = context->m_substs->m_count;
 		memcpy(substs->m_vals,context->m_substs->m_vals,context->m_substs->m_count * sizeof(term_t*));
 
 		context->m_substs = substs;
 	}
 
-	context->m_stack -= bytes_to_cells(sizeof(continuation_t),sizeof(term_t));
-	continuation_t* cont = (continuation_t*)context->m_stack;
-
+	continuation_t* cont = stack_malloc(&context->m_stack,sizeof(continuation_t));
+	
 	unify_info_t ui = { .m_with_occurs_check = with_occurs_check };
 	*cont = (continuation_t){
 		.m_shim = &compile_unify_end_shim,
@@ -1038,6 +1021,11 @@ static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, 
 	context->m_stack = sp;
 
 	return c;
+}
+
+cfg_t* compile_unify_terms(compile_context_t* context, const term_t* t1, const term_t* t2, const continuation_t* next)
+{
+	return compile_unify_inner(context,t1,t2,&compile_subgoal,next,0);
 }
 
 static cfg_t* compile_unify(compile_context_t* context, const continuation_t* goal)
@@ -1131,12 +1119,12 @@ static const continuation_t* compile_unify_head_term(compile_context_t* context,
 	return NULL;
 }
 
-static cfg_t* compile_head_end_shim(compile_context_t* context, void* param, const continuation_t* next)
+static cfg_t* compile_head_end_shim(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
 	cfg_t* c = compile_subgoal(context,next);
 	if (c)
 	{
-		substitutions_t* next_substs = param;
+		substitutions_t* next_substs = (substitutions_t*)term;
 		if (next_substs && next_substs->m_count)
 		{
 			cfg_t* c1 = new_cfg(context);
@@ -1176,7 +1164,7 @@ static cfg_t* compile_head_end_shim(compile_context_t* context, void* param, con
 	return c;
 }
 
-static cfg_t* compile_continue(compile_context_t* context, void* param, const struct continuation* next)
+static cfg_t* compile_continue(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
 	assert(!next);
 
@@ -1187,11 +1175,12 @@ static cfg_t* compile_continue(compile_context_t* context, void* param, const st
 	return c;
 }
 
-static cfg_t* compile_extern(compile_context_t* context, void* clause, const continuation_t* next)
+static cfg_t* compile_extern(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
 	cfg_t* cont = compile_subgoal(context,next);
+	const compile_clause_t* clause = (const compile_clause_t*)term;
 
-	if (!((const compile_clause_t*)clause)->m_body)
+	if (!clause->m_body)
 	{
 		if (cont)
 		{
@@ -1232,9 +1221,7 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	substitutions_t* prev_substs = context->m_substs;
 	if (context->m_substs)
 	{
-		context->m_stack -= bytes_to_cells(sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count),sizeof(term_t));
-		substitutions_t* substs = (substitutions_t*)context->m_stack;
-
+		substitutions_t* substs = stack_malloc(&context->m_stack,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
 		substs->m_count = context->m_substs->m_count;
 		memcpy(substs->m_vals,context->m_substs->m_vals,context->m_substs->m_count * sizeof(term_t*));
 
@@ -1246,16 +1233,13 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	substitutions_t* next_substs = NULL;
 	if (clause->m_var_count)
 	{
-		context->m_stack -= bytes_to_cells(sizeof(substitutions_t) + (sizeof(term_t) * clause->m_var_count),sizeof(term_t));
-		next_substs = (substitutions_t*)context->m_stack;
-
+		next_substs = stack_malloc(&context->m_stack,sizeof(substitutions_t) + (sizeof(term_t) * clause->m_var_count));
 		next_substs->m_count = clause->m_var_count;
 		memset(next_substs->m_vals,0,clause->m_var_count * sizeof(term_t*));
 	}
 
-	context->m_stack -= bytes_to_cells(sizeof(continuation_t),sizeof(term_t));
-	continuation_t* cont = (continuation_t*)context->m_stack;
-
+	continuation_t* cont = stack_malloc(&context->m_stack,sizeof(continuation_t));
+	
 	unify_info_t ui = {0};
 	*cont = (continuation_t){
 		.m_shim = &compile_unify_end_shim,
@@ -1346,11 +1330,11 @@ static int match_substs(const compile_context_t* context, const substitutions_t*
 	return 1;
 }
 
-static cfg_t* compile_cce(compile_context_t* context, void* param, const continuation_t* next)
+static cfg_t* compile_cce(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
 	// Common Continuation Elimination (CCE)
 
-	cce_info_t* cce = param;
+	cce_info_t* cce = (cce_info_t*)term;
 
 	for (cce_previous_t* p = cce->m_previous; p; p=p->m_next)
 	{
@@ -1368,7 +1352,7 @@ static cfg_t* compile_cce(compile_context_t* context, void* param, const continu
 			return p->m_cfg;
 	}
 
-	cfg_t* c = compile_cse(context,&cce->m_cse,next);
+	cfg_t* c = compile_cse(context,(const term_t*)&cce->m_cse,next);
 	if (c)
 	{
 		cce_previous_t* p = heap_malloc(context->m_heap,sizeof(cce_previous_t));
@@ -1673,6 +1657,8 @@ static cfg_t* compile_ground(compile_context_t* context, const continuation_t* g
 	return compile_builtin(context,&prolite_builtin_ground,1,g1,goal->m_next);
 }
 
+cfg_t* compile_is(compile_context_t* context, const continuation_t* goal);
+
 static cfg_t* compile_subterm(compile_context_t* context, const continuation_t* goal)
 {
 	cfg_t* c = NULL;
@@ -1721,13 +1707,13 @@ static cfg_t* compile_subterm(compile_context_t* context, const continuation_t* 
 	return c;
 }
 
-static cfg_t* compile_subgoal(compile_context_t* context, const continuation_t* goal)
+cfg_t* compile_subgoal(compile_context_t* context, const continuation_t* goal)
 {
 	cfg_t* c = NULL;
 	if (!goal)
 		c = new_cfg(context);
 	else if (goal->m_shim)
-		c = (*goal->m_shim)(context,(void*)goal->m_term,goal->m_next);
+		c = (*goal->m_shim)(context,goal->m_term,goal->m_next);
 	else if (goal->m_term)
 		c = compile_subterm(context,goal);
 	return c;
@@ -1777,8 +1763,8 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 				// Rewrite JMP -> RET => RET
 				if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
 				{
-					blk->m_ops[i].m_opcode = (struct op_arg){ .m_op = OP_RET };
-					--blk->m_count;
+					//blk->m_ops[i].m_opcode = (struct op_arg){ .m_op = OP_RET };
+					//--blk->m_count;
 				}
 				else
 					walk_cfgs(context,blks,*next);
@@ -1866,7 +1852,8 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 
 			case OP_BUILTIN:
 			case OP_EXTERN:
-				walk_cfgs(context,blks,(cfg_block_t*)blk->m_ops[i+2].m_term.m_pval);
+				if (blk->m_ops[i+2].m_term.m_pval)
+					walk_cfgs(context,blks,(cfg_block_t*)blk->m_ops[i+2].m_term.m_pval);
 				break;
 
 			default:
@@ -1980,13 +1967,20 @@ static const char* builtinName(const builtin_fn_t fn)
 		{ &prolite_builtin_callN, "call/N" },
 		{ &prolite_builtin_catch, "catch" },
 		{ &prolite_builtin_throw, "throw", },
+		{ &prolite_builtin_throw_evaluable, "throw_evaluable", },
+		{ &prolite_builtin_throw_zero_div, "throw_zero_div", },
+		{ &prolite_builtin_throw_underflow, "throw_underflow", },
+		{ &prolite_builtin_throw_integer_overflow, "throw_integer_overflow", },
+		{ &prolite_builtin_throw_float_overflow, "throw_float_overflow", },
 		{ &prolite_builtin_halt, "halt" },
 		{ &prolite_builtin_user_defined, "user_defined" },
 		{ &prolite_builtin_callable, "callable" },
 		{ &prolite_builtin_unify, "unify" },
 		{ &prolite_builtin_unify_with_occurs_check, "unify_with_occurs_check" },
+		{ &prolite_builtin_unify2, "unify2" },
 		{ &prolite_builtin_ground, "ground" },
-		{ &prolite_builtin_type_test, "type_test" }
+		{ &prolite_builtin_type_test, "type_test" },
+		{ &prolite_builtin_expression, "expression" }
 	};
 
 	for (size_t i=0; i < sizeof(bns)/sizeof(bns[0]); ++i)
@@ -2200,8 +2194,60 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			fprintf(f,"Pop\\ %u",blk->m_ops[i].m_opcode.m_arg);
 			break;
 
+		case OP_PUSH_IREG:
+			fprintf(f,"Push\\ $I%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val);
+			break;
+
+		case OP_PUSH_DREG:
+			fprintf(f,"Push\\ $D%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val);
+			break;
+
+		case OP_SET_IREG:
+			fprintf(f,"$I%zu\\ =\\ %" PRId64,(size_t)blk->m_ops[i+1].m_term.m_u64val,blk->m_ops[i+2].m_term.m_u64val);
+			break;
+
+		case OP_SET_DREG:
+			fprintf(f,"$D%zu\\ =\\ %g",(size_t)blk->m_ops[i+1].m_term.m_u64val,blk->m_ops[i+2].m_term.m_dval);
+			break;
+
+		case OP_LOAD_IREG:
+			fprintf(f,"$I%zu\\ =\\ (int)SP[%zu]",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			break;
+			
+		case OP_LOAD_DREG:
+			fprintf(f,"$D%zu\\ =\\ (double)SP[%zu]",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			break;
+
+		case OP_MOV_I:
+			fprintf(f,"$I%zu\\ =\\ $I%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			break;
+
+		case OP_MOV_D:
+			fprintf(f,"$D%zu\\ =\\ $D%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			break;
+
+		case OP_CVT_I2D:
+			fprintf(f,"$D%zu\\ =\\ $I%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			break;
+		
+		case OP_ADD_I:
+			fprintf(f,"$I%zu\\ =\\ $I%zu\\ +\\ $I%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			break;
+
+		case OP_ADD_D:
+			fprintf(f,"$D%zu\\ =\\ $D%zu\\ +\\ $D%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			break;
+
+		case OP_SUB_I:
+			fprintf(f,"$I%zu\\ =\\ $I%zu\\ -\\ $I%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			break;
+
+		case OP_SUB_D:
+			fprintf(f,"$D%zu\\ =\\ $D%zu\\ -\\ $D%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			break;
+
 		default:
-			fprintf(f,"WTF? %zu",(size_t)blk->m_ops[i].m_term.m_u64val);
+			fprintf(f,"OP %zu",(size_t)blk->m_ops[i].m_opcode.m_op);
 			break;
 		}
 	}
@@ -2345,8 +2391,60 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			fprintf(f,"pop %u;\n",code->m_opcode.m_arg);
 			break;
 
+		case OP_PUSH_IREG:
+			fprintf(f,"push $I%zu;\n",(size_t)code[1].m_term.m_u64val);
+			break;
+
+		case OP_PUSH_DREG:
+			fprintf(f,"push $D%zu;\n",(size_t)code[1].m_term.m_u64val);
+			break;
+
+		case OP_SET_IREG:
+			fprintf(f,"$I%zu = %" PRId64 ";\n",(size_t)code[1].m_term.m_u64val,code[2].m_term.m_u64val);
+			break;
+
+		case OP_SET_DREG:
+			fprintf(f,"$D%zu = %g;\n",(size_t)code[1].m_term.m_u64val,code[2].m_term.m_dval);
+			break;
+
+		case OP_LOAD_IREG:
+			fprintf(f,"$I%zu = (int)SP[%zu];\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			break;
+			
+		case OP_LOAD_DREG:
+			fprintf(f,"$D%zu = (double)SP[%zu];\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			break;
+
+		case OP_MOV_I:
+			fprintf(f,"$I%zu = $I%zu;\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			break;
+
+		case OP_MOV_D:
+			fprintf(f,"$D%zu = $D%zu;\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			break;
+
+		case OP_CVT_I2D:
+			fprintf(f,"$D%zu = $I%zu;\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			break;
+		
+		case OP_ADD_I:
+			fprintf(f,"$I%zu = $I%zu + $I%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			break;
+
+		case OP_ADD_D:
+			fprintf(f,"$D%zu = $D%zu + $D%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			break;
+
+		case OP_SUB_I:
+			fprintf(f,"$I%zu = $I%zu - $I%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			break;
+
+		case OP_SUB_D:
+			fprintf(f,"$D%zu = $D%zu - $D%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			break;
+
 		default:
-			fprintf(f,"WTF? %zu;\n",(size_t)code->m_term.m_u64val);
+			fprintf(f,"OP %zu;\n",(size_t)code->m_opcode.m_op);
 			break;
 		}
 	}
@@ -2418,8 +2516,8 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 #endif
 
 			// Put pcode on the stack... JIT later...
-			context->m_stack -= bytes_to_cells(blks.m_total * sizeof(opcode_t),sizeof(term_t));
-			memcpy(context->m_stack,code,blks.m_total * sizeof(opcode_t));
+			opcode_t* ops = stack_malloc(&context->m_stack,blks.m_total * sizeof(opcode_t));
+			memcpy(ops,code,blks.m_total * sizeof(opcode_t));
 		}
 		(--context->m_stack)->m_u64val = blks.m_total;
 	}

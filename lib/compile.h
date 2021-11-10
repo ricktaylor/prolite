@@ -34,7 +34,23 @@ typedef enum optype
 	OP_PUSH_CONST,
 	OP_PUSH_NULL,
 	OP_PUSH_TERM_REF,
-	OP_POP
+	OP_POP,
+
+	// Expression ops...
+	OP_PUSH_IREG,
+	OP_PUSH_DREG,
+	OP_SET_IREG,
+	OP_SET_DREG,
+	OP_LOAD_IREG,
+	OP_LOAD_DREG,
+	OP_MOV_I,
+	OP_MOV_D,
+	OP_CVT_I2D,
+	OP_ADD_I,
+	OP_ADD_D,
+	OP_SUB_I,
+	OP_SUB_D,
+
 } optype_t;
 
 size_t inc_ip(optype_t op);
@@ -50,6 +66,42 @@ typedef union opcode
 	op_arg_t m_opcode;
 	term_t   m_term;
 } opcode_t;
+
+typedef struct cfg_block
+{
+	size_t    m_count;
+	opcode_t* m_ops;
+} cfg_block_t;
+
+typedef struct cfg
+{
+	cfg_block_t* m_entry_point;
+	cfg_block_t* m_tail;
+	uint8_t      m_always_flags;
+} cfg_t;
+
+typedef void* (*link_fn_t)(void* context, void* param, const term_t* goal, const void* cont);
+
+typedef struct compile_context
+{
+	term_t*          m_stack;
+	heap_t*          m_heap;
+	substitutions_t* m_substs;
+	jmp_buf          m_jmp;
+	link_fn_t        m_link_fn;
+	void*            m_link_param;
+} compile_context_t;
+
+struct continuation;
+
+typedef cfg_t* (*shim_fn_t)(compile_context_t* context, const term_t* term, const struct continuation* next);
+
+typedef struct continuation
+{
+	const term_t*              m_term;
+	shim_fn_t                  m_shim;
+	const struct continuation* m_next;
+} continuation_t;
 
 typedef struct compile_clause
 {
@@ -70,7 +122,17 @@ typedef struct compile_predicate
 
 static_assert(offsetof(compile_predicate_t,m_base) == 0,"structure members reorganised");
 
-typedef void* (*link_fn_t)(void* context, void* param, const term_t* goal, const void* cont);
+const term_t* compile_deref_var(compile_context_t* context, const term_t* goal);
+
+cfg_t* new_cfg(compile_context_t* context);
+opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, size_t count);
+cfg_t* goto_next(compile_context_t* context, cfg_t* c, cfg_t* next);
+cfg_t* add_branch(compile_context_t* context, cfg_t* c, exec_flags_t flags, cfg_t* next);
+void append_ret(compile_context_t* context, cfg_block_t* c);
+
+cfg_t* compile_unify_terms(compile_context_t* context, const term_t* t1, const term_t* t2, const continuation_t* next);
+cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_t arity, const term_t* arg, const continuation_t* next);
+cfg_t* compile_subgoal(compile_context_t* context, const continuation_t* goal);
 
 void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const term_t* goal, size_t var_count);
 

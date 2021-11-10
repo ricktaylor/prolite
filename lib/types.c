@@ -705,7 +705,7 @@ int term_precedes(const term_t* t1, const term_t* t2)
 	return r;
 }
 
-void builtin_type_test(context_t* context, const void* gosub, size_t argc, const term_t* argv[]) 
+void builtin_type_test(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]) 
 {
 	// TODO:
 }

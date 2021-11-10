@@ -142,7 +142,7 @@ void directive_set_prolog_flag(context_t* context, const term_t* flag)
 	set_prolog_flag_inner(context,flag,value);
 }
 
-void builtin_set_prolog_flag(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
+void builtin_set_prolog_flag(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	set_prolog_flag_inner(context,argv[0],argv[1]);
 	if (!(context->m_flags & FLAG_THROW))
@@ -161,12 +161,14 @@ const term_t* deref_local_var(context_t* context, const term_t* t)
 	return t;
 }
 
-static int unify(context_t* context, const term_t* t1, const term_t* t2, int with_occurs_check)
+int unify_terms(context_t* context, const term_t* t1, const term_t* t2, int with_occurs_check)
 {
+	// TODO!!
+
 	return 0;
 }
 
-static void builtin_unify(context_t* context, const void* gosub, int with_occurs_check, size_t var_count, const term_t* args) 
+static void builtin_unify(context_t* context, const term_t* gosub, int with_occurs_check, size_t var_count, const term_t* args) 
 {
 	term_t* sp = context->m_stack;
 
@@ -174,7 +176,7 @@ static void builtin_unify(context_t* context, const void* gosub, int with_occurs
 	int unified = 1;
 	for (size_t i = 0; unified && i < var_count && !(context->m_flags & FLAG_THROW); ++i)
 	{
-		unified = unify(context,deref_local_var(context,args[0].m_pval),deref_local_var(context,args[1].m_pval),with_occurs_check);
+		unified = unify_terms(context,deref_local_var(context,args[0].m_pval),deref_local_var(context,args[1].m_pval),with_occurs_check);
 		
 		args += 2;
 	}
@@ -183,21 +185,46 @@ static void builtin_unify(context_t* context, const void* gosub, int with_occurs
 	{
 		builtin_throw(context);
 	
-		// Pop the gosub and argument
+		// Pop the exception
 		context->m_stack = sp;
 	}
 	else if (unified)
 		builtin_gosub(context,gosub);	
 }
 
-PROLITE_EXPORT void prolite_builtin_unify(context_t* context, const void* gosub) 
+PROLITE_EXPORT void prolite_builtin_unify(context_t* context, const term_t* gosub) 
 {
 	builtin_unify(context,gosub,0,context->m_stack->m_u64val,context->m_stack+1);
 }
 
-PROLITE_EXPORT void prolite_builtin_unify_with_occurs_check(context_t* context, const void* gosub)
+PROLITE_EXPORT void prolite_builtin_unify_with_occurs_check(context_t* context, const term_t* gosub)
 {
 	builtin_unify(context,gosub,1,context->m_stack->m_u64val,context->m_stack+1);
+}
+
+PROLITE_EXPORT void prolite_builtin_unify2(context_t* context, const term_t* gosub)
+{
+	const term_t* result = deref_local_var(context,context->m_stack->m_pval);
+	const term_t* value = context->m_stack + 1;
+
+	term_t* sp = context->m_stack;
+
+	int unified = unify_terms(context,result,value,0);
+	
+	if (context->m_flags & FLAG_THROW) 
+	{
+		builtin_throw(context);
+	
+		// Pop the exception
+		context->m_stack = sp;
+	}
+	else if (unified)
+		builtin_gosub(context,gosub);	
+}
+
+PROLITE_EXPORT void builtin_gosub(context_t* context, const term_t* gosub)
+{
+	assert(0);
 }
 
 module_t* module_new(context_t* context, const term_t* name)
@@ -305,16 +332,16 @@ PROLITE_EXPORT void prolite_context_destroy(prolite_context_t context)
 
 // MOVE THIS!!
 
-void builtin_user_defined(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
+void builtin_user_defined(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 }
 
-void builtin_asserta(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
+void builtin_asserta(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	
 }
 
-void builtin_assertz(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
+void builtin_assertz(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	
 }

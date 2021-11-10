@@ -55,7 +55,15 @@ void push_representation_error(context_t* context, uint64_t p1, const term_t* t)
 	context->m_flags = FLAG_THROW;
 }
 
-void builtin_halt(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
+void push_evaluable_error(context_t* context, const term_t* t)
+{
+	// TODO
+	assert(0);
+
+	context->m_flags = FLAG_THROW;
+}
+
+void builtin_halt(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	assert(!gosub);
 
@@ -86,14 +94,39 @@ void builtin_throw(context_t* context)
 	builtin_throw_inner(context,deref_local_var(context,context->m_stack));
 }
 
-PROLITE_EXPORT void prolite_builtin_throw(context_t* context, const void* gosub)
+PROLITE_EXPORT void prolite_builtin_throw(context_t* context, const term_t* gosub)
 {
 	assert(!gosub);
 
 	builtin_throw_inner(context,deref_local_var(context,context->m_stack->m_pval));
 }
 
-void builtin_catch(context_t* context, const void* gosub, size_t argc, const term_t* argv[])
+void builtin_throw_evaluable(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+	assert(!gosub);
+}
+
+void builtin_throw_zero_div(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+	assert(!gosub);
+}
+
+void builtin_throw_underflow(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+	assert(!gosub);
+}
+
+void builtin_throw_integer_overflow(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+	assert(!gosub);
+}
+
+void builtin_throw_float_overflow(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+	assert(!gosub);
+}
+
+void builtin_catch(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	term_t* sp = context->m_stack;
 
