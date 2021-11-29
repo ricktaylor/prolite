@@ -12,14 +12,14 @@
 
 typedef enum prolite_type
 {
-	prolite_double = 0,
+	prolite_number = 0,
 	prolite_var = 1,
-	prolite_integer = 2,
-	prolite_atom = 3,
-	prolite_compound = 4,	
-	prolite_chars = 5,
-	prolite_charcodes = 6,
-	prolite_userdata = 7
+	prolite_atom = 2,
+	prolite_compound = 3,	
+	prolite_chars = 4,
+	prolite_charcodes = 5,
+	//prolite_userdata1 = 6,
+	//prolite_userdata2 = 7
 
 } prolite_type_t;
 
@@ -60,21 +60,20 @@ term_t* push_string(term_t* stack, prolite_type_t type, const unsigned char* str
 term_t* push_predicate(term_t* stack, uint64_t arity, const unsigned char* functor, size_t functor_len, int external, const debug_info_t* debug_info);
 term_t* push_debug_info(term_t* stack, const debug_info_t* debug_info);
 
-static inline term_t* push_integer(term_t* stack, int64_t i, const debug_info_t* debug_info)
+static inline term_t* push_number(term_t* stack,  double d, const debug_info_t* debug_info)
 {
-	prolite_type_t type = prolite_integer;
 	if (debug_info)
 	{
+		// TODO !
+		
+		/*prolite_type_t type = prolite_integer;
 		stack = push_debug_info(stack,debug_info);
 		type |= prolite_debug_info;
+		(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48(i);*/
 	}
-	(--stack)->m_u64val = PACK_TYPE(type) | PACK_MANT_48(i);
-	return stack;
-}
-
-static inline term_t* push_double(term_t* stack, double d)
-{
-	(--stack)->m_dval = d;
+	//else
+		(--stack)->m_dval = d;
+	
 	return stack;
 }
 
@@ -95,22 +94,11 @@ static inline size_t get_var_index(const term_t* v)
 	return UNPACK_MANT_48(v->m_u64val);
 }
 
-static inline int64_t get_integer(const term_t* i)
-{
-	struct sign_extend
-	{
-		int64_t i64 : 48;
-	};
-
-	struct sign_extend se = { .i64 = UNPACK_MANT_48(i->m_u64val) };
-	return se.i64;
-}
-
 static inline prolite_type_t get_term_type(const term_t* t)
 {
 	uint16_t exp = UNPACK_EXP_16(t->m_u64val);
 	if ((exp & 0x7FF0) != 0x7FF0)
-		return prolite_double;
+		return prolite_number;
 
 	return (prolite_type_t)(exp & 0x7);
 }

@@ -6,14 +6,15 @@
 
 typedef enum prolite_type_flags
 {
-	type_flag_double = (1 << prolite_double),
-	type_flag_var = (1 << prolite_var),
-	type_flag_int32 = (1 << prolite_integer),
-	type_flag_atom = (1 << prolite_atom),
-	type_flag_compound = (1 << prolite_compound),
-	type_flag_chars = (1 << prolite_chars),
-	type_flag_charcodes = (1 << prolite_charcodes),
-	type_flag_userdata = (1 << prolite_userdata)
+	type_flag_double = 0,
+	type_flag_integer = 1,
+	type_flag_var = (2 << prolite_var),
+	type_flag_atom = (2 << prolite_atom),
+	type_flag_compound = (2 << prolite_compound),
+	type_flag_chars = (2 << prolite_chars),
+	type_flag_charcodes = (2 << prolite_charcodes),
+	//type_flag_userdata1 = (2 << prolite_userdata1),
+	//type_flag_userdata2 = (2 << prolite_userdata2)
 
 } prolite_type_flags_t;
 
@@ -37,20 +38,13 @@ typedef enum optype
 	OP_POP,
 
 	// Expression ops...
-	OP_PUSH_IREG,
-	OP_PUSH_DREG,
-	OP_SET_IREG,
-	OP_SET_DREG,
-	OP_LOAD_IREG,
-	OP_LOAD_DREG,
-	OP_MOV_I,
-	OP_MOV_D,
-	OP_CVT_I2D,
-	OP_ADD_I,
-	OP_ADD_D,
-	OP_SUB_I,
-	OP_SUB_D,
-
+	OP_PUSH_REG,
+	OP_SET_REG,
+	OP_LOAD_REG,
+	OP_MOV_REG,
+	OP_ADD_REG,
+	OP_SUB_REG,
+	
 } optype_t;
 
 size_t inc_ip(optype_t op);

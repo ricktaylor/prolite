@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #undef DECLARE_BUILTIN_STRING
 #define DECLARE_BUILTIN_STRING(s) { sizeof(#s)-1,(const unsigned char*)(#s) },
@@ -160,7 +161,7 @@ static const term_t* unpack_term(const term_t* t, prolite_type_t* type, int* hav
 	uint16_t exp = UNPACK_EXP_16(t->m_u64val);
 	if ((exp & 0x7FF0) != 0x7FF0)
 	{
-		*type = prolite_double;
+		*type = prolite_number;
 		*have_debug_info = 0;
 		*all48 = 0;
 	}
@@ -557,10 +558,9 @@ static int type_precedes(prolite_type_t t)
 	case prolite_var:
 		return 0;
 
-	case prolite_double:
+	case prolite_number:
 		return 1;
 
-	case prolite_integer:
 	case prolite_atom:
 	case prolite_compound:
 		return t;
@@ -622,11 +622,10 @@ int term_compare(const term_t* t1, const term_t* t2)
 			}
 			break;
 
-		case prolite_double:
+		case prolite_number:
 			r = (t1->m_dval == t2->m_dval);
 			break;
 
-		case prolite_integer:
 		case prolite_var:
 		default:
 			r = (t1->m_u64val == t2->m_u64val);
@@ -686,16 +685,12 @@ int term_precedes(const term_t* t1, const term_t* t2)
 			}
 			break;
 
-		case prolite_double:
-			// Warning - Here be dragons with epsilon
-			// See: https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
-			r = (int)(t1->m_dval - t2->m_dval);
+		case prolite_number:
+			r = isgreater(t1->m_dval,t2->m_dval);
+			if (!r)
+				r = -isless(t1->m_dval,t2->m_dval);
 			break;
-
-		case prolite_integer:
-			r = get_integer(t1) - get_integer(t2);
-			break;
-
+			
 		case prolite_var:
 		default:
 			r = (t1->m_u64val - t2->m_u64val);

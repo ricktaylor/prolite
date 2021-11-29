@@ -2,6 +2,7 @@
 #include "fnv1a.h"
 
 #include <string.h>
+#include <math.h>
 
 typedef struct dynamic_operator
 {
@@ -401,16 +402,20 @@ static void set_op_inner(context_t* context, operator_table_t* ops, int64_t prec
 
 static void set_op(context_t* context, operator_table_t* ops, const term_t* p, const term_t* s, const term_t* op)
 {
-	int64_t precendence = 0;
+	unsigned int precendence = 0;
 	switch (get_term_type(p))
 	{
 	case prolite_var:
 		return push_instantiation_error(context,p);
 
-	case prolite_integer:
-		precendence = get_integer(p);
-		if (precendence < 0 || precendence > 1200)
+	case prolite_number:
+		if (nearbyint(p->m_dval) != p->m_dval)
+			return push_type_error(context,PACK_ATOM_BUILTIN(integer),p);
+
+		if (p->m_dval < 0 || p->m_dval > 1200)
 			return push_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),p);
+			
+		precendence = p->m_dval;
 		break;
 
 	default:

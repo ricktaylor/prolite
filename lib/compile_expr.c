@@ -11,10 +11,8 @@
 
 typedef enum expr_node_type
 {
-	EXPR_TYPE_INT,
-	EXPR_TYPE_DOUBLE,
-	EXPR_TYPE_IREG,
-	EXPR_TYPE_DREG,
+	EXPR_TYPE_CONST,
+	EXPR_TYPE_REG,
 	EXPR_TYPE_THROW
 
 } expr_node_type_t;
@@ -23,9 +21,15 @@ typedef struct expr_subst
 {
 	const term_t* m_expr;
 	size_t        m_stack_idx;
-	int           m_is_double;
-
+	
 } expr_subst_t;
+
+typedef struct walk_info
+{
+	expr_subst_t* m_substs;
+	const term_t* m_expr;
+	
+} walk_info_t;
 
 typedef struct expr_node
 {
@@ -33,19 +37,13 @@ typedef struct expr_node
 	union
 	{
 		double        m_dval;
-		int64_t       m_n64val;
+		size_t        m_idx;
 		const term_t* m_pval;
 	};
-	cfg_t* (*m_shim)(compile_context_t* context, const struct expr_node* node, size_t* int_regs, size_t* double_regs);
+	cfg_t* (*m_shim)(compile_context_t* context, const struct expr_node* node, size_t* regs);
 	struct expr_node* m_child[2];
 
 } expr_node_t;
-
-typedef struct expr_result
-{
-	size_t             m_int_regs;
-	size_t             m_double_regs;
-} expr_result_t;
 
 static expr_node_t* walk_expr(compile_context_t* context, const term_t* expr, expr_subst_t* substs);
 
@@ -100,27 +98,27 @@ static expr_node_t* new_expr_node(compile_context_t* context, expr_node_type_t t
 	return n;
 }*/
 
-static cfg_t* compile_throw_zero_div(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+static cfg_t* compile_throw_zero_div(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
 	return compile_builtin(context,&prolite_builtin_throw_zero_div,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
 }
 
-static cfg_t* compile_throw_underflow(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+static cfg_t* compile_throw_underflow(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
 	return compile_builtin(context,&prolite_builtin_throw_underflow,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
 }
 
-static cfg_t* compile_throw_integer_overflow(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+/*static cfg_t* compile_throw_integer_overflow(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
 	return compile_builtin(context,&prolite_builtin_throw_integer_overflow,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
-}
+}*/
 
-static cfg_t* compile_throw_float_overflow(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+static cfg_t* compile_throw_float_overflow(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
 	return compile_builtin(context,&prolite_builtin_throw_float_overflow,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
 }
 
-static cfg_t* compile_throw_evaluable(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+static cfg_t* compile_throw_evaluable(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
 	return compile_builtin(context,&prolite_builtin_throw_evaluable,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
 }
@@ -130,6 +128,8 @@ static expr_node_t* test_fpexcept(compile_context_t* context, const term_t* expr
 	flags = fetestexcept(flags);
 	if (!flags)
 		return NULL;
+
+	feclearexcept(flags);
 
 	if (flags & FE_DIVBYZERO)
 	{
@@ -156,42 +156,17 @@ static expr_node_t* test_fpexcept(compile_context_t* context, const term_t* expr
 	}
 }
 
-static cfg_t* compile_set_ireg(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+static cfg_t* compile_set_reg(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_SET_IREG;
-	(ops++)->m_term.m_u64val = (*int_regs)++;
-	ops->m_term.m_u64val = e->m_n64val;
-	return c;
-}
-
-static cfg_t* compile_set_dreg(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
-{
-	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_SET_DREG;
-	(ops++)->m_term.m_u64val = (*double_regs)++;
+	(ops++)->m_opcode.m_op = OP_SET_REG;
+	(ops++)->m_term.m_u64val = (*regs)++;
 	ops->m_term.m_dval = e->m_dval;
 	return c;
 }
 
-static cfg_t* compile_cvt_i2d(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
-{
-	cfg_t* c = (*e->m_child[0]->m_shim)(context,e->m_child[0],int_regs,double_regs);
-
-	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_CVT_I2D;
-	if (*double_regs == 0)
-		++(*double_regs);
-
-	(ops++)->m_term.m_u64val = *double_regs - 1;
-	ops->m_term.m_u64val = *int_regs - 1;
-
-	return c;
-}
-
-static cfg_t* combine_binary_op(compile_context_t* context, optype_t op, cfg_t* c1, size_t* regs1, cfg_t* c2, size_t regs2, size_t* result)
+static cfg_t* combine_binary_op(compile_context_t* context, cfg_t* c1, size_t* regs1, cfg_t* c2, size_t regs2, size_t* result)
 {
 	if (*regs1 >= regs2)
 	{
@@ -202,23 +177,10 @@ static cfg_t* combine_binary_op(compile_context_t* context, optype_t op, cfg_t* 
 			{
 				switch (c1->m_tail->m_ops[c1->m_tail->m_count-3].m_opcode.m_op)
 				{
-				case OP_LOAD_IREG:
-				case OP_SET_IREG:
-					if (op == OP_MOV_I)
-					{
-						adjusted = 1;
-						++c1->m_tail->m_ops[c1->m_tail->m_count-2].m_term.m_u64val;
-					}
-					break;
-
-				case OP_SET_DREG:
-				case OP_LOAD_DREG:
-				case OP_CVT_I2D:
-					if (op == OP_MOV_D)
-					{
-						adjusted = 1;
-						++c1->m_tail->m_ops[c1->m_tail->m_count-2].m_term.m_u64val;
-					}
+				case OP_SET_REG:
+				case OP_LOAD_REG:
+					adjusted = 1;
+					++c1->m_tail->m_ops[c1->m_tail->m_count-2].m_term.m_u64val;
 					break;
 
 				default:
@@ -229,7 +191,7 @@ static cfg_t* combine_binary_op(compile_context_t* context, optype_t op, cfg_t* 
 			if (!adjusted)
 			{
 				opcode_t* ops = append_opcodes(context,c1->m_tail,3);
-				(ops++)->m_opcode.m_op = op;
+				(ops++)->m_opcode.m_op = OP_MOV_REG;
 				(ops++)->m_term.m_u64val = *regs1;
 				(ops++)->m_term.m_u64val = *regs1 - 1;
 			}
@@ -243,56 +205,27 @@ static cfg_t* combine_binary_op(compile_context_t* context, optype_t op, cfg_t* 
 	return goto_next(context,c2,c1);
 }
 
-static cfg_t* compile_binop_i(compile_context_t* context, optype_t op, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+static cfg_t* compile_binop(compile_context_t* context, optype_t op, const expr_node_t* e, size_t* regs)
 {
-	size_t int_regs1 = *int_regs;
-	size_t double_regs1 = *double_regs;
-	cfg_t* c1 = (*e->m_child[0]->m_shim)(context,e->m_child[0],&int_regs1,&double_regs1);
+	size_t regs1 = *regs;
+	cfg_t* c1 = (*e->m_child[0]->m_shim)(context,e->m_child[0],&regs1);
 
-	size_t int_regs2 = *int_regs;
-	size_t double_regs2 = *double_regs;
-	cfg_t* c2 = (*e->m_child[1]->m_shim)(context,e->m_child[1],&int_regs2,&double_regs2);
+	size_t regs2 = *regs;
+	cfg_t* c2 = (*e->m_child[1]->m_shim)(context,e->m_child[1],&regs2);
 
-	*double_regs = (double_regs1 > double_regs2 ? double_regs1 : double_regs2);
+	cfg_t* c = combine_binary_op(context,c1,&regs1,c2,regs2,regs);
 
-	cfg_t* c = combine_binary_op(context,OP_MOV_I,c1,&int_regs1,c2,int_regs2,int_regs);
 	opcode_t* ops = append_opcodes(context,c->m_tail,4);
 	(ops++)->m_opcode.m_op = op;
-	(ops++)->m_term.m_u64val = int_regs1 - 1;
-	(ops++)->m_term.m_u64val = int_regs2 - 1;
-	ops->m_term.m_u64val = *int_regs - 1;
+	(ops++)->m_term.m_u64val = regs1 - 1;
+	(ops++)->m_term.m_u64val = regs2 - 1;
+	ops->m_term.m_u64val = *regs - 1;
 	return c;
 }
 
-static cfg_t* compile_binop_d(compile_context_t* context, optype_t op, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+static cfg_t* compile_add(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	size_t int_regs1 = *int_regs;
-	size_t double_regs1 = *double_regs;
-	cfg_t* c1 = (*e->m_child[0]->m_shim)(context,e->m_child[0],&int_regs1,&double_regs1);
-
-	size_t int_regs2 = *int_regs;
-	size_t double_regs2 = *double_regs;
-	cfg_t* c2 = (*e->m_child[1]->m_shim)(context,e->m_child[1],&int_regs2,&double_regs2);
-
-	*int_regs = (int_regs1 > int_regs2 ? int_regs1 : int_regs2);
-
-	cfg_t* c = combine_binary_op(context,OP_MOV_D,c1,&double_regs1,c2,double_regs2,double_regs);
-	opcode_t* ops = append_opcodes(context,c->m_tail,4);
-	(ops++)->m_opcode.m_op = op;
-	(ops++)->m_term.m_u64val = double_regs1 - 1;
-	(ops++)->m_term.m_u64val = double_regs2 - 1;
-	ops->m_term.m_u64val = *double_regs - 1;
-	return c;
-}
-
-static cfg_t* compile_add_i(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
-{
-	return compile_binop_i(context,OP_ADD_I,e,int_regs,double_regs);
-}
-
-static cfg_t* compile_add_d(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
-{
-	return compile_binop_d(context,OP_ADD_D,e,int_regs,double_regs);
+	return compile_binop(context,OP_ADD_REG,e,regs);
 }
 
 static expr_node_t* walk_expr_add(compile_context_t* context, const term_t* expr, const term_t* t1, const term_t* t2, expr_subst_t* substs)
@@ -305,126 +238,34 @@ static expr_node_t* walk_expr_add(compile_context_t* context, const term_t* expr
 	if (e2->m_type == EXPR_TYPE_THROW)
 		return e2;
 
-	switch (e1->m_type)
+	if (e1->m_type == EXPR_TYPE_CONST)
 	{
-	case EXPR_TYPE_INT:
-		if (e2->m_type == EXPR_TYPE_INT)
+		if (e2->m_type == EXPR_TYPE_CONST)
 		{
-			int64_t r;
-			if (!__builtin_add_overflow(e1->m_n64val,e2->m_n64val,&r))
-				e1->m_n64val = r;
-			else
-			{
-				e1->m_type = EXPR_TYPE_THROW;
-				e1->m_shim = &compile_throw_integer_overflow;
-				e1->m_pval = expr;
-			}
-			return e1;
-		}
-
-		e1->m_shim = &compile_set_ireg;
-		e1->m_type = EXPR_TYPE_IREG;
-		// Intentional fall-through
-
-	case EXPR_TYPE_IREG:
-		if (e2->m_type == EXPR_TYPE_IREG)
-		{
-			expr_node_t* e = new_expr_node(context,EXPR_TYPE_IREG);
-			e->m_shim = &compile_add_i;
-			e->m_child[0] = e1;
-			e->m_child[1] = e2;
-			return e;
-		}
-
-		expr_node_t* e = new_expr_node(context,EXPR_TYPE_DREG);
-		e->m_shim = &compile_cvt_i2d;
-		e->m_child[0] = e1;
-		e1 = e;
-		break;
-
-	case EXPR_TYPE_DOUBLE:
-		switch (e2->m_type)
-		{
-		case EXPR_TYPE_INT:
-			{
-				double r = e1->m_dval + e2->m_n64val;
-				expr_node_t* e = test_fpexcept(context,expr,FE_UNDERFLOW | FE_OVERFLOW);
-				if (e)
-					return e;
-				e1->m_dval = r;
-				return e1;
-			}
-
-		case EXPR_TYPE_DOUBLE:
-			{
-				double r = e1->m_dval + e2->m_dval;
-				expr_node_t* e = test_fpexcept(context,expr,FE_UNDERFLOW | FE_OVERFLOW);
-				if (e)
-					return e;
-				e1->m_dval = r;
-				return e1;
-			}
-
-		default:
-			e1->m_shim = &compile_set_dreg;
-			e1->m_type = EXPR_TYPE_DREG;
-			break;
-		}
-
-	default:
-		break;
-	}
-
-	assert(e1->m_type == EXPR_TYPE_DREG);
-
-	switch (e2->m_type)
-	{
-	case EXPR_TYPE_INT:
-		{
-			double r = e2->m_n64val;
+			double r = e1->m_dval + e2->m_dval;
 			expr_node_t* e = test_fpexcept(context,expr,FE_UNDERFLOW | FE_OVERFLOW);
 			if (e)
 				return e;
-			e2->m_dval = r;
-			e2->m_type = EXPR_TYPE_DOUBLE;
+			e1->m_dval = r;
+			return e1;
 		}
-		// Intentional fall-through
 
-	case EXPR_TYPE_DOUBLE:
-		e2->m_shim = &compile_set_dreg;
-		e2->m_type = EXPR_TYPE_DREG;
-		break;
-
-	case EXPR_TYPE_IREG:
-		{
-			expr_node_t* e = new_expr_node(context,EXPR_TYPE_DREG);
-			e->m_shim = &compile_cvt_i2d;
-			e->m_child[0] = e2;
-			e2 = e;
-		}
-		break;
-
-	default:
-		break;
+		// Swap e1 and e2 to aid optimizer
+		expr_node_t* e3 = e2;
+		e2 = e1;
+		e1 = e3;
 	}
 
-	assert(e2->m_type == EXPR_TYPE_DREG);
-
-	expr_node_t* e = new_expr_node(context,EXPR_TYPE_DREG);
-	e->m_shim = &compile_add_d;
+	expr_node_t* e = new_expr_node(context,EXPR_TYPE_REG);
+	e->m_shim = &compile_add;
 	e->m_child[0] = e1;
 	e->m_child[1] = e2;
 	return e;
 }
 
-static cfg_t* compile_sub_i(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+static cfg_t* compile_sub(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_binop_i(context,OP_SUB_I,e,int_regs,double_regs);
-}
-
-static cfg_t* compile_sub_d(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
-{
-	return compile_binop_d(context,OP_SUB_D,e,int_regs,double_regs);
+	return compile_binop(context,OP_SUB_REG,e,regs);
 }
 
 static expr_node_t* walk_expr_sub(compile_context_t* context, const term_t* expr, const term_t* t1, const term_t* t2, expr_subst_t* substs)
@@ -437,135 +278,30 @@ static expr_node_t* walk_expr_sub(compile_context_t* context, const term_t* expr
 	if (e2->m_type == EXPR_TYPE_THROW)
 		return e2;
 
-	switch (e1->m_type)
+	if (e1->m_type == EXPR_TYPE_CONST && e2->m_type == EXPR_TYPE_CONST)
 	{
-	case EXPR_TYPE_INT:
-		if (e2->m_type == EXPR_TYPE_INT)
-		{
-			int64_t r;
-			if (!__builtin_sub_overflow(e1->m_n64val,e2->m_n64val,&r))
-				e1->m_n64val = r;
-			else
-			{
-				e1->m_type = EXPR_TYPE_THROW;
-				e1->m_shim = &compile_throw_integer_overflow;
-				e1->m_pval = expr;
-			}
-			return e1;
-		}
-
-		e1->m_shim = &compile_set_ireg;
-		e1->m_type = EXPR_TYPE_IREG;
-		// Intentional fall-through
-
-	case EXPR_TYPE_IREG:
-		if (e2->m_type == EXPR_TYPE_IREG)
-		{
-			expr_node_t* e = new_expr_node(context,EXPR_TYPE_IREG);
-			e->m_shim = &compile_sub_i;
-			e->m_child[0] = e1;
-			e->m_child[1] = e2;
+		double r = e1->m_dval - e2->m_dval;
+		expr_node_t* e = test_fpexcept(context,expr,FE_UNDERFLOW | FE_OVERFLOW);
+		if (e)
 			return e;
-		}
-
-		expr_node_t* e = new_expr_node(context,EXPR_TYPE_DREG);
-		e->m_shim = &compile_cvt_i2d;
-		e->m_child[0] = e1;
-		e1 = e;
-		break;
-
-	case EXPR_TYPE_DOUBLE:
-		switch (e2->m_type)
-		{
-		case EXPR_TYPE_INT:
-			{
-				double r = e1->m_dval - e2->m_n64val;
-				expr_node_t* e = test_fpexcept(context,expr,FE_UNDERFLOW | FE_OVERFLOW);
-				if (e)
-					return e;
-				e1->m_dval = r;
-				return e1;
-			}
-
-		case EXPR_TYPE_DOUBLE:
-			{
-				double r = e1->m_dval - e2->m_dval;
-				expr_node_t* e = test_fpexcept(context,expr,FE_UNDERFLOW | FE_OVERFLOW);
-				if (e)
-					return e;
-				e1->m_dval = r;
-				return e1;
-			}
-
-		default:
-			e1->m_shim = &compile_set_dreg;
-			e1->m_type = EXPR_TYPE_DREG;
-			break;
-		}
-
-	default:
-		break;
+		e1->m_dval = r;
+		return e1;
 	}
 
-	assert(e1->m_type == EXPR_TYPE_DREG);
-
-	switch (e2->m_type)
-	{
-	case EXPR_TYPE_INT:
-		{
-			double r = e2->m_n64val;
-			expr_node_t* e = test_fpexcept(context,expr,FE_UNDERFLOW | FE_OVERFLOW);
-			if (e)
-				return e;
-			e2->m_dval = r;
-			e2->m_type = EXPR_TYPE_DOUBLE;
-		}
-		// Intentional fall-through
-
-	case EXPR_TYPE_DOUBLE:
-		e2->m_shim = &compile_set_dreg;
-		e2->m_type = EXPR_TYPE_DREG;
-		break;
-
-	case EXPR_TYPE_IREG:
-		{
-			expr_node_t* e = new_expr_node(context,EXPR_TYPE_DREG);
-			e->m_shim = &compile_cvt_i2d;
-			e->m_child[0] = e2;
-			e2 = e;
-		}
-		break;
-
-	default:
-		break;
-	}
-
-	assert(e2->m_type == EXPR_TYPE_DREG);
-
-	expr_node_t* e = new_expr_node(context,EXPR_TYPE_DREG);
-	e->m_shim = &compile_sub_d;
+	expr_node_t* e = new_expr_node(context,EXPR_TYPE_REG);
+	e->m_shim = &compile_sub;
 	e->m_child[0] = e1;
 	e->m_child[1] = e2;
 	return e;
 }
 
-static cfg_t* compile_load_ireg(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
+static cfg_t* compile_load_reg(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_LOAD_IREG;
-	(ops++)->m_term.m_u64val = (*int_regs)++;
-	ops->m_term.m_u64val = e->m_n64val;
-	return c;
-}
-
-static cfg_t* compile_load_dreg(compile_context_t* context, const expr_node_t* e, size_t* int_regs, size_t* double_regs)
-{
-	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_LOAD_DREG;
-	(ops++)->m_term.m_u64val = (*double_regs)++;
-	ops->m_term.m_u64val = e->m_n64val;
+	(ops++)->m_opcode.m_op = OP_LOAD_REG;
+	(ops++)->m_term.m_u64val = (*regs)++;
+	ops->m_term.m_u64val = e->m_idx;
 	return c;
 }
 
@@ -586,30 +322,16 @@ static expr_node_t* walk_expr(compile_context_t* context, const term_t* expr, ex
 			size_t idx = get_var_index(expr);
 			assert(substs && idx < context->m_substs->m_count && substs[idx].m_expr);
 
-			if (substs[idx].m_is_double)
-			{
-				e = new_expr_node(context,EXPR_TYPE_DREG);
-				e->m_shim = &compile_load_dreg;
-			}
-			else
-			{
-				e = new_expr_node(context,EXPR_TYPE_IREG);
-				e->m_shim = &compile_load_ireg;
-			}
-			e->m_n64val = substs[idx].m_stack_idx;
+			e = new_expr_node(context,EXPR_TYPE_REG);
+			e->m_shim = &compile_load_reg;
+			e->m_idx = substs[idx].m_stack_idx;
 		}
 		return e;
 
-	case prolite_double:
-		e = new_expr_node(context,EXPR_TYPE_DOUBLE);
-		e->m_shim = NULL;
+	case prolite_number:
+		e = new_expr_node(context,EXPR_TYPE_CONST);
+		e->m_shim = &compile_set_reg;
 		e->m_dval = expr->m_dval;
-		return e;
-
-	case prolite_integer:
-		e = new_expr_node(context,EXPR_TYPE_INT);
-		e->m_shim = NULL;
-		e->m_n64val = get_integer(expr);
 		return e;
 
 	case prolite_atom:
@@ -619,8 +341,8 @@ static expr_node_t* walk_expr(compile_context_t* context, const term_t* expr, ex
 #undef DECLARE_EXPR_2
 #undef DECLARE_EXPR_CONSTANT
 #define DECLARE_EXPR_CONSTANT(a,d) case a: { \
-				e = new_expr_node(context,EXPR_TYPE_DOUBLE); \
-				e->m_shim = NULL; \
+				e = new_expr_node(context,EXPR_TYPE_CONST); \
+				e->m_shim = &compile_set_reg; \
 				e->m_dval = M_PI; \
 				return e; \
 			} break;
@@ -705,12 +427,24 @@ static size_t extract_vars(compile_context_t* context, const term_t* expr, expr_
 	return 0;
 }
 
-
-typedef struct walk_info
+static cfg_t* compile_unify_is(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
-	expr_subst_t* m_substs;
-	const term_t* m_expr;
-} walk_info_t;
+	cfg_t* cont = compile_subgoal(context,next);
+	if (!cont)
+		return NULL;
+
+	append_ret(context,cont->m_tail);
+
+	cfg_t* c = new_cfg(context);
+	opcode_t* ops = append_opcodes(context,c->m_tail,6);
+	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
+	(ops++)->m_term.m_pval = term;
+	(ops++)->m_opcode.m_op = OP_BUILTIN;
+	(ops++)->m_term.m_pval = &prolite_builtin_unify_is;
+	(ops++)->m_term.m_pval = cont->m_entry_point;
+	ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = 2 };
+	return c;
+}
 
 static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
@@ -718,52 +452,45 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term,
 
 	expr_node_t* e = walk_expr(context,wi->m_expr,wi->m_substs);
 
-	size_t int_regs = 0;
-	size_t double_regs = 0;
-	cfg_t* c = NULL;
-	if (!e->m_shim)
-		c = new_cfg(context);
-	else
-	{
-		c = (*e->m_shim)(context,e,&int_regs,&double_regs);
-		if (e->m_type == EXPR_TYPE_THROW)
-			return c;
-	}
-		
-	opcode_t* ops = append_opcodes(context,c->m_tail,2);
+	size_t regs = 0;
+	cfg_t* c = (*e->m_shim)(context,e,&regs);
+			
 	switch (e->m_type)
 	{
-	case EXPR_TYPE_INT:
-		(ops++)->m_opcode.m_op = OP_PUSH_CONST;
+	case EXPR_TYPE_CONST:
+		if (next->m_shim == &compile_unify_is)
+		{
+			term_t* t = heap_malloc(context->m_heap,sizeof(term_t));
+			if (!t)
+				longjmp(context->m_jmp,1);
 
-		// Check for overflow when converting to prolite_integer and use prolite_double instead
-		if (e->m_n64val > INT64_C(0x7FFFFFFFFFFF) || e->m_n64val < -INT64_C(0x7FFFFFFFFFFF) - 1)
-			(ops++)->m_term.m_dval = e->m_n64val;			
+			t->m_dval = e->m_dval;
+			c = compile_unify_terms(context,next->m_term,t,next->m_next);
+		}
 		else
-			(ops++)->m_term.m_u64val = PACK_TYPE(prolite_integer) | PACK_MANT_48(e->m_n64val);
+		{
+			c = new_cfg(context);
+			opcode_t* ops = append_opcodes(context,c->m_tail,2);
+			(ops++)->m_opcode.m_op = OP_PUSH_CONST;
+			ops->m_term.m_dval = e->m_dval;
+			c = goto_next(context,c,compile_subgoal(context,next));
+		}
 		break;
 
-	case EXPR_TYPE_DOUBLE:
-		(ops++)->m_opcode.m_op = OP_PUSH_CONST;
-		(ops++)->m_term.m_dval = e->m_dval;
-		break;
-
-	case EXPR_TYPE_IREG:
-		(ops++)->m_opcode.m_op = OP_PUSH_IREG;
-		(ops++)->m_term.m_u64val = int_regs - 1;
-		break;
-
-	case EXPR_TYPE_DREG:
-		(ops++)->m_opcode.m_op = OP_PUSH_DREG;
-		(ops++)->m_term.m_u64val = double_regs - 1;
+	case EXPR_TYPE_REG:
+		{
+			opcode_t* ops = append_opcodes(context,c->m_tail,2);
+			(ops++)->m_opcode.m_op = OP_PUSH_REG;
+			(ops++)->m_term.m_u64val = regs - 1;
+			c = goto_next(context,c,compile_subgoal(context,next));
+		}
 		break;
 
 	default:
-		assert(0);
 		break;
 	}
 
-	return goto_next(context,c,compile_subgoal(context,next));
+	return c;
 }
 
 static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, const continuation_t* next)
@@ -778,23 +505,23 @@ static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, c
 	(ops++)->m_term.m_pval = &prolite_builtin_expression;
 	//ops->m_term.m_pval = NULL;
 
-	subst->m_is_double = 0;
-	cfg_t* c_int = compile_subgoal(context,next);
+	cfg_t* c1 = compile_subgoal(context,next);
+	if (c1->m_tail->m_count && 
+		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_op == OP_POP && 
+		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_arg < UINT32_MAX)
+	{
+		++c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_arg;
+	}
+	else
+	{
+		ops = append_opcodes(context,c1->m_tail,1);
+		ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = 1 };
+	}
 	
-	subst->m_is_double = 1;
-	cfg_t* c_double = compile_subgoal(context,next);
-	
-	cfg_t* c1 = new_cfg(context);
-	ops = append_opcodes(context,c1->m_tail,1);
-	ops->m_opcode = (op_arg_t){ .m_op = OP_CLEAR_FLAGS, .m_arg = FLAG_CUT };
-	c_double = goto_next(context,c1,c_double);
-
 	cfg_t* c_end = new_cfg(context);
 	add_branch(context,c,FLAG_THROW,c_end);
-	add_branch(context,c,FLAG_CUT,c_double);
-	goto_next(context,c_double,c_end);
-	goto_next(context,c,c_int);
-	return goto_next(context,c,c_end);
+	goto_next(context,c1,c_end);
+	return goto_next(context,c,c1);
 }
 
 static const continuation_t* walk_expr_vars(compile_context_t* context, const term_t* expr, expr_subst_t* substs, size_t start, size_t idx, const continuation_t* next)
@@ -859,25 +586,6 @@ static cfg_t* compile_expr(compile_context_t* context, const term_t* expr, const
 	return c;
 }
 
-static cfg_t* compile_unify2(compile_context_t* context, const term_t* term, const continuation_t* next)
-{
-	cfg_t* cont = compile_subgoal(context,next);
-	if (!cont)
-		return NULL;
-
-	append_ret(context,cont->m_tail);
-
-	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,6);
-	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
-	(ops++)->m_term.m_pval = term;
-	(ops++)->m_opcode.m_op = OP_BUILTIN;
-	(ops++)->m_term.m_pval = &prolite_builtin_unify2;
-	(ops++)->m_term.m_pval = cont->m_entry_point;
-	ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = 2 };
-	return c;
-}
-
 cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 {
 	const term_t* result = get_first_arg(goal->m_term,NULL);
@@ -897,8 +605,7 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		case prolite_compound:
 			break;
 
-		case prolite_double:
-		case prolite_integer:
+		case prolite_number:
 			return compile_unify_terms(context,result,expr,goal->m_next);
 
 		case prolite_atom:
@@ -921,54 +628,13 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		}
 		break;
 
-	case prolite_integer:
+	case prolite_number:
 		switch (get_term_type(expr))
 		{
 		case prolite_var:
 			return compile_builtin(context,&prolite_builtin_throw,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
 
-		case prolite_integer:
-			if (get_integer(result) != get_integer(expr))
-				return NULL;
-			return compile_subgoal(context,goal->m_next);
-
-		case prolite_double:
-			if (get_integer(result) != expr->m_dval)
-				return NULL;
-			return compile_subgoal(context,goal->m_next);
-
-		case prolite_atom:
-			switch (expr->m_u64val)
-			{
-#undef DECLARE_EXPR_CONSTANT
-#define DECLARE_EXPR_CONSTANT(a,d) case a: return NULL;
-
-#include "builtin_exprs.h"
-
-			default:
-				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
-			}
-
-		case prolite_compound:
-			break;
-
-		default:
-			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
-		}
-		break;
-
-	case prolite_double:
-		switch (get_term_type(expr))
-		{
-		case prolite_var:
-			return compile_builtin(context,&prolite_builtin_throw,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
-
-		case prolite_integer:
-			if (result->m_dval != get_integer(expr))
-				return NULL;
-			return compile_subgoal(context,goal->m_next);
-
-		case prolite_double:
+		case prolite_number:
 			if (result->m_dval != expr->m_dval)
 				return NULL;
 			return compile_subgoal(context,goal->m_next);
@@ -1003,8 +669,7 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 			// Need to check for evaluable by compiling although it will never unify
 			break;
 
-		case prolite_double:
-		case prolite_integer:
+		case prolite_number:
 			// Never unifiable
 			return NULL;
 
@@ -1027,7 +692,7 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 	}
 
 	return compile_expr(context,expr,&(continuation_t){
-		.m_shim = &compile_unify2,
+		.m_shim = &compile_unify_is,
 		.m_term = result,
 		.m_next = goal->m_next
 	});
@@ -1045,20 +710,14 @@ PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t*
 	const term_t* expr = deref_local_var(context,context->m_stack->m_pval);
 
 	// Result is pushed to stack
-	// FLAG_CUT set if prolite_double
-
+	
 	switch (get_term_type(expr))
 	{
 	case prolite_var:
 		return push_instantiation_error(context,expr);
 
-	case prolite_integer:
-		context->m_stack->m_u64val = get_integer(expr);
-		return;
-
-	case prolite_double:
+	case prolite_number:
 		context->m_stack->m_dval = expr->m_dval;
-		context->m_flags |= FLAG_CUT;
 		return;
 
 	case prolite_atom:

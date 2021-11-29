@@ -4,6 +4,11 @@
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>
+#include <fenv.h>
+
+#if !defined(__GNUC__)
+#pragma STDC FENV_ACCESS ON
+#endif
 
 #ifdef _MSC_VER
 #include <float.h>
@@ -1456,7 +1461,7 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 		if (!node)
 			syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
-		*node = (ast_node_t){ .m_type = prolite_double	};		
+		*node = (ast_node_t){ .m_type = prolite_number	};		
 	}
 
 	if (*next_type == tokFloat)
@@ -1464,20 +1469,19 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 		// Ensure we are NUL terminated
 		token_append_char(parser,next,'\0');
 
-		double dval;
 		errno = 0;
-		dval = strtod((const char*)next->m_str,NULL);
-		if (dval == HUGE_VAL)
+		double v = strtod((const char*)next->m_str,NULL);
+		if (v == HUGE_VAL)
 			syntax_error(parser,AST_ERR_FLOAT_OVERFLOW);
 
-		if (dval == 0.0 && errno == ERANGE)
+		if (v == 0.0 && errno == ERANGE)
 			syntax_error(parser,AST_ERR_FLOAT_UNDERFLOW);
 
-		node->m_type = prolite_double;
-		if (isnan(dval))
+		node->m_type = prolite_number;
+		if (isnan(v))
 			node->m_u64val = PACK_EXP_16(0x7FF8);
 		else
-			node->m_dval = dval;
+			node->m_dval = v;
 	}
 	else if (*next_type == tokCharCode)
 	{
@@ -1494,37 +1498,43 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 			v = (v << 6) | (next->m_str[i] & 0x3F);
 		}
 
-		node->m_type = prolite_integer;
-		node->m_u64val = v;
+		node->m_type = prolite_number;
+		node->m_dval = v;
 	}
 	else
 	{
-		uint64_t v = 0;
+		double v = 0;
+
+		feclearexcept(FE_INEXACT);
+
 		for (size_t i=0; i<next->m_len; ++i)
 		{
 			if (*next_type == tokInt)
 				v = (v * 10) + (next->m_str[i] - '0');
 			else if (*next_type == tokBinaryInt)
-				v = (v << 1) | (next->m_str[i] - '0');
+				v = (v * 2) + (next->m_str[i] - '0');
 			else if (*next_type == tokOctalInt)
-				v = (v << 3) | (next->m_str[i] - '0');
+				v = (v * 8) + (next->m_str[i] - '0');
 			else /* tokHexInt */
 			{
-				v <<= 4;
+				v *= 16;
 				if (next->m_str[i] >= 'a')
-					v |= (next->m_str[i] - 'a');
+					v += (next->m_str[i] - 'a');
 				else if (next->m_str[i] >= 'A')
-					v |= (next->m_str[i] - 'A');
+					v += (next->m_str[i] - 'A');
 				else
-					v |= (next->m_str[i] - '0');
+					v += (next->m_str[i] - '0');
 			}
 
-			if (v > (UINT64_C(0x7FFFFFFFFFFF) + neg))
+			if (fetestexcept(FE_INEXACT))
+			{
+				feclearexcept(FE_INEXACT);
 				syntax_error(parser,neg ? AST_ERR_MIN_INTEGER : AST_ERR_MAX_INTEGER);
+			}
 		}
 
-		node->m_type = prolite_integer;
-		node->m_u64val = v;
+		node->m_type = prolite_number;
+		node->m_dval = v;
 	}
 
 	*next_type = token_next(parser,next);
@@ -1535,15 +1545,8 @@ static ast_node_t* parse_negative(parser_t* parser, ast_node_t* node, token_type
 {
 	node = parse_number(parser,node,next_type,next,1);
 	
-	if (node->m_type == prolite_double)
-		node->m_dval = -node->m_dval;
-	else
-	{
-		int32_t v = node->m_u64val;
-		if (v > 0)
-			node->m_u64val = (uint32_t)(-v);
-	}
-	
+	node->m_dval = -node->m_dval;
+		
 	return node;
 }
 
@@ -2025,12 +2028,9 @@ static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 	case prolite_var:
 		return push_var(stack,node->m_arity,node->m_debug_info);
 		
-	case prolite_double:
-		return push_double(stack,node->m_dval);
-		
+	case prolite_number:
 	default:
-	case prolite_integer:
-		return push_integer(stack,node->m_u64val,node->m_debug_info);
+		return push_number(stack,node->m_dval,node->m_debug_info);
 	}
 }
 

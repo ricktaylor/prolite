@@ -20,7 +20,7 @@ void prolite_builtin_user_defined(context_t* context, const term_t* gosub);
 void prolite_builtin_callable(context_t* context, const term_t* gosub);
 void prolite_builtin_unify(context_t* context, const term_t* gosub);
 void prolite_builtin_unify_with_occurs_check(context_t* context, const term_t* gosub);
-void prolite_builtin_unify2(context_t* context, const term_t* gosub);
+void prolite_builtin_unify_is(context_t* context, const term_t* gosub);
 void prolite_builtin_ground(context_t* context, const term_t* gosub);
 void prolite_builtin_type_test(context_t* context, const term_t* gosub);
 void prolite_builtin_expression(context_t* context, const term_t* gosub);

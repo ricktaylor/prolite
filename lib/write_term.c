@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <inttypes.h>
+#include <math.h>
 
 const operator_t* lookup_op(context_t* context, const btree_t* ops, const unsigned char* name, size_t name_len);
 const operator_t* lookup_prefix_op(context_t* context, const btree_t* ops, const unsigned char* name, size_t name_len);
@@ -429,7 +430,7 @@ static int is_write_number_vars(const term_t* term)
 	{
 		size_t arity;
 		const term_t* arg = get_first_arg(term,&arity);
-		if (arity == 1 && get_term_type(arg) == prolite_integer && get_integer(arg) >= 0)
+		if (arity == 1 && get_term_type(arg) == prolite_number && nearbyint(arg->m_dval) == arg->m_dval && arg->m_dval >= 0)
 			return 1;		
 	}
 
@@ -475,23 +476,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 		}
 		break;
 		
-	case prolite_integer:
-		{
-			int64_t v = get_integer(term);
-			if (context->m_add_spaces)
-			{
-				if (cc_prev == ccLower || cc_prev == ccUpper || cc_prev == ccNumeric)
-					write_chars(context," ",1);
-			}
-
-			char buf[22];
-			int p = snprintf(buf,sizeof(buf)-1,"%" PRId64,v);
-			write_chars(context,buf,p);
-			cc_prev = ccNumeric;
-		}
-		break;
-		
-	case prolite_double:
+	case prolite_number:
 		{
 			if (context->m_add_spaces)
 			{
@@ -682,7 +667,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 		if (context->m_options.numbervars && is_write_number_vars(term))
 		{
 			const term_t* arg = get_first_arg(term,NULL);
-			size_t N = get_integer(arg);
+			size_t N = arg->m_dval;
 			char prefix = 'A' + (N % 26);
 			write_chars(context,&prefix,1);
 			if (N < 26)
@@ -757,11 +742,6 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 							
 			cc_prev = write_compound(context,cc_prev,term,&str,arity,op ? 1 : 0);
 		}
-		break;
-
-	case prolite_userdata:
-		assert(0);
-		cc_prev = ccErr;
 		break;
 	}
 

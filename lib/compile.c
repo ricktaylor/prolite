@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <stdarg.h>
+#include <math.h>
 
 typedef struct cfg_block_info
 {
@@ -306,25 +307,18 @@ size_t inc_ip(optype_t op)
 		ip += 2;
 		break;
 
-	case OP_PUSH_IREG:
-	case OP_PUSH_DREG:
+	case OP_PUSH_REG:
 		++ip;
 		break;
 	
-	case OP_SET_IREG:
-	case OP_SET_DREG:
-	case OP_LOAD_IREG:
-	case OP_LOAD_DREG:
-	case OP_MOV_I:
-	case OP_MOV_D:
-	case OP_CVT_I2D:
+	case OP_SET_REG:
+	case OP_LOAD_REG:
+	case OP_MOV_REG:
 		ip += 2;
 		break;
 		
-	case OP_ADD_I:
-	case OP_ADD_D:
-	case OP_SUB_I:
-	case OP_SUB_D:
+	case OP_ADD_REG:
+	case OP_SUB_REG:
 		ip += 3;
 		break;
 
@@ -1007,7 +1001,7 @@ static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, 
 	};
 
 	cfg_t* c = NULL;
-	const continuation_t* cont2 = compile_unify_term(context,compile_deref_var(context,t1),compile_deref_var(context,t2),&ui,cont);
+	const continuation_t* cont2 = compile_unify_term(context,t1,t2,&ui,cont);
 	if (cont2)
 	{
 		if (cont2 == cont)
@@ -1540,9 +1534,12 @@ static cfg_t* compile_integer(compile_context_t* context, const continuation_t* 
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
-		return compile_type_test(context,type_flag_int32,0,g1,goal->m_next);
+		return compile_type_test(context,type_flag_integer,0,g1,goal->m_next);
 
-	case prolite_integer:
+	case prolite_number:
+		if (nearbyint(g1->m_dval) != g1->m_dval)
+			return NULL;
+
 		return compile_subgoal(context,goal->m_next);
 
 	default:
@@ -1558,7 +1555,10 @@ static cfg_t* compile_float(compile_context_t* context, const continuation_t* go
 	case prolite_var:
 		return compile_type_test(context,type_flag_double,0,g1,goal->m_next);
 
-	case prolite_double:
+	case prolite_number:
+		if (nearbyint(g1->m_dval) == g1->m_dval)
+			return NULL;
+
 		return compile_subgoal(context,goal->m_next);
 
 	default:
@@ -1617,10 +1617,9 @@ static cfg_t* compile_number(compile_context_t* context, const continuation_t* g
 	switch (get_term_type(g1))
 	{
 	case prolite_var:
-		return compile_type_test(context,type_flag_int32 | type_flag_double,0,g1,goal->m_next);
+		return compile_type_test(context,type_flag_integer | type_flag_double,0,g1,goal->m_next);
 
-	case prolite_integer:
-	case prolite_double:
+	case prolite_number:
 		return compile_subgoal(context,goal->m_next);
 
 	default:
@@ -1977,7 +1976,7 @@ static const char* builtinName(const builtin_fn_t fn)
 		{ &prolite_builtin_callable, "callable" },
 		{ &prolite_builtin_unify, "unify" },
 		{ &prolite_builtin_unify_with_occurs_check, "unify_with_occurs_check" },
-		{ &prolite_builtin_unify2, "unify2" },
+		{ &prolite_builtin_unify_is, "unify_is" },
 		{ &prolite_builtin_ground, "ground" },
 		{ &prolite_builtin_type_test, "type_test" },
 		{ &prolite_builtin_expression, "expression" }
@@ -2178,7 +2177,7 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_PUSH_CONST:
-			fprintf(f,"Push\\ Const\\ %"PRIu64,blk->m_ops[i+1].m_term.m_u64val);
+			fprintf(f,"Push\\ Const\\ %"PRIx64,blk->m_ops[i+1].m_term.m_u64val);
 			break;
 
 		case OP_PUSH_NULL:
@@ -2194,56 +2193,28 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			fprintf(f,"Pop\\ %u",blk->m_ops[i].m_opcode.m_arg);
 			break;
 
-		case OP_PUSH_IREG:
-			fprintf(f,"Push\\ $I%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val);
+		case OP_PUSH_REG:
+			fprintf(f,"Push\\ $%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val);
 			break;
 
-		case OP_PUSH_DREG:
-			fprintf(f,"Push\\ $D%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val);
+		case OP_SET_REG:
+			fprintf(f,"$%zu\\ =\\ %g",(size_t)blk->m_ops[i+1].m_term.m_u64val,blk->m_ops[i+2].m_term.m_dval);
 			break;
 
-		case OP_SET_IREG:
-			fprintf(f,"$I%zu\\ =\\ %" PRId64,(size_t)blk->m_ops[i+1].m_term.m_u64val,blk->m_ops[i+2].m_term.m_u64val);
+		case OP_LOAD_REG:
+			fprintf(f,"$%zu\\ =\\ SP[%zu]",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
 			break;
 
-		case OP_SET_DREG:
-			fprintf(f,"$D%zu\\ =\\ %g",(size_t)blk->m_ops[i+1].m_term.m_u64val,blk->m_ops[i+2].m_term.m_dval);
+		case OP_MOV_REG:
+			fprintf(f,"$%zu\\ =\\ $%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
 			break;
 
-		case OP_LOAD_IREG:
-			fprintf(f,"$I%zu\\ =\\ (int)SP[%zu]",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
-			break;
-			
-		case OP_LOAD_DREG:
-			fprintf(f,"$D%zu\\ =\\ (double)SP[%zu]",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+		case OP_ADD_REG:
+			fprintf(f,"$%zu\\ =\\ $%zu\\ +\\ $%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
 			break;
 
-		case OP_MOV_I:
-			fprintf(f,"$I%zu\\ =\\ $I%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
-			break;
-
-		case OP_MOV_D:
-			fprintf(f,"$D%zu\\ =\\ $D%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
-			break;
-
-		case OP_CVT_I2D:
-			fprintf(f,"$D%zu\\ =\\ $I%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
-			break;
-		
-		case OP_ADD_I:
-			fprintf(f,"$I%zu\\ =\\ $I%zu\\ +\\ $I%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
-			break;
-
-		case OP_ADD_D:
-			fprintf(f,"$D%zu\\ =\\ $D%zu\\ +\\ $D%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
-			break;
-
-		case OP_SUB_I:
-			fprintf(f,"$I%zu\\ =\\ $I%zu\\ -\\ $I%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
-			break;
-
-		case OP_SUB_D:
-			fprintf(f,"$D%zu\\ =\\ $D%zu\\ -\\ $D%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+		case OP_SUB_REG:
+			fprintf(f,"$%zu\\ =\\ $%zu\\ -\\ $%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
 			break;
 
 		default:
@@ -2374,7 +2345,7 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			break;
 
 		case OP_PUSH_CONST:
-			fprintf(f,"push const %" PRIu64 ";\n",code[1].m_term.m_u64val);
+			fprintf(f,"push const %" PRIx64 ";\n",code[1].m_term.m_u64val);
 			break;
 
 		case OP_PUSH_NULL:
@@ -2391,56 +2362,28 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			fprintf(f,"pop %u;\n",code->m_opcode.m_arg);
 			break;
 
-		case OP_PUSH_IREG:
-			fprintf(f,"push $I%zu;\n",(size_t)code[1].m_term.m_u64val);
+		case OP_PUSH_REG:
+			fprintf(f,"push $%zu;\n",(size_t)code[1].m_term.m_u64val);
 			break;
 
-		case OP_PUSH_DREG:
-			fprintf(f,"push $D%zu;\n",(size_t)code[1].m_term.m_u64val);
+		case OP_SET_REG:
+			fprintf(f,"$%zu = %g;\n",(size_t)code[1].m_term.m_u64val,code[2].m_term.m_dval);
 			break;
 
-		case OP_SET_IREG:
-			fprintf(f,"$I%zu = %" PRId64 ";\n",(size_t)code[1].m_term.m_u64val,code[2].m_term.m_u64val);
+		case OP_LOAD_REG:
+			fprintf(f,"$%zu = SP[%zu];\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
 			break;
 
-		case OP_SET_DREG:
-			fprintf(f,"$D%zu = %g;\n",(size_t)code[1].m_term.m_u64val,code[2].m_term.m_dval);
+		case OP_MOV_REG:
+			fprintf(f,"$%zu = $%zu;\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
 			break;
 
-		case OP_LOAD_IREG:
-			fprintf(f,"$I%zu = (int)SP[%zu];\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
-			break;
-			
-		case OP_LOAD_DREG:
-			fprintf(f,"$D%zu = (double)SP[%zu];\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+		case OP_ADD_REG:
+			fprintf(f,"$%zu = $%zu + $%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
 			break;
 
-		case OP_MOV_I:
-			fprintf(f,"$I%zu = $I%zu;\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
-			break;
-
-		case OP_MOV_D:
-			fprintf(f,"$D%zu = $D%zu;\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
-			break;
-
-		case OP_CVT_I2D:
-			fprintf(f,"$D%zu = $I%zu;\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
-			break;
-		
-		case OP_ADD_I:
-			fprintf(f,"$I%zu = $I%zu + $I%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
-			break;
-
-		case OP_ADD_D:
-			fprintf(f,"$D%zu = $D%zu + $D%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
-			break;
-
-		case OP_SUB_I:
-			fprintf(f,"$I%zu = $I%zu - $I%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
-			break;
-
-		case OP_SUB_D:
-			fprintf(f,"$D%zu = $D%zu - $D%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+		case OP_SUB_REG:
+			fprintf(f,"$%zu = $%zu - $%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
 			break;
 
 		default:

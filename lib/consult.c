@@ -2,6 +2,7 @@
 #include "compile.h"
 
 #include <string.h>
+#include <math.h>
 
 typedef struct consult_file
 {
@@ -211,21 +212,20 @@ static void pi_directive_inner(consult_context_t* context, const term_t* pi, voi
 		if (get_term_type(functor) == prolite_atom)
 		{
 			const term_t* arity = get_next_arg(functor);
-			if (get_term_type(arity) == prolite_integer)
+			if (get_term_type(arity) == prolite_number && nearbyint(arity->m_dval) == arity->m_dval)
 			{
-				int64_t a = get_integer(arity);
-				if (a < 0)
+				if (arity->m_dval < 0)
 					return report_domain_error(context,PACK_ATOM_BUILTIN(not_less_than_zero),arity);
 					
-				if (a > MAX_ARITY)
+				if (arity->m_dval > MAX_ARITY)
 					return report_representation_error(context,PACK_ATOM_BUILTIN(max_arity),arity);
 					
 				term_t* sp = context->m_context->m_stack;
-				if (a > 0)
+				if (arity->m_dval > 0)
 				{
 					string_t f;
 					get_string(functor,&f,NULL);
-					context->m_context->m_stack = push_predicate(context->m_context->m_stack,a,f.m_str,f.m_len,1,NULL);
+					context->m_context->m_stack = push_predicate(context->m_context->m_stack,arity->m_dval,f.m_str,f.m_len,1,NULL);
 					functor = context->m_context->m_stack;
 				}
 

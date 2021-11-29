@@ -202,7 +202,7 @@ PROLITE_EXPORT void prolite_builtin_unify_with_occurs_check(context_t* context, 
 	builtin_unify(context,gosub,1,context->m_stack->m_u64val,context->m_stack+1);
 }
 
-PROLITE_EXPORT void prolite_builtin_unify2(context_t* context, const term_t* gosub)
+PROLITE_EXPORT void prolite_builtin_unify_is(context_t* context, const term_t* gosub)
 {
 	const term_t* result = deref_local_var(context,context->m_stack->m_pval);
 	const term_t* value = context->m_stack + 1;
