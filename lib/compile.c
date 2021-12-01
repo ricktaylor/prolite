@@ -101,7 +101,7 @@ static cfg_t* set_flags(compile_context_t* context, cfg_t* c, exec_flags_t flags
 		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg &= ~flags;
 		if (c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg == 0)
 		{
-			c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op = OP_NOP;
+			c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode = (struct op_arg){ .m_op = OP_NOP };
 		}
 	}
 	else if (c->m_tail->m_count &&
@@ -129,7 +129,7 @@ static cfg_t* clear_flags(compile_context_t* context, cfg_t* c, exec_flags_t fla
 		c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg &= ~flags;
 		if (c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_arg == 0)
 		{
-			c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode.m_op = OP_NOP;
+			c->m_tail->m_ops[c->m_tail->m_count-1].m_opcode = (struct op_arg){ .m_op = OP_NOP };
 		}
 	}
 	else if (c->m_tail->m_count &&
@@ -635,7 +635,7 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 		{
 			append_ret(context,prev->m_cfg->m_tail);
 			
-			stub->m_cfg->m_entry_point->m_ops[0].m_opcode.m_op = OP_GOSUB;
+			stub->m_cfg->m_entry_point->m_ops[0].m_opcode = (struct op_arg){ .m_op = OP_GOSUB };
 			opcode_t* ops = append_opcodes(context,stub->m_cfg->m_entry_point,3);
 			(ops++)->m_term.m_pval = prev->m_cfg->m_entry_point;
 			(ops++)->m_opcode.m_op = OP_JMP;
@@ -643,7 +643,7 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 		}
 		else
 		{
-			stub->m_cfg->m_entry_point->m_ops[0].m_opcode.m_op = OP_JMP;
+			stub->m_cfg->m_entry_point->m_ops[0].m_opcode = (struct op_arg){ .m_op = OP_JMP };
 			opcode_t* ops = append_opcodes(context,stub->m_cfg->m_entry_point,1);
 			ops->m_term.m_pval = prev->m_cfg->m_entry_point;
 
