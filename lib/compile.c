@@ -409,67 +409,6 @@ static int cfg_compare(compile_context_t* context, const cfg_t* c1, const cfg_t*
 	return r;
 }
 
-static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const continuation_t* next)
-{
-	// Common Sub-expression Elimination (CSE)
-
-	size_t heap_start = heap_top(context->m_heap);
-	
-	cfg_t* c = compile_subgoal(context,next);
-	if (c && c->m_entry_point->m_count >= 4)
-	{
-		cse_info_t* cse = (cse_info_t*)term;
-		cse_previous_t* prev = NULL;
-		for (cse_previous_t* p = cse->m_previous; p; p=p->m_next)
-		{
-			if (cfg_compare(context,p->m_cfg,c))
-			{
-				++p->m_refcount;
-				prev = p;
-				c = p->m_cfg;
-				heap_reset(context->m_heap,heap_start);
-				break;
-			}
-		}
-
-		if (!prev)
-		{
-			prev = heap_malloc(context->m_heap,sizeof(cse_previous_t));
-			if (!prev)
-				longjmp(context->m_jmp,1);
-
-			*prev = (cse_previous_t){
-				.m_refcount = 1,
-				.m_cfg = c,
-				.m_next = cse->m_previous
-			};
-			cse->m_previous = prev;
-		}
-	
-		cfg_t* c1 = new_cfg(context);
-
-		cse_cfg_t* stub = heap_malloc(context->m_heap,sizeof(cse_cfg_t));
-		if (!stub)
-			longjmp(context->m_jmp,1);
-
-		*stub = (cse_cfg_t){
-			.m_cfg = c1, 
-			.m_next = cse->m_stubs
-		};
-		cse->m_stubs = stub;
-		
-		opcode_t* ops = append_opcodes(context,c1->m_entry_point,1);
-		ops->m_term.m_pval = prev;
-
-		c1->m_always_flags = c->m_always_flags;
-		c1->m_tail = new_cfg_block(context);
-
-		c = c1;
-	}
-
-	return c;
-}
-
 static uint64_t cfg_hash_term(const term_t* t)
 {
 	uint64_t h = 0;
@@ -537,7 +476,7 @@ static uint64_t cfg_hash_term(const term_t* t)
 	return h;
 }
 
-static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* index, btree_t* loop_check, cfg_block_t* blk)
+static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* duplicates, btree_t* index, btree_t* loop_check, cfg_block_t* blk)
 {
 	if (!blk || !blk->m_count)
 		return 0;
@@ -562,13 +501,13 @@ static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* index, btree_t
 		case OP_JMP:
 		case OP_GOSUB:
 		case OP_BRANCH:
-			h += cfg_hash_blk(context,index,loop_check,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
+			h += cfg_hash_blk(context,duplicates,index,loop_check,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
 			break;
 
 		case OP_BUILTIN:
 		case OP_EXTERN:
 			h += blk->m_ops[i+1].m_term.m_u64val;
-			h += cfg_hash_blk(context,index,loop_check,(cfg_block_t*)blk->m_ops[i+2].m_term.m_pval);
+			h += cfg_hash_blk(context,duplicates,index,loop_check,(cfg_block_t*)blk->m_ops[i+2].m_term.m_pval);
 			break;
 
 		default:
@@ -583,33 +522,249 @@ static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* index, btree_t
 	btree_insert(loop_check,(uintptr_t)blk,(void*)h);
 		
 	cfg_block_t* blk2 = btree_insert(index,h,(void*)blk);
-	if (blk2 && blk != blk2 && blk->m_count > 1)
+	if (blk2 && blk != blk2)
 	{
-		prolite_allocator_t a = heap_allocator(context->m_heap);
-		btree_t loop_check2 = { .m_allocator = &a };
-
+		btree_t loop_check2 = { .m_allocator = loop_check->m_allocator };
 		if (cfg_compare_blk(&loop_check2,blk,blk2))
-		{
-			// Rewrite blk to JMP to blk2
-			blk->m_ops[0].m_opcode.m_op = OP_JMP;
-			blk->m_ops[1].m_term.m_pval = (const term_t*)blk2;
-			blk->m_count = 2;
-		}
-
+			btree_insert(duplicates,(uintptr_t)blk,blk2);
+		
 		btree_clear(&loop_check2,NULL,NULL);
 	}
 
 	return h;
 }
 
-static void cfg_hash(compile_context_t* context, btree_t* index, cfg_t* c)
+static void cfg_hash(compile_context_t* context, btree_t* duplicates, btree_t* index, const cfg_t* c)
 {
-	prolite_allocator_t a = heap_allocator(context->m_heap);
-	btree_t loop_check = { .m_allocator = &a };
+	btree_t loop_check = { .m_allocator = index->m_allocator };
 
-	cfg_hash_blk(context,index,&loop_check,c->m_entry_point);
+	cfg_hash_blk(context,duplicates,index,&loop_check,c->m_entry_point);
 
 	btree_clear(&loop_check,NULL,NULL);
+}
+
+static void cfg_fold(void* param, uint64_t key, void* val)
+{
+	cfg_block_t* blk = (cfg_block_t*)key;
+	
+	// Rewrite blk to JMP to blk2
+	if (blk->m_count > 1)
+	{
+		blk->m_count = 2;
+		blk->m_ops[0].m_opcode = (struct op_arg){ .m_op = OP_JMP };
+		blk->m_ops[1].m_term.m_pval = val;
+	}
+}
+
+static void cfg_simplify_blk(btree_t* index, cfg_block_t* blk)
+{
+	if (btree_exists(index,(uintptr_t)blk))
+		return;
+
+	int do_again = 0;
+	
+	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
+	{
+		cfg_block_t** gosub = NULL;
+		switch (blk->m_ops[i].m_opcode.m_op)
+		{
+		case OP_JMP:
+			{
+				// Rewrite JMP -> JMP => JMP
+				cfg_block_t** next = (cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
+				while ((*next)->m_count == 2 &&
+					(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
+				{
+					*next = (cfg_block_t*)(*next)->m_ops[1].m_term.m_pval;
+				}
+
+				// Rewrite JMP -> RET => RET
+				if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
+				{
+					blk->m_ops[i].m_opcode = (struct op_arg){ .m_op = OP_RET };
+					--blk->m_count;
+				}
+				else
+					cfg_simplify_blk(index,*next);
+			}
+			break;
+
+		case OP_BRANCH:
+			{
+				// Rewrite BRANCH -> JMP => BRANCH
+				const cfg_block_t** next = (const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
+				while ((*next)->m_count == 2 &&
+					(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
+				{
+					*next = (*next)->m_ops[1].m_term.m_pval;
+				}
+				do_again = 1;
+			}
+			break;
+
+		case OP_GOSUB:
+			gosub = (cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
+			break;
+
+		case OP_BUILTIN:
+		case OP_EXTERN:
+			gosub = (cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval;
+			break;
+
+		default:
+			break;
+		}
+
+		if (gosub && *gosub)
+		{
+			// Rewrite GOSUB -> JMP => GOSUB
+			while ((*gosub)->m_count == 2 &&
+				(*gosub)->m_ops[0].m_opcode.m_op == OP_JMP)
+			{
+				*gosub = (cfg_block_t*)(*gosub)->m_ops[1].m_term.m_pval;
+			}
+
+			while ((*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB)
+			{
+				// Rewrite { GOSUB, JMP -> JMP } => { GOSUB -> JMP }
+				if ((*gosub)->m_count == 4 && (*gosub)->m_ops[2].m_opcode.m_op == OP_JMP)
+				{
+					cfg_block_t** next = (cfg_block_t**)&(*gosub)->m_ops[3].m_term.m_pval;
+					while ((*next)->m_count == 2 &&
+						(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
+					{
+						*next = (cfg_block_t*)(*next)->m_ops[1].m_term.m_pval;
+					}
+
+					// Rewrite { GOSUB, JMP -> RET => ( GOSUB, RET }
+					if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
+					{
+						(*gosub)->m_ops[2].m_opcode = (struct op_arg){ .m_op = OP_RET };
+						--(*gosub)->m_count;
+					}
+				}
+
+				// Rewrite GOSUB -> { GOSUB, RET } => GOSUB
+				while ((*gosub)->m_count == 3 &&
+					(*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB &&
+					(*gosub)->m_ops[2].m_opcode.m_op == OP_RET)
+				{
+					*gosub = (cfg_block_t*)(*gosub)->m_ops[1].m_term.m_pval;
+				}
+			}
+
+			do_again = 1;
+		}
+	}
+
+	if (do_again)
+	{
+		for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
+		{
+			switch (blk->m_ops[i].m_opcode.m_op)
+			{
+			case OP_BRANCH:
+			case OP_GOSUB:
+				cfg_simplify_blk(index,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
+				break;
+
+			case OP_BUILTIN:
+			case OP_EXTERN:
+				if (blk->m_ops[i+2].m_term.m_pval)
+					cfg_simplify_blk(index,(cfg_block_t*)blk->m_ops[i+2].m_term.m_pval);
+				break;
+
+			default:
+				break;
+			}
+		}
+	}
+
+	btree_insert(index,(uintptr_t)blk,(void*)1);
+}
+
+static void cfg_simplify(compile_context_t* context, const cfg_t* c)
+{
+	size_t heap_start = heap_top(context->m_heap);
+
+	prolite_allocator_t a = heap_allocator(context->m_heap);
+	btree_t index = { .m_allocator = &a };
+
+	// See if we can fold parts of the cfg...
+	btree_t duplicates = { .m_allocator = &a };
+	cfg_hash(context,&duplicates,&index,c);
+	btree_clear(&duplicates,&cfg_fold,context);
+
+	btree_clear(&index,NULL,NULL);
+
+	cfg_simplify_blk(&index,c->m_entry_point);
+
+	btree_clear(&index,NULL,NULL);
+
+	heap_reset(context->m_heap,heap_start);
+}
+
+static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const continuation_t* next)
+{
+	// Common Sub-expression Elimination (CSE)
+
+	size_t heap_start = heap_top(context->m_heap);
+	
+	cfg_t* c = compile_subgoal(context,next);
+	if (c && c->m_entry_point->m_count >= 4)
+	{
+		cfg_simplify(context,c);
+
+		cse_info_t* cse = (cse_info_t*)term;
+		cse_previous_t* prev = NULL;
+		for (cse_previous_t* p = cse->m_previous; p; p=p->m_next)
+		{
+			if (cfg_compare(context,p->m_cfg,c))
+			{
+				++p->m_refcount;
+				prev = p;
+				c = p->m_cfg;
+				heap_reset(context->m_heap,heap_start);
+				break;
+			}
+		}
+
+		if (!prev)
+		{
+			prev = heap_malloc(context->m_heap,sizeof(cse_previous_t));
+			if (!prev)
+				longjmp(context->m_jmp,1);
+
+			*prev = (cse_previous_t){
+				.m_refcount = 1,
+				.m_cfg = c,
+				.m_next = cse->m_previous
+			};
+			cse->m_previous = prev;
+		}
+	
+		cfg_t* c1 = new_cfg(context);
+
+		cse_cfg_t* stub = heap_malloc(context->m_heap,sizeof(cse_cfg_t));
+		if (!stub)
+			longjmp(context->m_jmp,1);
+
+		*stub = (cse_cfg_t){
+			.m_cfg = c1, 
+			.m_next = cse->m_stubs
+		};
+		cse->m_stubs = stub;
+		
+		opcode_t* ops = append_opcodes(context,c1->m_entry_point,1);
+		ops->m_term.m_pval = prev;
+
+		c1->m_always_flags = c->m_always_flags;
+		c1->m_tail = new_cfg_block(context);
+
+		c = c1;
+	}
+
+	return c;
 }
 
 static void complete_cse(compile_context_t* context, cse_info_t* cse)
@@ -617,13 +772,19 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 	// See if we can fold parts of each unique cfg...
 	if (cse->m_previous && cse->m_previous->m_next)
 	{
+		size_t heap_start = heap_top(context->m_heap);
+
 		prolite_allocator_t a = heap_allocator(context->m_heap);
 		btree_t index = { .m_allocator = &a };
+		btree_t duplicates = { .m_allocator = &a };
 
 		for (cse_previous_t* p = cse->m_previous; p; p=p->m_next)
-			cfg_hash(context,&index,p->m_cfg);
-		
+			cfg_hash(context,&duplicates,&index,p->m_cfg);
+
 		btree_clear(&index,NULL,NULL);
+		btree_clear(&duplicates,&cfg_fold,context);
+
+		heap_reset(context->m_heap,heap_start);
 	}
 
 	for (cse_cfg_t* stub = cse->m_stubs; stub; stub = stub->m_next)
@@ -1889,7 +2050,6 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 	
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
-		cfg_block_t** gosub = NULL;
 		switch (blk->m_ops[i].m_opcode.m_op)
 		{
 		case OP_NOP:
@@ -1897,91 +2057,18 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 			break;
 
 		case OP_JMP:
-			{
-				// Rewrite JMP -> JMP => JMP
-				cfg_block_t** next = (cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
-				while ((*next)->m_count == 2 &&
-					(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
-				{
-					*next = (cfg_block_t*)(*next)->m_ops[1].m_term.m_pval;
-				}
-
-				// Rewrite JMP -> RET => RET
-				if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
-				{
-					blk->m_ops[i].m_opcode = (struct op_arg){ .m_op = OP_RET };
-					--blk->m_count;
-				}
-				else
-					walk_cfgs(context,blks,*next);
-			}
+			walk_cfgs(context,blks,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
 			break;
 
 		case OP_BRANCH:
-			{
-				// Rewrite BRANCH -> JMP => BRANCH
-				const cfg_block_t** next = (const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
-				while ((*next)->m_count == 2 &&
-					(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
-				{
-					*next = (*next)->m_ops[1].m_term.m_pval;
-				}
-				do_again = 1;
-			}
-			break;
-
 		case OP_GOSUB:
-			gosub = (cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
-			break;
-
 		case OP_BUILTIN:
 		case OP_EXTERN:
-			gosub = (cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval;
+			do_again = 1;
 			break;
 
 		default:
 			break;
-		}
-
-		if (gosub && *gosub)
-		{
-			// Rewrite GOSUB -> JMP => GOSUB
-			while ((*gosub)->m_count == 2 &&
-				(*gosub)->m_ops[0].m_opcode.m_op == OP_JMP)
-			{
-				*gosub = (cfg_block_t*)(*gosub)->m_ops[1].m_term.m_pval;
-			}
-
-			while ((*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB)
-			{
-				// Rewrite { GOSUB, JMP -> JMP } => { GOSUB -> JMP }
-				if ((*gosub)->m_count == 4 && (*gosub)->m_ops[2].m_opcode.m_op == OP_JMP)
-				{
-					cfg_block_t** next = (cfg_block_t**)&(*gosub)->m_ops[3].m_term.m_pval;
-					while ((*next)->m_count == 2 &&
-						(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
-					{
-						*next = (cfg_block_t*)(*next)->m_ops[1].m_term.m_pval;
-					}
-
-					// Rewrite { GOSUB, JMP -> RET => ( GOSUB, RET }
-					if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
-					{
-						(*gosub)->m_ops[2].m_opcode = (struct op_arg){ .m_op = OP_RET };
-						--(*gosub)->m_count;
-					}
-				}
-
-				// Rewrite GOSUB -> { GOSUB, RET } => GOSUB
-				while ((*gosub)->m_count == 3 &&
-					(*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB &&
-					(*gosub)->m_ops[2].m_opcode.m_op == OP_RET)
-				{
-					*gosub = (cfg_block_t*)(*gosub)->m_ops[1].m_term.m_pval;
-				}
-			}
-
-			do_again = 1;
 		}
 	}
 
@@ -2577,9 +2664,12 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 
 		append_ret(&cc,c->m_tail);
 
+		cfg_simplify(&cc,c);
+
 		prolite_allocator_t a = heap_allocator(&context->m_heap);
+
 		cfg_vec_t blks = { .m_index.m_allocator = &a };
-		walk_cfgs(&cc,&blks,c->m_entry_point);
+		walk_cfgs(&cc,&blks,c->m_entry_point);	
 
 #if ENABLE_TESTS
 		dumpCFG(context,&blks,"./cfg.dot");
