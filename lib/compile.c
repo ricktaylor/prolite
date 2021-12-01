@@ -548,12 +548,13 @@ static void cfg_fold(void* param, uint64_t key, void* val)
 	cfg_block_t* blk = (cfg_block_t*)key;
 	
 	// Rewrite blk to JMP to blk2
-	if (blk->m_count > 1)
-	{
+	if (blk->m_count < 2)
+		append_opcodes(param,blk,2 - blk->m_count);
+	else
 		blk->m_count = 2;
-		blk->m_ops[0].m_opcode = (struct op_arg){ .m_op = OP_JMP };
-		blk->m_ops[1].m_term.m_pval = val;
-	}
+
+	blk->m_ops[0].m_opcode = (struct op_arg){ .m_op = OP_JMP };
+	blk->m_ops[1].m_term.m_pval = val;
 }
 
 static void cfg_simplify_blk(btree_t* index, cfg_block_t* blk)
@@ -685,8 +686,6 @@ static void cfg_simplify_blk(btree_t* index, cfg_block_t* blk)
 
 static void cfg_simplify(compile_context_t* context, const cfg_t* c)
 {
-	size_t heap_start = heap_top(context->m_heap);
-
 	prolite_allocator_t a = heap_allocator(context->m_heap);
 	btree_t index = { .m_allocator = &a };
 
@@ -700,8 +699,6 @@ static void cfg_simplify(compile_context_t* context, const cfg_t* c)
 	cfg_simplify_blk(&index,c->m_entry_point);
 
 	btree_clear(&index,NULL,NULL);
-
-	heap_reset(context->m_heap,heap_start);
 }
 
 static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const continuation_t* next)
@@ -772,8 +769,6 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 	// See if we can fold parts of each unique cfg...
 	if (cse->m_previous && cse->m_previous->m_next)
 	{
-		size_t heap_start = heap_top(context->m_heap);
-
 		prolite_allocator_t a = heap_allocator(context->m_heap);
 		btree_t index = { .m_allocator = &a };
 		btree_t duplicates = { .m_allocator = &a };
@@ -783,8 +778,6 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 
 		btree_clear(&index,NULL,NULL);
 		btree_clear(&duplicates,&cfg_fold,context);
-
-		heap_reset(context->m_heap,heap_start);
 	}
 
 	for (cse_cfg_t* stub = cse->m_stubs; stub; stub = stub->m_next)
