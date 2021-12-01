@@ -334,6 +334,9 @@ static int cfg_compare_blk(btree_t* index, const cfg_block_t* blk1, const cfg_bl
 	if (blk1 == blk2)
 		return 1;
 
+	if (!blk1 || !blk2)
+		return 0;
+
 	if (blk1->m_count != blk2->m_count)
 		return 0;
 
@@ -341,26 +344,15 @@ static int cfg_compare_blk(btree_t* index, const cfg_block_t* blk1, const cfg_bl
 		(const cfg_block_t*)btree_lookup(index,(uintptr_t)blk2) == blk1)
 		return 1;
 
-	for (size_t i = 0; i < blk1->m_count; i += inc_ip(blk1->m_ops[i].m_opcode.m_op))
+	for (size_t i = 0; i < blk1->m_count;)
 	{
-		if (blk1->m_ops[i].m_opcode.m_op != blk2->m_ops[i].m_opcode.m_op)
+		if (memcmp(&blk1->m_ops[i],&blk2->m_ops[i],sizeof(opcode_t)))
 			return 0;
+
+		size_t inc = inc_ip(blk1->m_ops[i].m_opcode.m_op);
 
 		switch (blk1->m_ops[i].m_opcode.m_op)
 		{
-		case OP_PUSH_NULL:
-		case OP_POP:
-		case OP_CLEAR_FLAGS:
-		case OP_SET_FLAGS:
-			if (blk1->m_ops[i].m_opcode.m_arg != blk2->m_ops[i].m_opcode.m_arg)
-				return 0;
-			break;
-
-		case OP_PUSH_CONST:
-			if (blk1->m_ops[i+1].m_term.m_u64val != blk2->m_ops[i+1].m_term.m_u64val)
-				return 0;
-			break;
-
 		case OP_PUSH_TERM_REF:
 			if (!term_compare(blk1->m_ops[i+1].m_term.m_pval,blk2->m_ops[i+1].m_term.m_pval))
 				return 0;
@@ -373,11 +365,8 @@ static int cfg_compare_blk(btree_t* index, const cfg_block_t* blk1, const cfg_bl
 			break;
 
 		case OP_BRANCH:
-			if (blk1->m_ops[i].m_opcode.m_arg != blk2->m_ops[i].m_opcode.m_arg ||
-				!cfg_compare_blk(index,blk1->m_ops[i+1].m_term.m_pval,blk2->m_ops[i+1].m_term.m_pval))
-			{
+			if (!cfg_compare_blk(index,blk1->m_ops[i+1].m_term.m_pval,blk2->m_ops[i+1].m_term.m_pval))
 				return 0;
-			}
 			break;
 
 		case OP_BUILTIN:
@@ -390,8 +379,12 @@ static int cfg_compare_blk(btree_t* index, const cfg_block_t* blk1, const cfg_bl
 			break;
 
 		default:
+			if (inc > 1 && memcmp(&blk1->m_ops[i+1],&blk2->m_ops[i+1],sizeof(opcode_t) * (inc-1)))
+				return 0;
 			break;
 		}
+
+		i += inc;
 	}
 
 	// We got here, all matched
