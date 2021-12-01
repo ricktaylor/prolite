@@ -1762,8 +1762,8 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 				// Rewrite JMP -> RET => RET
 				if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
 				{
-					//blk->m_ops[i].m_opcode = (struct op_arg){ .m_op = OP_RET };
-					//--blk->m_count;
+					blk->m_ops[i].m_opcode = (struct op_arg){ .m_op = OP_RET };
+					--blk->m_count;
 				}
 				else
 					walk_cfgs(context,blks,*next);
