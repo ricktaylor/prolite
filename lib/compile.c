@@ -470,8 +470,162 @@ static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const 
 	return c;
 }
 
+static uint64_t cfg_hash_term(const term_t* t)
+{
+	uint64_t h = 0;
+
+	switch (get_term_type(t))
+	{
+	case prolite_atom:
+	case prolite_chars:
+	case prolite_charcodes:
+		switch (get_term_subtype(t))
+		{
+		case 0:
+		case 3:
+			{
+				string_t s;
+				get_string(t,&s,NULL);
+
+				while (s.m_len > sizeof(uint64_t))
+				{
+					h += *(const uint64_t*)(s.m_str);
+					s.m_str += sizeof(uint64_t);
+					s.m_len -= sizeof(uint64_t);
+				}
+
+				switch (s.m_len)
+				{
+				case 7: h += ((uint64_t)*(s.m_str++)) << 48;
+				case 6: h += ((uint64_t)*(s.m_str++)) << 40;
+				case 5: h += ((uint64_t)*(s.m_str++)) << 32;
+				case 4: h += ((uint64_t)*(s.m_str++)) << 24;
+				case 3: h += ((uint64_t)*(s.m_str++)) << 16;
+				case 2: h += ((uint64_t)*(s.m_str++)) << 8;
+				case 1: h += ((uint64_t)*(s.m_str++));
+				case 0:
+					break;
+				}		
+			}
+
+		default:
+			return t->m_u64val;	
+		}
+		break;
+
+	case prolite_compound:
+		{
+			h = t->m_u64val;
+			if (get_term_subtype(t) == 0)
+				h += cfg_hash_term(t+1);
+
+			size_t arity;
+			const term_t* p = get_first_arg(t,&arity);
+			while (arity--)
+			{
+				h += cfg_hash_term(p);
+				p = get_next_arg(p);
+			}
+		}
+		break;
+
+	default:
+		h = t->m_u64val;
+		break;
+	}
+
+	return h;
+}
+
+static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* index, btree_t* loop_check, cfg_block_t* blk)
+{
+	if (!blk || !blk->m_count)
+		return 0;
+	
+	if (btree_exists(loop_check,(uintptr_t)blk))
+		return (uintptr_t)btree_lookup(loop_check,(uintptr_t)blk);
+
+	uint64_t h = 0;
+	
+	for (size_t i = 0; i < blk->m_count; )
+	{
+		h += blk->m_ops[i].m_term.m_u64val;
+
+		size_t inc = inc_ip(blk->m_ops[i].m_opcode.m_op);
+		
+		switch (blk->m_ops[i].m_opcode.m_op)
+		{
+		case OP_PUSH_TERM_REF:
+			h += cfg_hash_term(blk->m_ops[i+1].m_term.m_pval);
+			break;
+
+		case OP_JMP:
+		case OP_GOSUB:
+		case OP_BRANCH:
+			h += cfg_hash_blk(context,index,loop_check,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
+			break;
+
+		case OP_BUILTIN:
+		case OP_EXTERN:
+			h += blk->m_ops[i+1].m_term.m_u64val;
+			h += cfg_hash_blk(context,index,loop_check,(cfg_block_t*)blk->m_ops[i+2].m_term.m_pval);
+			break;
+
+		default:
+			for (size_t j = 1; j < inc; ++j)
+				h += blk->m_ops[i+j].m_term.m_u64val;
+			break;
+		}
+
+		i += inc;
+	}
+
+	btree_insert(loop_check,(uintptr_t)blk,(void*)h);
+		
+	cfg_block_t* blk2 = btree_insert(index,h,(void*)blk);
+	if (blk2 && blk != blk2 && blk->m_count > 2)
+	{
+		prolite_allocator_t a = heap_allocator(context->m_heap);
+		btree_t loop_check2 = { .m_allocator = &a };
+
+		if (cfg_compare_blk(&loop_check2,blk,blk2))
+		{
+			// Rewrite blk to JMP to blk2
+			blk->m_ops[0].m_opcode.m_op = OP_JMP;
+			blk->m_ops[1].m_term.m_pval = (const term_t*)blk2;
+			blk->m_count = 2;
+		}
+
+		btree_clear(&loop_check2,NULL,NULL);
+	}
+
+	return h;
+}
+
+static void cfg_hash(compile_context_t* context, btree_t* index, cfg_t* c)
+{
+	prolite_allocator_t a = heap_allocator(context->m_heap);
+	btree_t loop_check = { .m_allocator = &a };
+
+	cfg_hash_blk(context,index,&loop_check,c->m_entry_point);
+
+	btree_clear(&loop_check,NULL,NULL);
+}
+
 static void complete_cse(compile_context_t* context, cse_info_t* cse)
 {
+	// See if we can fold parts of each unique cfg...
+	if (cse->m_previous && cse->m_previous->m_next)
+	{
+		prolite_allocator_t a = heap_allocator(context->m_heap);
+		btree_t index = { .m_allocator = &a };
+
+		for (cse_previous_t* p = cse->m_previous; p; p=p->m_next)
+			cfg_hash(context,&index,p->m_cfg);
+		
+		btree_clear(&index,NULL,NULL);
+	}
+
 	for (cse_cfg_t* stub = cse->m_stubs; stub; stub = stub->m_next)
 	{
 		assert(stub->m_cfg->m_entry_point->m_count == 1);
