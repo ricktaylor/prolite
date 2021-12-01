@@ -18,6 +18,7 @@ typedef struct btree
 	prolite_allocator_t* m_allocator;
 } btree_t;
 
+_Bool btree_exists(const btree_t* bt, uint64_t key);
 void* btree_lookup(const btree_t* bt, uint64_t key);
 void* btree_insert(btree_t* bt, uint64_t key, void* val);
 void* btree_replace(btree_t* bt, uint64_t key, void* val);

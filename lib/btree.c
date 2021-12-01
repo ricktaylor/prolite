@@ -63,6 +63,25 @@ void* btree_lookup(const btree_t* bt, uint64_t key)
 	}
 }
 
+_Bool btree_exists(const btree_t* bt, uint64_t key)
+{
+	if (!bt || !bt->m_root)
+		return 0;
+
+	for (struct btree_page* page = bt->m_root;;)
+	{
+		size_t i = binary_search(page,key);
+		if (!page->m_internal)
+		{
+			return (i < page->m_count && page->m_keys[i] == key);
+		}
+
+		page = values(page)[i];
+	}
+
+	return 0;
+}
+
 static struct btree_page* split_leaf(btree_t* bt, struct btree_page* left)
 {
 	struct btree_page* right = allocator_malloc(bt->m_allocator,c_page_size);
