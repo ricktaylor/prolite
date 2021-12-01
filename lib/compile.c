@@ -2175,7 +2175,7 @@ static int std_output_stream_write_slash(struct prolite_stream* s, const void* s
 	while (len)
 	{
 		const char* c = NULL;
-		for (const char* s = " >"; *s != '\0'; ++s)
+		for (const char* s = " >|"; *s != '\0'; ++s)
 		{
 			const char* c1 = memchr(str,*s,len);
 			if (c1)
