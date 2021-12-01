@@ -583,7 +583,7 @@ static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* index, btree_t
 	btree_insert(loop_check,(uintptr_t)blk,(void*)h);
 		
 	cfg_block_t* blk2 = btree_insert(index,h,(void*)blk);
-	if (blk2 && blk != blk2 && blk->m_count > 2)
+	if (blk2 && blk != blk2 && blk->m_count > 1)
 	{
 		prolite_allocator_t a = heap_allocator(context->m_heap);
 		btree_t loop_check2 = { .m_allocator = &a };
