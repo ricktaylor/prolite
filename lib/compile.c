@@ -562,8 +562,6 @@ static void cfg_simplify_blk(btree_t* index, cfg_block_t* blk)
 	if (btree_exists(index,(uintptr_t)blk))
 		return;
 
-	int do_again = 0;
-	
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
 		cfg_block_t** gosub = NULL;
@@ -593,13 +591,14 @@ static void cfg_simplify_blk(btree_t* index, cfg_block_t* blk)
 		case OP_BRANCH:
 			{
 				// Rewrite BRANCH -> JMP => BRANCH
-				const cfg_block_t** next = (const cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
+				cfg_block_t** next = (cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
 				while ((*next)->m_count == 2 &&
 					(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
 				{
-					*next = (*next)->m_ops[1].m_term.m_pval;
+					*next = (cfg_block_t*)(*next)->m_ops[1].m_term.m_pval;
 				}
-				do_again = 1;
+				
+				cfg_simplify_blk(index,*next);
 			}
 			break;
 
@@ -654,30 +653,7 @@ static void cfg_simplify_blk(btree_t* index, cfg_block_t* blk)
 				}
 			}
 
-			do_again = 1;
-		}
-	}
-
-	if (do_again)
-	{
-		for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
-		{
-			switch (blk->m_ops[i].m_opcode.m_op)
-			{
-			case OP_BRANCH:
-			case OP_GOSUB:
-				cfg_simplify_blk(index,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
-				break;
-
-			case OP_BUILTIN:
-			case OP_EXTERN:
-				if (blk->m_ops[i+2].m_term.m_pval)
-					cfg_simplify_blk(index,(cfg_block_t*)blk->m_ops[i+2].m_term.m_pval);
-				break;
-
-			default:
-				break;
-			}
+			cfg_simplify_blk(index,*gosub);
 		}
 	}
 
@@ -2099,7 +2075,7 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 
 		for (size_t i = 0; i < blk->m_count; )
 		{
-			size_t len = inc_ip(blk->m_ops[i].m_opcode.m_op);
+			size_t inc = inc_ip(blk->m_ops[i].m_opcode.m_op);
 
 			switch (blk->m_ops[i].m_opcode.m_op)
 			{
@@ -2118,18 +2094,18 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 			case OP_JMP:
 				if (j == blks->m_count-1 || blk->m_ops[i+1].m_term.m_pval != blks->m_blks[j+1]->m_blk)
 				{
-					memcpy(code,blk->m_ops + i,len * sizeof(*code));
-					code += len;
+					memcpy(code,blk->m_ops + i,inc * sizeof(*code));
+					code += inc;
 				}
 				break;
 
 			default:
-				memcpy(code,blk->m_ops + i,len * sizeof(*code));
-				code += len;
+				memcpy(code,blk->m_ops + i,inc * sizeof(*code));
+				code += inc;
 				break;
 			}
 
-			i += len;
+			i += inc;
 		}
 	}
 
