@@ -703,6 +703,7 @@ int term_precedes(const term_t* t1, const term_t* t2)
 void builtin_type_test(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]) 
 {
 	// TODO:
+	assert(0);
 }
 
 static const term_t* push_term_inner(context_t* context, const term_t* src, int allow_external, uint64_t** var_mapping, size_t* var_count, jmp_buf* jmp)

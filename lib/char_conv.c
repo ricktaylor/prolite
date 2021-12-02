@@ -115,4 +115,5 @@ void builtin_char_conversion(context_t* context, const term_t* gosub, size_t arg
 
 void builtin_current_char_conversion(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
+	assert(0);
 }
