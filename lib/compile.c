@@ -299,18 +299,14 @@ size_t inc_ip(optype_t op)
 	case OP_PUSH_CONST:
 	case OP_PUSH_TERM_REF:
 	case OP_BRANCH:
-		++ip;
-		break;
-
-	case OP_BUILTIN:
-	case OP_EXTERN:
-		ip += 2;
-		break;
-
+	case OP_ALLOC_REGS:
+	case OP_FREE_REGS:
 	case OP_PUSH_REG:
 		++ip;
 		break;
 	
+	case OP_BUILTIN:
+	case OP_EXTERN:
 	case OP_SET_REG:
 	case OP_LOAD_REG:
 	case OP_MOV_REG:
@@ -2396,6 +2392,14 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			fprintf(f,"Pop\\ %u",blk->m_ops[i].m_opcode.m_arg);
 			break;
 
+		case OP_ALLOC_REGS:
+			fprintf(f,"Alloc\\ %zu\\ registers",(size_t)blk->m_ops[i+1].m_term.m_u64val);
+			break;
+
+		case OP_FREE_REGS:
+			fprintf(f,"Free\\ %zu\\ registers",(size_t)blk->m_ops[i+1].m_term.m_u64val);
+			break;
+
 		case OP_PUSH_REG:
 			fprintf(f,"Push\\ $%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val);
 			break;
@@ -2563,6 +2567,14 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 
 		case OP_POP:
 			fprintf(f,"pop %u;\n",code->m_opcode.m_arg);
+			break;
+
+		case OP_ALLOC_REGS:
+			fprintf(f,"alloc %zu registers;\n",(size_t)code[1].m_term.m_u64val);
+			break;
+
+		case OP_FREE_REGS:
+			fprintf(f,"free %zu registers;\n",(size_t)code[1].m_term.m_u64val);
 			break;
 
 		case OP_PUSH_REG:

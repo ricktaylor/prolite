@@ -454,6 +454,7 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term,
 
 	size_t regs = 0;
 	cfg_t* c = (*e->m_shim)(context,e,&regs);
+	opcode_t* ops;
 			
 	switch (e->m_type)
 	{
@@ -465,32 +466,40 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term,
 				longjmp(context->m_jmp,1);
 
 			t->m_dval = e->m_dval;
-			c = compile_unify_terms(context,next->m_term,t,next->m_next);
+			return compile_unify_terms(context,next->m_term,t,next->m_next);
 		}
-		else
-		{
-			c = new_cfg(context);
-			opcode_t* ops = append_opcodes(context,c->m_tail,2);
-			(ops++)->m_opcode.m_op = OP_PUSH_CONST;
-			ops->m_term.m_dval = e->m_dval;
-			c = goto_next(context,c,compile_subgoal(context,next));
-		}
+		
+		c = new_cfg(context);
+		ops = append_opcodes(context,c->m_tail,2);
+		(ops++)->m_opcode.m_op = OP_PUSH_CONST;
+		ops->m_term.m_dval = e->m_dval;
 		break;
 
 	case EXPR_TYPE_REG:
-		{
-			opcode_t* ops = append_opcodes(context,c->m_tail,2);
-			(ops++)->m_opcode.m_op = OP_PUSH_REG;
-			(ops++)->m_term.m_u64val = regs - 1;
-			c = goto_next(context,c,compile_subgoal(context,next));
-		}
+		ops = append_opcodes(context,c->m_tail,2);
+		(ops++)->m_opcode.m_op = OP_PUSH_REG;
+		ops->m_term.m_u64val = regs - 1;
 		break;
 
 	default:
-		break;
+		return c;
 	}
 
-	return c;
+	if (regs)
+	{
+		cfg_t* c1 = new_cfg(context);
+		ops = append_opcodes(context,c1->m_tail,2);
+		(ops++)->m_opcode.m_op = OP_ALLOC_REGS;
+		ops->m_term.m_u64val = regs;
+		
+		ops = append_opcodes(context,c->m_tail,2);
+		(ops++)->m_opcode.m_op = OP_FREE_REGS;
+		ops->m_term.m_u64val = regs;
+
+		c = goto_next(context,c1,c);
+	}
+
+	return goto_next(context,c,compile_subgoal(context,next));
 }
 
 static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, const continuation_t* next)

@@ -38,6 +38,8 @@ typedef enum optype
 	OP_POP,
 
 	// Expression ops...
+	OP_ALLOC_REGS,
+	OP_FREE_REGS,
 	OP_PUSH_REG,
 	OP_SET_REG,
 	OP_LOAD_REG,
