@@ -49,7 +49,10 @@ static expr_node_t* walk_expr(compile_context_t* context, const term_t* expr, ex
 
 static expr_node_t* new_expr_node(compile_context_t* context, expr_node_type_t type)
 {
-	expr_node_t* e = stack_malloc(&context->m_stack,sizeof(expr_node_t));
+	expr_node_t* e = heap_malloc(context->m_heap,sizeof(expr_node_t));
+	if (!e)
+		longjmp(context->m_jmp,1);
+
 	e->m_type = type;
 	return e;
 }
@@ -538,10 +541,16 @@ static const continuation_t* walk_expr_vars(compile_context_t* context, const te
 	while (start < context->m_substs->m_count && !substs[start].m_expr)
 		++start;
 
-	continuation_t* c = stack_malloc(&context->m_stack,sizeof(continuation_t));
+	continuation_t* c = heap_malloc(context->m_heap,sizeof(continuation_t));
+	if (!c)
+		longjmp(context->m_jmp,1);
+
 	if (start == context->m_substs->m_count)
 	{
-		walk_info_t* wi = stack_malloc(&context->m_stack,sizeof(walk_info_t));
+		walk_info_t* wi = heap_malloc(context->m_heap,sizeof(walk_info_t));
+		if (!wi)
+			longjmp(context->m_jmp,1);
+
 		*wi = (walk_info_t){
 			.m_substs = substs,
 			.m_expr = expr
@@ -563,13 +572,12 @@ static const continuation_t* walk_expr_vars(compile_context_t* context, const te
 			.m_next = walk_expr_vars(context,expr,substs,start+1,idx,next)
 		};
 	}
+	
 	return c;
 }
 
 static cfg_t* compile_expr(compile_context_t* context, const term_t* expr, const continuation_t* next)
 {
-	term_t* sp = context->m_stack;
-
 	cfg_t* c;
 	if (!context->m_substs || !context->m_substs->m_count)
 	{
@@ -583,14 +591,15 @@ static cfg_t* compile_expr(compile_context_t* context, const term_t* expr, const
 	}
 	else
 	{
-		expr_subst_t* substs = stack_malloc(&context->m_stack,sizeof(expr_subst_t) * context->m_substs->m_count);
+		expr_subst_t* substs = heap_malloc(context->m_heap,sizeof(expr_subst_t) * context->m_substs->m_count);
+		if (!substs)
+			longjmp(context->m_jmp,1);
+
 		memset(substs,0,sizeof(expr_subst_t) * context->m_substs->m_count);
 
 		size_t var_count = extract_vars(context,expr,substs);
 		c = compile_subgoal(context,walk_expr_vars(context,expr,substs,0,var_count,next));
 	}
-
-	context->m_stack = sp;
 
 	return c;
 }

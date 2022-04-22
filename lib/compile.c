@@ -1113,9 +1113,7 @@ static int compile_occurs_check(compile_context_t* context, const term_t* t1, co
 
 static cfg_t* compile_unify_shim(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
-	const term_t** goals = (const term_t**)term;
-
-	size_t idx = get_var_index(goals[0]);
+	size_t idx = get_var_index(term);
 	assert(context->m_substs && idx < context->m_substs->m_count);
 
 	cfg_t* c = compile_subgoal(context,next);
@@ -1124,9 +1122,9 @@ static cfg_t* compile_unify_shim(compile_context_t* context, const term_t* term,
 		cfg_t* c1 = new_cfg(context);
 		opcode_t* ops = append_opcodes(context,c1->m_tail,4);
 		(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
-		(ops++)->m_term.m_pval = goals[0];
+		(ops++)->m_term.m_pval = term;
 		(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
-		ops->m_term.m_pval = goals[1];
+		ops->m_term.m_pval = term + 1;
 
 		c1->m_always_flags = c->m_always_flags;
 		c = goto_next(context,c1,c);
@@ -1150,14 +1148,20 @@ static const continuation_t* compile_unify_var(compile_context_t* context, const
 
 	++ui->m_var_count;
 
-	continuation_t* c = stack_malloc(&context->m_stack,sizeof(continuation_t));
-	
-	(--context->m_stack)->m_pval = t2;
-	(--context->m_stack)->m_pval = t1;
+	const term_t** t = heap_malloc(context->m_heap,2 * sizeof(term_t*));
+	if (!t)
+		longjmp(context->m_jmp,1);
 
+	t[0] = t1;
+	t[1] = t2;
+
+	continuation_t* c = heap_malloc(context->m_heap,sizeof(continuation_t));
+	if (!c)
+		longjmp(context->m_jmp,1);
+	
 	c->m_next = next;
 	c->m_shim = &compile_unify_shim;
-	c->m_term = context->m_stack;
+	c->m_term = t[0];
 
 	return c;
 }
@@ -1252,22 +1256,22 @@ static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, 
 	if (compile_occurs_check(context,t1,t2))
 		return NULL;
 
-	term_t* sp = context->m_stack;
-
 	substitutions_t* prev_substs = context->m_substs;
 	if (context->m_substs)
 	{
-		substitutions_t* substs = stack_malloc(&context->m_stack,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
+		substitutions_t* substs = heap_malloc(context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
+		if (!substs)
+			longjmp(context->m_jmp,1);
+		
 		substs->m_count = context->m_substs->m_count;
 		memcpy(substs->m_vals,context->m_substs->m_vals,context->m_substs->m_count * sizeof(term_t*));
 
 		context->m_substs = substs;
 	}
 
-	continuation_t* cont = stack_malloc(&context->m_stack,sizeof(continuation_t));
-	
 	unify_info_t ui = { .m_with_occurs_check = with_occurs_check };
-	*cont = (continuation_t){
+
+	const continuation_t* cont = &(continuation_t){
 		.m_shim = &compile_unify_end_shim,
 		.m_term = (const term_t*)&ui,
 		.m_next = next
@@ -1284,8 +1288,6 @@ static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, 
 	}
 
 	context->m_substs = prev_substs;
-
-	context->m_stack = sp;
 
 	return c;
 }
@@ -1488,27 +1490,29 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	substitutions_t* prev_substs = context->m_substs;
 	if (context->m_substs)
 	{
-		substitutions_t* substs = stack_malloc(&context->m_stack,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
+		substitutions_t* substs = heap_malloc(context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
+		if (!substs)
+			longjmp(context->m_jmp,1);
+
 		substs->m_count = context->m_substs->m_count;
 		memcpy(substs->m_vals,context->m_substs->m_vals,context->m_substs->m_count * sizeof(term_t*));
 
 		context->m_substs = substs;
 	}
 
-	term_t* sp = context->m_stack;
-
 	substitutions_t* next_substs = NULL;
 	if (clause->m_var_count)
 	{
-		next_substs = stack_malloc(&context->m_stack,sizeof(substitutions_t) + (sizeof(term_t) * clause->m_var_count));
+		next_substs = heap_malloc(context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * clause->m_var_count));
+		if (!next_substs)
+			longjmp(context->m_jmp,1);
+
 		next_substs->m_count = clause->m_var_count;
 		memset(next_substs->m_vals,0,clause->m_var_count * sizeof(term_t*));
 	}
 
-	continuation_t* cont = stack_malloc(&context->m_stack,sizeof(continuation_t));
-	
 	unify_info_t ui = {0};
-	*cont = (continuation_t){
+	continuation_t* cont = &(continuation_t){
 		.m_shim = &compile_unify_end_shim,
 		.m_term = (const term_t*)&ui,
 		.m_next = &(continuation_t){
@@ -1536,8 +1540,7 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	}
 
 	context->m_substs = prev_substs;
-	context->m_stack = sp;
-
+	
 	return c;
 }
 
@@ -2687,7 +2690,9 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 		context->m_stack = sp;
 	}
 
+#if ENABLE_TESTS
 	fprintf(stdout,"Mem: %zu\n",heap_top(&context->m_heap) - heap_start);
+#endif
 
 	/* Bulk free all heap allocs */
 	heap_reset(&context->m_heap,heap_start);
