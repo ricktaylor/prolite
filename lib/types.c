@@ -315,6 +315,7 @@ const term_t* get_next_arg(const term_t* t)
 			switch (hi16 >> 14)
 			{
 			case 3:
+				arity = 0;
 				assert(0);
 				break;
 
@@ -364,6 +365,8 @@ const term_t* get_first_arg(const term_t* compound, size_t* arity)
 	switch (hi16 >> 14)
 	{
 	case 3:
+		if (arity)
+			*arity = 0;
 		assert(0);
 		break;
 
@@ -752,6 +755,7 @@ static const term_t* push_term_inner(context_t* context, const term_t* src, int 
 			switch (hi16 >> 14)
 			{
 			case 3:
+				arity = 0;
 				assert(0);
 				break;
 
