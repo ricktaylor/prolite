@@ -641,6 +641,11 @@ static int consult(context_t* context, const term_t* filename)
 		// Initializer context flags must be the consult flags
 		for (consult_initializer_t* init = cc.m_initializers; init ; init = init->m_next)
 		{
+			string_t s;
+			size_t arity;
+			get_predicate(init->m_goal,&s,&arity,NULL);
+			fprintf(stdout,"=======================\nCompiling %.*s/%zu\n",(int)s.m_len,s.m_str,arity);
+
 			compile_goal(context,&inline_call,&cc,init->m_goal,init->m_var_count);
 		}
 	}
