@@ -1660,8 +1660,6 @@ void* inline_predicate_call(void* vc, const compile_predicate_t* pred, const ter
 	if (!pred->m_clauses->m_next)
 		next = vnext;
 
-	term_t* sp = context->m_stack;
-
 	cfg_t* c_end = NULL;
 	cfg_t* c = NULL;
 	for (const compile_clause_t* clause = pred->m_clauses; clause; clause = clause->m_next)
@@ -1691,8 +1689,6 @@ void* inline_predicate_call(void* vc, const compile_predicate_t* pred, const ter
 
 	if (c && c_end)
 		goto_next(context,c,c_end);
-
-	context->m_stack = sp;
 
 	return c;
 }
@@ -2620,7 +2616,6 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 	size_t heap_start = heap_top(&context->m_heap);
 	compile_context_t cc =
 	{
-		.m_stack = context->m_stack,
 		.m_heap = &context->m_heap,
 		.m_link_fn = link_fn,
 		.m_link_param = link_param

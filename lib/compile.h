@@ -80,7 +80,6 @@ typedef void* (*link_fn_t)(void* context, void* param, const term_t* goal, const
 
 typedef struct compile_context
 {
-	term_t*          m_stack;
 	heap_t*          m_heap;
 	substitutions_t* m_substs;
 	jmp_buf          m_jmp;
