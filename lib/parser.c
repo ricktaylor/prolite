@@ -1992,12 +1992,6 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 	return node;
 }
 
-static term_t* emit_ast_string(term_t* stack, prolite_type_t type, ast_node_t* node)
-{
-	// TODO: We could de-duplicate here...
-	return push_string(stack,type,node->m_str,node->m_str_len,0,node->m_debug_info);
-}
-
 static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 {
 	switch (node->m_type)
@@ -2012,8 +2006,9 @@ static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
 	case prolite_atom:
 	case prolite_chars:
 	case prolite_charcodes:
-		return emit_ast_string(stack,node->m_type,node);
-		
+		// TODO: We could de-duplicate here...
+		return push_string(stack,node->m_type,node->m_str,node->m_str_len,0,node->m_debug_info);
+				
 	case prolite_var:
 		return push_var(stack,node->m_arity,node->m_debug_info);
 		
