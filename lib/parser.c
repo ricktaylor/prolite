@@ -1442,17 +1442,6 @@ static token_type_t token_next(parser_t* parser, token_t* token)
 	return tok;
 }
 
-static ast_node_t* atom_to_compound(parser_t* parser, ast_node_t* node)
-{
-	ast_node_t* new_node = heap_realloc(&parser->m_context->m_heap,node,sizeof(ast_node_t),sizeof(ast_node_t) + sizeof(ast_node_t*));
-	if (!new_node)
-		syntax_error(parser,AST_ERR_OUTOFMEMORY);
-
-	new_node->m_type = prolite_compound;
-
-	return new_node;
-}
-
 static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t* next_type, token_t* next, int neg)
 {
 	if (!node)
@@ -1551,7 +1540,6 @@ static ast_node_t* parse_negative(parser_t* parser, ast_node_t* node, token_type
 }
 
 static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_type_t* next_type, token_t* next);
-static ast_node_t* parse_compound_term(parser_t* parser, ast_node_t* node, token_type_t* next_type, token_t* next);
 
 static ast_node_t* parse_arg(parser_t* parser, token_type_t* next_type, token_t* next)
 {
@@ -1590,8 +1578,12 @@ static ast_node_t* parse_arg(parser_t* parser, token_type_t* next_type, token_t*
 
 static ast_node_t* parse_compound_term(parser_t* parser, ast_node_t* node, token_type_t* next_type, token_t* next)
 {
-	size_t alloc_arity = 1;
-	node = atom_to_compound(parser,node);
+	size_t alloc_arity = 4;
+	node = heap_realloc(&parser->m_context->m_heap,node,sizeof(ast_node_t),sizeof(ast_node_t) + (alloc_arity * sizeof(ast_node_t*)));
+	if (!node)
+		syntax_error(parser,AST_ERR_OUTOFMEMORY);
+
+	node->m_type = prolite_compound;
 
 	do
 	{
@@ -1680,7 +1672,17 @@ static ast_node_t* parse_list_term(parser_t* parser, token_type_t* next_type, to
 
 static ast_node_t* parse_name(parser_t* parser, unsigned int* max_prec, token_type_t* next_type, token_t* next)
 {
-	ast_node_t* node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t));
+	ast_node_t* node;
+
+	const operator_t* op = lookup_prefix_op(parser->m_context,parser->m_operators,next->m_str,next->m_len);
+	if (op && op->m_precedence <= *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
+		node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t) + sizeof(ast_node_t*));
+	else
+	{
+		op = NULL;
+		node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t));
+	}
+
 	if (!node)
 		syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1691,39 +1693,26 @@ static ast_node_t* parse_name(parser_t* parser, unsigned int* max_prec, token_ty
 	};
 	token_reset(next);
 
+	*max_prec = 0;
+
 	*next_type = token_next(parser,next);	
 	if (*next_type == tokOpenCt)
-	{
-		*max_prec = 0;
 		return parse_compound_term(parser,node,next_type,next);
-	}
-
-	if (node->m_str_len == 1 && node->m_str[0] == '-')
+	
+	if (node->m_str_len == 1 && node->m_str[0] == '-' && *next_type >= tokInt && *next_type <= tokFloat)
+		return parse_negative(parser,node,next_type,next);
+		
+	if (op && *next_type != tokClose && *next_type != tokComma)
 	{
-		if (*next_type >= tokInt && *next_type <= tokFloat)
-		{
-			*max_prec = 0;
-			return parse_negative(parser,node,next_type,next);
-		}
+		node->m_type = prolite_compound;
+		node->m_arity = 1;
+		node->m_params[0] = parse_term(parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next);
+		if (!node->m_params[0])
+			syntax_error(parser,AST_SYNTAX_ERR_UNEXPECTED_EOF);
+
+		*max_prec = op->m_precedence;
 	}
-
-	if (*next_type != tokClose && *next_type != tokComma)
-	{
-		const operator_t* op = lookup_prefix_op(parser->m_context,parser->m_operators,node->m_str,node->m_str_len);
-		if (op && op->m_precedence <= *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
-		{
-			node = atom_to_compound(parser,node);
-			node->m_arity = 1;
-			node->m_params[0] = parse_term(parser,op->m_specifier == eFX ? op->m_precedence-1 : op->m_precedence,next_type,next);
-			if (!node->m_params[0])
-				syntax_error(parser,AST_SYNTAX_ERR_UNEXPECTED_EOF);
-
-			*max_prec = op->m_precedence;
-			return node;
-		}
-	}
-
-	*max_prec = 0;
+			
 	return node;
 }
 
