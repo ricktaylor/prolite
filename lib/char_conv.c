@@ -18,7 +18,7 @@ uint32_t convert_char(const char_conv_table_t* cc, uint32_t in_char)
 static uint32_t atom_to_code(const term_t* a)
 {
 	string_t s;
-	get_string(a,&s,NULL);
+	unpack_string(a,&s,NULL);
 	if (s.m_len == 0)
 		return -1;
 

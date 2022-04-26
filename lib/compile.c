@@ -420,7 +420,7 @@ static uint64_t cfg_hash_term(const term_t* t)
 		case 3:
 			{
 				string_t s;
-				get_string(t,&s,NULL);
+				unpack_string(t,&s,NULL);
 
 				while (s.m_len > sizeof(uint64_t))
 				{
@@ -2275,9 +2275,8 @@ static int std_output_stream_write(struct prolite_stream* s, const void* src, si
 
 static void dumpPI(const term_t* t, FILE* f)
 {
-	size_t arity;
 	string_t s;
-	get_predicate(t,&s,&arity,NULL);
+	size_t arity = unpack_predicate(t,&s,NULL);
 	fprintf(f,"%.*s/%zu",(int)s.m_len,s.m_str,arity);
 }
 

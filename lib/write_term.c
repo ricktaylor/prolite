@@ -498,7 +498,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 	case prolite_atom:
 		{
 			string_t str;
-			get_string(term,&str,NULL);
+			unpack_string(term,&str,NULL);
 			if (str.m_len == 0)
 			{
 				write_chars(context,"''",2);
@@ -537,7 +537,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 	case prolite_chars:
 		{
 			string_t str;
-			get_string(term,&str,NULL);
+			unpack_string(term,&str,NULL);
 			
 			if (str.m_len == 0 || !context->m_options.ignore_ops)
 				write_chars(context,"[",1);
@@ -599,7 +599,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 		{
 			char buf[20];
 			string_t str;
-			get_string(term,&str,NULL);
+			unpack_string(term,&str,NULL);
 			
 			if (str.m_len == 0 || !context->m_options.ignore_ops)
 				write_chars(context,"[",1);
@@ -728,8 +728,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 		else
 		{
 			string_t str;
-			size_t arity;
-			get_predicate(term,&str,&arity,NULL);
+			size_t arity = unpack_predicate(term,&str,NULL);
 
 			const operator_t* op = NULL;
 			if (arity == 1)

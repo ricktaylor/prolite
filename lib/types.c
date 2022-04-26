@@ -174,7 +174,7 @@ static const term_t* unpack_term(const term_t* t, prolite_type_t* type, int* hav
 	return t+1;
 }
 
-void get_string(const term_t* t, string_t* str, const debug_info_t** debug_info)
+void unpack_string(const term_t* t, string_t* str, const debug_info_t** debug_info)
 {
 	uint64_t all48;
 	prolite_type_t type;
@@ -216,7 +216,7 @@ void get_string(const term_t* t, string_t* str, const debug_info_t** debug_info)
 		*debug_info = (const debug_info_t*)t;
 }
 
-void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_info_t** debug_info)
+size_t unpack_predicate(const term_t* t, string_t* str, const debug_info_t** debug_info)
 {
 	uint64_t all48;
 	prolite_type_t type;
@@ -225,9 +225,8 @@ void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_in
 
 	if (type == prolite_atom)
 	{
-		if (arity)
-			*arity = 0;
-		return get_string(t,str,debug_info);
+		unpack_string(t,str,debug_info);
+		return 0;
 	}
 
 	assert(type == prolite_compound);
@@ -236,13 +235,11 @@ void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_in
 	switch (hi16 >> 14)
 	{
 	case 3:
+	default:
 		assert(0);
-		break;
+		return 0;
 
 	case 2:
-		if (arity)
-			*arity = (hi16 & 0x7800) >> 11;
-
 		str->m_len = (hi16 & 0x0700) >> 8;
 		str->m_data[0] = all48 >> 32;
 		str->m_data[1] = all48 >> 24;
@@ -253,24 +250,20 @@ void get_predicate(const term_t* t, string_t* str, size_t* arity, const debug_in
 
 		if (debug_info && have_debug_info)
 			*debug_info = (const debug_info_t*)t1;
-		break;
+
+		return (hi16 & 0x7800) >> 11;
 
 	case 1:
-		if (arity)
-			*arity = hi16 & MAX_ARITY_BUILTIN;
-
 		*str = s_builtin_strings[(uint32_t)all48];
 
 		if (debug_info && have_debug_info)
 			*debug_info = (const debug_info_t*)t1;
-		break;
+		
+		return hi16 & MAX_ARITY_BUILTIN;
 
 	case 0:
-		if (arity)
-			*arity = (all48 & MAX_ARITY);
-
-		get_string(t1,str,debug_info);
-		break;
+		unpack_string(t1,str,debug_info);
+		return all48 & MAX_ARITY;
 	}
 }
 
@@ -474,8 +467,8 @@ static int atom_compare(const term_t* a1, const term_t* a2)
 		if (t1 == 3 || t1 == 0 || t2 == 3 || t2 == 0)
 		{
 			string_t s1,s2;
-			get_string(a1,&s1,NULL);
-			get_string(a2,&s2,NULL);
+			unpack_string(a1,&s1,NULL);
+			unpack_string(a2,&s2,NULL);
 
 			if (s1.m_len == s2.m_len && memcmp(s1.m_str,s2.m_str,s1.m_len) == 0)
 				r = 1;
@@ -488,8 +481,8 @@ static int atom_compare(const term_t* a1, const term_t* a2)
 static int atom_precedes(const term_t* a1, const term_t* a2)
 {
 	string_t s1,s2;
-	get_string(a1,&s1,NULL);
-	get_string(a2,&s2,NULL);
+	unpack_string(a1,&s1,NULL);
+	unpack_string(a2,&s2,NULL);
 
 	int r = memcmp(s1.m_str,s2.m_str,s1.m_len < s2.m_len ? s1.m_len : s2.m_len);
 	if (r == 0)
@@ -539,10 +532,9 @@ int predicate_compare(const term_t* c1, const term_t* c2)
 
 static int compound_precedes(const term_t* c1, const term_t* c2)
 {
-	size_t a1,a2;
 	string_t s1,s2;
-	get_predicate(c1,&s1,&a1,NULL);
-	get_predicate(c2,&s2,&a2,NULL);
+	size_t a1 = unpack_predicate(c1,&s1,NULL);
+	size_t a2 = unpack_predicate(c2,&s2,NULL);
 
 	int r = (a1 - a2);
 	if (r == 0)

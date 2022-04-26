@@ -20,7 +20,7 @@ static uint64_t operator_key(const term_t* name, int* is_sub_tree)
 	if (sub_type == 0 || sub_type == 3)
 	{
 		string_t s;
-		get_string(name,&s,NULL);
+		unpack_string(name,&s,NULL);
 
 		if (s.m_len <= 8)
 		{

@@ -14,7 +14,7 @@ static uint64_t predicate_key(const term_t* pred, int* is_sub_tree)
 	if (sub_type == 0 || sub_type == 3)
 	{
 		string_t s;
-		get_predicate(pred,&s,NULL,NULL);
+		unpack_predicate(pred,&s,NULL);
 		if (s.m_len <= 8)
 		{
 			union short_str_key

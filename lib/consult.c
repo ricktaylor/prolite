@@ -224,7 +224,7 @@ static void pi_directive_inner(consult_context_t* context, const term_t* pi, voi
 				if (arity->m_dval > 0)
 				{
 					string_t f;
-					get_string(functor,&f,NULL);
+					unpack_string(functor,&f,NULL);
 					context->m_context->m_stack = push_predicate(context->m_context->m_stack,arity->m_dval,f.m_str,f.m_len,1,NULL);
 					functor = context->m_context->m_stack;
 				}
@@ -431,7 +431,7 @@ static prolite_stream_t* stream_open(consult_context_t* context, const term_t* t
 		if (context->m_context->m_resolver->m_fn_open_relative && context->m_parser->m_s)
 		{
 			string_t str;
-			get_string(t,&str,NULL);
+			unpack_string(t,&str,NULL);
 			s = (*context->m_context->m_resolver->m_fn_open_relative)(context->m_context->m_resolver,context->m_parser->m_s,(const char*)str.m_str,str.m_len,&err);
 			if (!s)
 				context->m_failed = 1;
@@ -439,7 +439,7 @@ static prolite_stream_t* stream_open(consult_context_t* context, const term_t* t
 		else if (context->m_context->m_resolver->m_fn_open)
 		{
 			string_t str;
-			get_string(t,&str,NULL);
+			unpack_string(t,&str,NULL);
 			s = (*context->m_context->m_resolver->m_fn_open)(context->m_context->m_resolver,(const char*)str.m_str,str.m_len,&err);
 			if (!s)
 				context->m_failed = 1;
@@ -601,8 +601,7 @@ static void compile_statics(void* param, predicate_base_t* p)
 			if (clause->m_body)
 			{
 				string_t s;
-				size_t arity;
-				get_predicate(clause->m_head,&s,&arity,NULL);
+				size_t arity = unpack_predicate(clause->m_head,&s,NULL);
 				fprintf(stdout,"=======================\nCompiling %.*s/%zu\n",(int)s.m_len,s.m_str,arity);
 				
 				compile_goal(context->m_context,&inline_call,context,clause->m_body,clause->m_var_count);
@@ -642,8 +641,7 @@ static int consult(context_t* context, const term_t* filename)
 		for (consult_initializer_t* init = cc.m_initializers; init ; init = init->m_next)
 		{
 			string_t s;
-			size_t arity;
-			get_predicate(init->m_goal,&s,&arity,NULL);
+			size_t arity = unpack_predicate(init->m_goal,&s,NULL);
 			fprintf(stdout,"=======================\nCompiling %.*s/%zu\n",(int)s.m_len,s.m_str,arity);
 
 			compile_goal(context,&inline_call,&cc,init->m_goal,init->m_var_count);
