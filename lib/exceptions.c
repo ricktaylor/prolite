@@ -3,7 +3,7 @@
 
 #include <string.h>
 
-void push_out_of_memory_error(context_t* context, const term_t* t)
+void throw_out_of_memory_error(context_t* context, const term_t* t)
 {
 	// 't' just gives us debug info
 
@@ -13,7 +13,7 @@ void push_out_of_memory_error(context_t* context, const term_t* t)
 	context->m_flags = FLAG_THROW;
 }
 
-void push_instantiation_error(context_t* context, const term_t* t)
+void throw_instantiation_error(context_t* context, const term_t* t)
 {
 	// 't' just gives us debug info
 
@@ -23,7 +23,7 @@ void push_instantiation_error(context_t* context, const term_t* t)
 	context->m_flags = FLAG_THROW;
 }
 
-void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
+void throw_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
 {
 	// TODO
 	assert(0);
@@ -31,7 +31,7 @@ void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const t
 	context->m_flags = FLAG_THROW;
 }
 
-void push_type_error(context_t* context, uint64_t p1, const term_t* t)
+void throw_type_error(context_t* context, uint64_t p1, const term_t* t)
 {
 	// TODO
 	assert(0);
@@ -39,7 +39,7 @@ void push_type_error(context_t* context, uint64_t p1, const term_t* t)
 	context->m_flags = FLAG_THROW;
 }
 
-void push_domain_error(context_t* context, uint64_t p1, const term_t* t)
+void throw_domain_error(context_t* context, uint64_t p1, const term_t* t)
 {
 	// TODO
 	assert(0);
@@ -47,7 +47,7 @@ void push_domain_error(context_t* context, uint64_t p1, const term_t* t)
 	context->m_flags = FLAG_THROW;
 }
 
-void push_representation_error(context_t* context, uint64_t p1, const term_t* t)
+void throw_representation_error(context_t* context, uint64_t p1, const term_t* t)
 {
 	// TODO
 	assert(0);
@@ -55,7 +55,7 @@ void push_representation_error(context_t* context, uint64_t p1, const term_t* t)
 	context->m_flags = FLAG_THROW;
 }
 
-void push_evaluable_error(context_t* context, const term_t* t)
+void throw_evaluable_error(context_t* context, const term_t* t)
 {
 	// TODO
 	assert(0);
@@ -81,7 +81,7 @@ static void builtin_throw_inner(context_t* context, const term_t* arg)
 	if (ball && var_count)
 	{
 		allocator_free(&a,ball);
-		push_instantiation_error(context,arg);
+		throw_instantiation_error(context,arg);
 		ball = copy_term(&a,context,context->m_stack,0,&var_count);
 	}
 
@@ -142,7 +142,7 @@ void builtin_catch(context_t* context, const term_t* gosub, size_t argc, const t
 
 	if (!ball)
 	{
-		push_out_of_memory_error(context,NULL);
+		throw_out_of_memory_error(context,NULL);
 		ball = context->m_stack;
 	}
 

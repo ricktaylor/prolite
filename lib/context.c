@@ -17,7 +17,7 @@ const prolog_flags_t g_default_prolog_flags =
 	.back_quotes = 1
 };
 
-static void push_flag_value_error(context_t* context, const term_t* flag, const term_t* value)
+static void throw_flag_value_error(context_t* context, const term_t* flag, const term_t* value)
 {
 	// TODO
 	
@@ -40,7 +40,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 			break;
 
 		default:
-			push_flag_value_error(context,flag,value);
+			throw_flag_value_error(context,flag,value);
 			break;
 		}
 		break;
@@ -57,7 +57,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 			break;
 
 		default:
-			push_flag_value_error(context,flag,value);
+			throw_flag_value_error(context,flag,value);
 			break;
 		}
 		break;
@@ -78,7 +78,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 			break;
 
 		default:
-			push_flag_value_error(context,flag,value);
+			throw_flag_value_error(context,flag,value);
 			break;
 		}
 		break;
@@ -99,7 +99,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 			break;
 		
 		default:
-			push_flag_value_error(context,flag,value);
+			throw_flag_value_error(context,flag,value);
 			break;
 		}
 		break;
@@ -120,18 +120,18 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 			break;
 		
 		default:
-			push_flag_value_error(context,flag,value);
+			throw_flag_value_error(context,flag,value);
 			break;
 		}
 		break;
 
 	default:
 		if (get_term_type(flag) == prolite_var)
-			push_instantiation_error(context,flag);
+			throw_instantiation_error(context,flag);
 		else if (get_term_type(flag) != prolite_atom)
-			push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),flag);
+			throw_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),flag);
 		else
-			push_domain_error(context,PACK_ATOM_BUILTIN(prolog_flag),flag);
+			throw_domain_error(context,PACK_ATOM_BUILTIN(prolog_flag),flag);
 		break;
 	}	
 }

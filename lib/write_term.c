@@ -764,4 +764,4 @@ void write_term(context_t* context, prolite_stream_t* s, const term_t* term, con
 }
 
 
-//push_permission_error(context,PACK_ATOM_BUILTIN(output),PACK_ATOM_BUILTIN(stream),op);
+//throw_permission_error(context,PACK_ATOM_BUILTIN(output),PACK_ATOM_BUILTIN(stream),op);

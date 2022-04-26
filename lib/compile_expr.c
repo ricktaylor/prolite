@@ -732,7 +732,7 @@ PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t*
 	switch (get_term_type(expr))
 	{
 	case prolite_var:
-		return push_instantiation_error(context,expr);
+		return throw_instantiation_error(context,expr);
 
 	case prolite_number:
 		context->m_stack->m_dval = expr->m_dval;
@@ -747,7 +747,7 @@ PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t*
 #include "builtin_exprs.h"
 
 		default:
-			return push_evaluable_error(context,expr);
+			return throw_evaluable_error(context,expr);
 		}
 		break;
 
@@ -761,12 +761,12 @@ PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t*
 #include "builtin_exprs.h"
 
 		default:
-			return push_evaluable_error(context,expr);
+			return throw_evaluable_error(context,expr);
 		}
 		break;
 
 	default:
-		return push_evaluable_error(context,expr);
+		return throw_evaluable_error(context,expr);
 	}
 
 	if (context->m_flags & FLAG_THROW)

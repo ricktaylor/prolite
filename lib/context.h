@@ -101,13 +101,13 @@ term_t* copy_term(prolite_allocator_t* allocator, context_t* context, const term
 context_t* context_new(void* user_data, const prolite_environment_t* env);
 void context_delete(context_t* c);
 
-void push_out_of_memory_error(context_t* context, const term_t* t);
-void push_instantiation_error(context_t* context, const term_t* t);
-void push_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t);
-void push_type_error(context_t* context, uint64_t p1, const term_t* t);
-void push_domain_error(context_t* context, uint64_t p1, const term_t* t);
-void push_representation_error(context_t* context, uint64_t p1, const term_t* t);
-void push_evaluable_error(context_t* context, const term_t* t);
+void throw_out_of_memory_error(context_t* context, const term_t* t);
+void throw_instantiation_error(context_t* context, const term_t* t);
+void throw_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t);
+void throw_type_error(context_t* context, uint64_t p1, const term_t* t);
+void throw_domain_error(context_t* context, uint64_t p1, const term_t* t);
+void throw_representation_error(context_t* context, uint64_t p1, const term_t* t);
+void throw_evaluable_error(context_t* context, const term_t* t);
 
 void unhandled_exception(context_t* context, const operator_table_t* ops);
 

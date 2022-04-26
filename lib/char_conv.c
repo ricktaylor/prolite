@@ -59,42 +59,42 @@ static void set_char_conversion(context_t* context, char_conv_table_t* cc, const
 	switch (get_term_type(in_char))
 	{
 	case prolite_var:
-		return push_instantiation_error(context,in_char);
+		return throw_instantiation_error(context,in_char);
 
 	case prolite_atom:
 		switch (get_term_type(out_char))
 		{
 		case prolite_var:
-			return push_instantiation_error(context,out_char);
+			return throw_instantiation_error(context,out_char);
 
 		case prolite_atom:
 			{
 				uint32_t in_code = atom_to_code(in_char);
 				if (in_code == -1)
-					return push_representation_error(context,PACK_ATOM_BUILTIN(character),in_char);
+					return throw_representation_error(context,PACK_ATOM_BUILTIN(character),in_char);
 
 				if (in_code == 0)
 					in_code = -1;
 
 				uint32_t out_code = atom_to_code(out_char);
 				if (out_code == -1)
-					return push_representation_error(context,PACK_ATOM_BUILTIN(character),out_char);
+					return throw_representation_error(context,PACK_ATOM_BUILTIN(character),out_char);
 
 				if (out_code == 0)
 					out_code = -1;
 
 				if (!btree_replace(cc,in_code,(void*)(uintptr_t)out_code))
-					return push_out_of_memory_error(context,in_char);
+					return throw_out_of_memory_error(context,in_char);
 			}
 			break;
 
 		default:
-			return push_representation_error(context,PACK_ATOM_BUILTIN(character),out_char);
+			return throw_representation_error(context,PACK_ATOM_BUILTIN(character),out_char);
 		}
 		break;
 
 	default:
-		return push_representation_error(context,PACK_ATOM_BUILTIN(character),in_char);
+		return throw_representation_error(context,PACK_ATOM_BUILTIN(character),in_char);
 	}
 }
 

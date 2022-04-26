@@ -383,20 +383,20 @@ static int update_operator(context_t* context, operator_table_t* ops, int64_t pr
 static void set_op_inner(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* op)
 {
 	if (get_term_type(op) != prolite_atom)
-		push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),op);
+		throw_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),op);
 	else if (MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_1(',') ||
 			MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_2('{','}') ||
 			MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_2('[',']'))
 	{
-		push_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(operator),op);
+		throw_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(operator),op);
 	}
 	else
 	{
 		int i = update_operator(context,ops,precendence,specifier,op);
 		if (i == 0)
-			push_permission_error(context,PACK_ATOM_BUILTIN(create),PACK_ATOM_BUILTIN(operator),op);
+			throw_permission_error(context,PACK_ATOM_BUILTIN(create),PACK_ATOM_BUILTIN(operator),op);
 		else if (i == -1)
-			push_out_of_memory_error(context,op);
+			throw_out_of_memory_error(context,op);
 	}
 }
 
@@ -406,27 +406,27 @@ static void set_op(context_t* context, operator_table_t* ops, const term_t* p, c
 	switch (get_term_type(p))
 	{
 	case prolite_var:
-		return push_instantiation_error(context,p);
+		return throw_instantiation_error(context,p);
 
 	case prolite_number:
 		if (nearbyint(p->m_dval) != p->m_dval)
-			return push_type_error(context,PACK_ATOM_BUILTIN(integer),p);
+			return throw_type_error(context,PACK_ATOM_BUILTIN(integer),p);
 
 		if (p->m_dval < 0 || p->m_dval > 1200)
-			return push_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),p);
+			return throw_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),p);
 			
 		precendence = p->m_dval;
 		break;
 
 	default:
-		return push_type_error(context,PACK_ATOM_BUILTIN(integer),p);
+		return throw_type_error(context,PACK_ATOM_BUILTIN(integer),p);
 	}
 
 	operator_specifier_t specifier;
 	switch (get_term_type(s))
 	{
 	case prolite_var:
-		return push_instantiation_error(context,s);
+		return throw_instantiation_error(context,s);
 
 	case prolite_atom:
 		switch (MASK_DEBUG_INFO(s->m_u64val))
@@ -460,18 +460,18 @@ static void set_op(context_t* context, operator_table_t* ops, const term_t* p, c
 			break;
 
 		default:
-			return push_domain_error(context,PACK_ATOM_BUILTIN(operator_specifier),s);
+			return throw_domain_error(context,PACK_ATOM_BUILTIN(operator_specifier),s);
 		}
 		break;
 
 	default:
-		return push_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),s);
+		return throw_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),s);
 	}
 
 	switch (get_term_type(op))
 	{
 	case prolite_var:
-		return push_instantiation_error(context,op);
+		return throw_instantiation_error(context,op);
 
 	case prolite_atom:
 		return set_op_inner(context,ops,precendence,specifier,op);
@@ -489,7 +489,7 @@ static void set_op(context_t* context, operator_table_t* ops, const term_t* p, c
 		break;
 
 	default:
-		return push_type_error(context,PACK_ATOM_EMBED_4('l','i','s','t'),op);
+		return throw_type_error(context,PACK_ATOM_EMBED_4('l','i','s','t'),op);
 	}
 }
 

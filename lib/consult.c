@@ -79,7 +79,7 @@ static void check_exception(consult_context_t* context)
 
 static void report_out_of_memory_error(consult_context_t* context, const term_t* t)
 {
-    push_out_of_memory_error(context->m_context,t);
+	throw_out_of_memory_error(context->m_context,t);
 	report_exception(context);
 
 	context->m_critical_failure = 1;
@@ -87,25 +87,25 @@ static void report_out_of_memory_error(consult_context_t* context, const term_t*
 
 static void report_permission_error(consult_context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
 {
-	push_permission_error(context->m_context,p1,p2,t);
+	throw_permission_error(context->m_context,p1,p2,t);
 	report_exception(context);
 }
 
 static void report_type_error(consult_context_t* context, uint64_t p1, const term_t* t)
 {
-	push_type_error(context->m_context,p1,t);
+	throw_type_error(context->m_context,p1,t);
 	report_exception(context);
 }
 
 static void report_domain_error(consult_context_t* context, uint64_t p1, const term_t* t)
 {
-	push_domain_error(context->m_context,p1,t);
+	throw_domain_error(context->m_context,p1,t);
 	report_exception(context);
 }
 
 static void report_representation_error(consult_context_t* context, uint64_t p1, const term_t* t)
 {
-	push_representation_error(context->m_context,p1,t);
+	throw_representation_error(context->m_context,p1,t);
 	report_exception(context);
 }
 
