@@ -11,8 +11,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-const prolog_flags_t g_default_prolog_flags =
-{
+const prolog_flags_t g_default_prolog_flags = {
 	.char_conversion = 1,
 	.back_quotes = 1
 };
@@ -20,7 +19,7 @@ const prolog_flags_t g_default_prolog_flags =
 static void throw_flag_value_error(context_t* context, const term_t* flag, const term_t* value)
 {
 	// TODO
-	
+
 	context->m_flags = FLAG_THROW;
 }
 
@@ -97,7 +96,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 		case PACK_ATOM_EMBED_4('a','t','o','m'):
 			context->m_module->m_flags.double_quotes = 2;
 			break;
-		
+
 		default:
 			throw_flag_value_error(context,flag,value);
 			break;
@@ -118,7 +117,7 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 		case PACK_ATOM_EMBED_4('a','t','o','m'):
 			context->m_module->m_flags.double_quotes = 2;
 			break;
-		
+
 		default:
 			throw_flag_value_error(context,flag,value);
 			break;
@@ -126,14 +125,14 @@ static void set_prolog_flag_inner(context_t* context, const term_t* flag, const 
 		break;
 
 	default:
-		if (get_term_type(flag) == prolite_var)
+		if (unpack_term_type(flag) == prolite_var)
 			throw_instantiation_error(context,flag);
-		else if (get_term_type(flag) != prolite_atom)
+		else if (unpack_term_type(flag) != prolite_atom)
 			throw_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),flag);
 		else
 			throw_domain_error(context,PACK_ATOM_BUILTIN(prolog_flag),flag);
 		break;
-	}	
+	}
 }
 
 void directive_set_prolog_flag(context_t* context, const term_t* flag)
@@ -142,7 +141,7 @@ void directive_set_prolog_flag(context_t* context, const term_t* flag)
 	set_prolog_flag_inner(context,flag,value);
 }
 
-void builtin_set_prolog_flag(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+PROLITE_EXPORT void prolite_builtin_set_prolog_flag(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	set_prolog_flag_inner(context,argv[0],argv[1]);
 	if (!(context->m_flags & FLAG_THROW))
@@ -151,10 +150,10 @@ void builtin_set_prolog_flag(context_t* context, const term_t* gosub, size_t arg
 
 const term_t* deref_local_var(context_t* context, const term_t* t)
 {
-	if (get_term_type(t) == prolite_var)
+	if (unpack_term_type(t) == prolite_var)
 	{
-		assert(context->m_locals && get_var_index(t) < context->m_locals->m_count);
-		const term_t* g = context->m_locals->m_vals[get_var_index(t)];
+		assert(context->m_substs && unpack_var_index(t) < context->m_substs->m_count);
+		const term_t* g = context->m_substs->m_vals[unpack_var_index(t)];
 		if (g)
 			t = deref_local_var(context,t);
 	}
@@ -164,62 +163,62 @@ const term_t* deref_local_var(context_t* context, const term_t* t)
 int unify_terms(context_t* context, const term_t* t1, const term_t* t2, int with_occurs_check)
 {
 	// TODO!!
+	assert(0);
 
 	return 0;
 }
 
-static void builtin_unify(context_t* context, const term_t* gosub, int with_occurs_check, size_t var_count, const term_t* args) 
+static void builtin_unify(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[], int with_occurs_check)
 {
-	term_t* sp = context->m_stack;
+	assert(argc % 2 == 0);
+
+	substitutions_t* prev_substs = context->m_substs;
+	if (context->m_substs)
+	{
+		substitutions_t* new_substs = alloca(sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
+		memcpy(new_substs,context->m_substs,sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
+		context->m_substs = new_substs;
+	}
 
 	// Now we can unify...
 	int unified = 1;
-	for (size_t i = 0; unified && i < var_count && !(context->m_flags & FLAG_THROW); ++i)
-	{
-		unified = unify_terms(context,deref_local_var(context,args[0].m_pval),deref_local_var(context,args[1].m_pval),with_occurs_check);
-		
-		args += 2;
-	}
+	for (size_t i = 0; unified && i < argc; i += 2)
+		unified = unify_terms(context,deref_local_var(context,argv[i]),deref_local_var(context,argv[i+1]),with_occurs_check);
 
-	if (context->m_flags & FLAG_THROW) 
-	{
-		builtin_throw(context);
-	
-		// Pop the exception
-		context->m_stack = sp;
-	}
-	else if (unified)
-		builtin_gosub(context,gosub);	
+	if (unified)
+		builtin_gosub(context,gosub);
+
+	context->m_substs = prev_substs;
 }
 
-PROLITE_EXPORT void prolite_builtin_unify(context_t* context, const term_t* gosub) 
+PROLITE_EXPORT void prolite_builtin_unify(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
-	builtin_unify(context,gosub,0,context->m_stack->m_u64val,context->m_stack+1);
+	builtin_unify(context,gosub,argc,argv,0);
 }
 
-PROLITE_EXPORT void prolite_builtin_unify_with_occurs_check(context_t* context, const term_t* gosub)
+PROLITE_EXPORT void prolite_builtin_unify_with_occurs_check(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
-	builtin_unify(context,gosub,1,context->m_stack->m_u64val,context->m_stack+1);
+	builtin_unify(context,gosub,argc,argv,1);
 }
 
-PROLITE_EXPORT void prolite_builtin_unify_is(context_t* context, const term_t* gosub)
+PROLITE_EXPORT void prolite_builtin_unify_is(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
-	const term_t* result = deref_local_var(context,context->m_stack->m_pval);
-	const term_t* value = context->m_stack + 1;
+	assert(argc == 2);
 
-	term_t* sp = context->m_stack;
-
-	int unified = unify_terms(context,result,value,0);
-	
-	if (context->m_flags & FLAG_THROW) 
+	substitutions_t* prev_substs = context->m_substs;
+	if (context->m_substs)
 	{
-		builtin_throw(context);
-	
-		// Pop the exception
-		context->m_stack = sp;
+		substitutions_t* new_substs = alloca(sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
+		memcpy(new_substs,context->m_substs,sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
+		context->m_substs = new_substs;
 	}
-	else if (unified)
-		builtin_gosub(context,gosub);	
+
+	const term_t* result = deref_local_var(context,argv[0]);
+
+	if (unify_terms(context,result,argv[1],0))
+		builtin_gosub(context,gosub);
+
+	context->m_substs = prev_substs;
 }
 
 PROLITE_EXPORT void builtin_gosub(context_t* context, const term_t* gosub)
@@ -258,21 +257,22 @@ static void default_exception_handler(const char* err_msg, size_t err_len)
 
 context_t* context_new(void* user_data, const prolite_environment_t* env)
 {
-	heap_t heap = { .m_allocator = env->m_allocator };
+	heap_t trail = { .m_allocator = env->m_allocator };
 
-	context_t* c = heap_malloc(&heap,sizeof(context_t));
+	context_t* c = heap_malloc(&trail,sizeof(context_t));
 	if (c)
 	{
 		*c = (context_t){
 			.m_user_data = user_data,
-			.m_heap = heap,
+			.m_heap = { .m_allocator = env->m_allocator },
+			.m_trail = trail,
 			.m_eh = env->m_handler,
 			.m_resolver = env->m_resolver
 		};
 		if (!c->m_eh)
 			c->m_eh = &default_exception_handler;
 
-		size_t stack_size = env->m_stack_size;
+		/*size_t stack_size = env->m_stack_size;
 		if (!stack_size)
 			stack_size = g_default_env.m_stack_size;
 
@@ -281,10 +281,10 @@ context_t* context_new(void* user_data, const prolite_environment_t* env)
 		c->m_stack = allocator_malloc(env->m_allocator,stack_size * sizeof(term_t));
 		if (!c->m_stack)
 		{
-			heap_destroy(&heap);
+			heap_destroy(&trail);
 			return NULL;
-		}		
-		c->m_stack += (stack_size - 1);
+		}
+		c->m_stack += (stack_size - 1);*/
 
 		term_t user = { .m_u64val = PACK_ATOM_EMBED_4('u','s','e','r') };
 		c->m_module = module_new(c,&user);
@@ -297,21 +297,19 @@ void context_delete(context_t* c)
 {
 	module_delete(c->m_module);
 	//stack_delete(c->m_call_stack);
-	
-	heap_t h = c->m_heap;
-	heap_destroy(&h);
+
+	heap_destroy(&c->m_heap);
+	heap_t trail = c->m_trail;
+	heap_destroy(&trail);
 }
 
-const prolite_environment_t g_default_env = 
-{
-	.m_stack_size = 0x10000
-};
+const prolite_environment_t g_default_env = {0};
 
 PROLITE_EXPORT prolite_context_t prolite_context_new(void* user_data, const prolite_environment_t* env)
 {
 	if (!env)
 		env = &g_default_env;
-	
+
 	context_t* c = context_new(user_data,env);
 	if (!c && env && env->m_handler)
 	{
@@ -332,18 +330,18 @@ PROLITE_EXPORT void prolite_context_destroy(prolite_context_t context)
 
 // MOVE THIS!!
 
-void builtin_user_defined(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+PROLITE_EXPORT void prolite_builtin_user_defined(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 }
 
-void builtin_asserta(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+PROLITE_EXPORT void prolite_builtin_asserta(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
-	
+
 }
 
-void builtin_assertz(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+PROLITE_EXPORT void prolite_builtin_assertz(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
-	
+
 }
 
 

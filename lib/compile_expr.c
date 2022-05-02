@@ -21,14 +21,14 @@ typedef struct expr_subst
 {
 	const term_t* m_expr;
 	size_t        m_stack_idx;
-	
+
 } expr_subst_t;
 
 typedef struct walk_info
 {
 	expr_subst_t* m_substs;
 	const term_t* m_expr;
-	
+
 } walk_info_t;
 
 typedef struct expr_node
@@ -318,11 +318,11 @@ static expr_node_t* optimize_expr(compile_context_t* context, expr_node_t* e)
 static expr_node_t* walk_expr(compile_context_t* context, const term_t* expr, expr_subst_t* substs)
 {
 	expr_node_t* e;
-	switch (get_term_type(expr))
+	switch (unpack_term_type(expr))
 	{
 	case prolite_var:
 		{
-			size_t idx = get_var_index(expr);
+			size_t idx = unpack_var_index(expr);
 			assert(substs && idx < context->m_substs->m_count && substs[idx].m_expr);
 
 			e = new_expr_node(context,EXPR_TYPE_REG);
@@ -387,11 +387,11 @@ static expr_node_t* walk_expr(compile_context_t* context, const term_t* expr, ex
 
 static size_t extract_vars(compile_context_t* context, const term_t* expr, expr_subst_t* substs)
 {
-	switch (get_term_type(expr))
+	switch (unpack_term_type(expr))
 	{
 	case prolite_var:
 		{
-			size_t idx = get_var_index(expr);
+			size_t idx = unpack_var_index(expr);
 			assert(substs && idx < context->m_substs->m_count);
 			if (substs[idx].m_expr)
 				return 0;
@@ -442,7 +442,7 @@ static cfg_t* compile_unify_is(compile_context_t* context, const term_t* term, c
 	opcode_t* ops = append_opcodes(context,c->m_tail,6);
 	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
 	(ops++)->m_term.m_pval = term;
-	(ops++)->m_opcode.m_op = OP_BUILTIN;
+	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = 2 };
 	(ops++)->m_term.m_pval = &prolite_builtin_unify_is;
 	(ops++)->m_term.m_pval = cont->m_entry_point;
 	ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = 2 };
@@ -458,7 +458,7 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term,
 	size_t regs = 0;
 	cfg_t* c = (*e->m_shim)(context,e,&regs);
 	opcode_t* ops;
-			
+
 	switch (e->m_type)
 	{
 	case EXPR_TYPE_CONST:
@@ -471,7 +471,7 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term,
 			t->m_dval = e->m_dval;
 			return compile_unify_terms(context,next->m_term,t,next->m_next);
 		}
-		
+
 		c = new_cfg(context);
 		ops = append_opcodes(context,c->m_tail,2);
 		(ops++)->m_opcode.m_op = OP_PUSH_CONST;
@@ -494,7 +494,7 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term,
 		ops = append_opcodes(context,c1->m_tail,2);
 		(ops++)->m_opcode.m_op = OP_ALLOC_REGS;
 		ops->m_term.m_u64val = regs;
-		
+
 		ops = append_opcodes(context,c->m_tail,2);
 		(ops++)->m_opcode.m_op = OP_FREE_REGS;
 		ops->m_term.m_u64val = regs;
@@ -513,13 +513,13 @@ static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, c
 	opcode_t* ops = append_opcodes(context,c->m_tail,5);
 	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
 	(ops++)->m_term.m_pval = subst->m_expr;
-	(ops++)->m_opcode.m_op = OP_BUILTIN;
+	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = 1 };
 	(ops++)->m_term.m_pval = &prolite_builtin_expression;
 	//ops->m_term.m_pval = NULL;
 
 	cfg_t* c1 = compile_subgoal(context,next);
-	if (c1->m_tail->m_count && 
-		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_op == OP_POP && 
+	if (c1->m_tail->m_count &&
+		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_op == OP_POP &&
 		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_arg < UINT32_MAX)
 	{
 		++c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_arg;
@@ -529,7 +529,7 @@ static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, c
 		ops = append_opcodes(context,c1->m_tail,1);
 		ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = 1 };
 	}
-	
+
 	cfg_t* c_end = new_cfg(context);
 	add_branch(context,c,FLAG_THROW,c_end);
 	goto_next(context,c1,c_end);
@@ -565,14 +565,14 @@ static const continuation_t* walk_expr_vars(compile_context_t* context, const te
 	else
 	{
 		substs[start].m_stack_idx = --idx;
-		
+
 		*c = (continuation_t){
 			.m_shim = &compile_expr_var,
 			.m_term = (const term_t*)&substs[start],
 			.m_next = walk_expr_vars(context,expr,substs,start+1,idx,next)
 		};
 	}
-	
+
 	return c;
 }
 
@@ -612,10 +612,10 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 	result = compile_deref_var(context,result);
 	expr = compile_deref_var(context,expr);
 
-	switch (get_term_type(result))
+	switch (unpack_term_type(result))
 	{
 	case prolite_var:
-		switch (get_term_type(expr))
+		switch (unpack_term_type(expr))
 		{
 		case prolite_var:
 			return compile_builtin(context,&prolite_builtin_throw,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
@@ -647,7 +647,7 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		break;
 
 	case prolite_number:
-		switch (get_term_type(expr))
+		switch (unpack_term_type(expr))
 		{
 		case prolite_var:
 			return compile_builtin(context,&prolite_builtin_throw,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
@@ -678,7 +678,7 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		break;
 
 	default:
-		switch (get_term_type(expr))
+		switch (unpack_term_type(expr))
 		{
 		case prolite_var:
 			return compile_builtin(context,&prolite_builtin_throw,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
@@ -722,27 +722,28 @@ static void expr_jit(context_t* context, const term_t* expr)
 	assert(0);
 }
 
-PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t* gosub)
+PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
-	term_t* sp = context->m_stack;
-	const term_t* expr = deref_local_var(context,context->m_stack->m_pval);
+	assert(argc == 1);
 
-	// Result is pushed to stack
-	
-	switch (get_term_type(expr))
+	const term_t* expr = deref_local_var(context,argv[0]);
+
+	double result = 0.0;
+
+	switch (unpack_term_type(expr))
 	{
 	case prolite_var:
 		return throw_instantiation_error(context,expr);
 
 	case prolite_number:
-		context->m_stack->m_dval = expr->m_dval;
-		return;
+		result = expr->m_dval;
+		break;
 
 	case prolite_atom:
 		switch (expr->m_u64val)
 		{
 #undef DECLARE_EXPR_CONSTANT
-#define DECLARE_EXPR_CONSTANT(a,d) case a: context->m_stack->m_dval = d; context->m_flags |= FLAG_CUT; return;
+#define DECLARE_EXPR_CONSTANT(a,d) case a: result = d; context->m_flags |= FLAG_CUT; break;
 
 #include "builtin_exprs.h"
 
@@ -769,11 +770,7 @@ PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t*
 		return throw_evaluable_error(context,expr);
 	}
 
-	if (context->m_flags & FLAG_THROW)
-	{
-		builtin_throw(context);
-
-		// Pop the arguments
-		context->m_stack = sp + 1;
-	}
+	// TODO - Something with result!!
+	(void)result;
+	assert(0);
 }

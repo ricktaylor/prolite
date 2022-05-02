@@ -3,7 +3,6 @@
 
 #include "export.h"
 #include "heap.h"
-#include "btree.h"
 #include "types.h"
 
 #include <setjmp.h>
@@ -28,6 +27,9 @@ typedef struct operator_defn
 
 typedef btree_t operator_table_t;
 typedef btree_t char_conv_table_t;
+
+const operator_t* lookup_op(const operator_table_t* ops, const unsigned char* name, size_t name_len);
+const operator_t* lookup_prefix_op(const operator_table_t* ops, const unsigned char* name, size_t name_len);
 
 typedef struct prolog_flags
 {
@@ -69,22 +71,20 @@ typedef struct context
 {
 	void*                           m_user_data;
 	heap_t                          m_heap;
-	term_t*                         m_stack;
+	heap_t                          m_trail;
 	term_t*                         m_exception;
 	prolite_exception_handler_fn_t  m_eh;
 	prolite_stream_resolver_t*      m_resolver;
 	exec_flags_t                    m_flags;
-	substitutions_t*                m_locals;
-	substitutions_t*                m_params;
+	substitutions_t*                m_substs;
 	module_t*                       m_module;
-	
+
 } context_t;
 
 extern const prolite_environment_t g_default_env;
 
-typedef void (*builtin_fn_t)(context_t* context, const term_t* gosub);
+typedef void (*builtin_fn_t)(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 void builtin_gosub(context_t* context, const term_t* gosub);
-void builtin_throw(context_t* context);
 
 const term_t* deref_local_var(context_t* context, const term_t* t);
 int unify_terms(context_t* context, const term_t* t1, const term_t* t2, int with_occurs_check);
@@ -95,8 +95,7 @@ static inline void* stack_malloc(term_t** stack, size_t bytes)
 	return *stack;
 }
 
-term_t* push_term(context_t* context, const term_t* src, int allow_external, size_t* var_count);
-term_t* copy_term(prolite_allocator_t* allocator, context_t* context, const term_t* src, int allow_external, size_t* var_count);
+term_t* copy_term(context_t* context, emit_buffer_t* out, const term_t* src, int shallow, int deref, size_t* var_count);
 
 context_t* context_new(void* user_data, const prolite_environment_t* env);
 void context_delete(context_t* c);
@@ -110,5 +109,6 @@ void throw_representation_error(context_t* context, uint64_t p1, const term_t* t
 void throw_evaluable_error(context_t* context, const term_t* t);
 
 void unhandled_exception(context_t* context, const operator_table_t* ops);
+int is_out_of_memory_exception(context_t* context);
 
 #endif // CONTEXT_H_

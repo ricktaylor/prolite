@@ -27,10 +27,8 @@ int main(int argc, char* argv[])
 	settings_t settings = {0};
 	argc = parse_cmd_args(argc,argv,&settings);
 
-	prolite_environment_t env =
-	{
+	prolite_environment_t env = {
 		.m_resolver = fs_resolver_new(),
-		.m_stack_size = 0x1000000,
 		.m_handler = &exception_handler
 	};
 	if (env.m_resolver)

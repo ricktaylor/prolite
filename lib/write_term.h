@@ -12,6 +12,10 @@ typedef struct write_options
 
 } write_options_t;
 
-void write_term(context_t* context, prolite_stream_t* s, const term_t* term, const write_options_t* options, const operator_table_t* ops);
+prolite_stream_error_t write_term(context_t* context, prolite_stream_t* s, const term_t* term, const write_options_t* options, const operator_table_t* ops);
+
+#if ENABLE_TESTS
+prolite_stream_error_t dump_term(prolite_stream_t* s, const term_t* term);
+#endif
 
 #endif // WRITE_TERM_H_INCLUDED

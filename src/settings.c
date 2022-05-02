@@ -28,8 +28,7 @@ int parse_cmd_args(int argc, char* argv[], settings_t* settings)
 		int (*callback)(const char* arg, void* param);
 		void*       param;
 
-	} opts[] = 
-	{
+	} opts[] = {
 		{ 'h', "help", 0, NULL, &set_bool, &settings->m_help },
 		{ 'v', "verbose", 0, NULL, &set_bool, &settings->m_verbose },
 		{ 'i', "interactive", 0, NULL, &set_bool, &settings->m_interactive },
