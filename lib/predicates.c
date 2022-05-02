@@ -6,11 +6,11 @@
 
 static uint64_t predicate_key(const term_t* pred, int* is_sub_tree)
 {
-	prolite_type_t type = get_term_type(pred);
+	prolite_type_t type = unpack_term_type(pred);
 	assert(type == prolite_atom || type == prolite_compound);
 
 	uint64_t key = pred->m_u64val;
-	unsigned int sub_type = get_term_subtype(pred);
+	unsigned int sub_type = unpack_term_subtype(pred);
 	if (sub_type == 0 || sub_type == 3)
 	{
 		string_t s;
@@ -105,7 +105,7 @@ static void callback2(void* p, uint64_t k, void* v)
 static void enum_callback(void* p, uint64_t k, void* v)
 {
 	struct callback_param* cp = p;	
-	unsigned int sub_type = get_term_subtype(&(term_t){ .m_u64val = k });
+	unsigned int sub_type = unpack_term_subtype(&(term_t){ .m_u64val = k });
 	if (sub_type == 0 || sub_type == 3)
 		btree_enum(&(btree_t){ .m_allocator = cp->m_bt->m_allocator, .m_root = v},&callback2,p);
 	else
@@ -115,8 +115,7 @@ static void enum_callback(void* p, uint64_t k, void* v)
 
 void predicate_map_enum(predicate_map_t* pm, void (*callback)(void* param, predicate_base_t* pred), void* param)
 {
-	struct callback_param p = 
-	{
+	struct callback_param p = {
 		.m_bt = pm,
 		.m_callback = callback,
 		.m_param = param
@@ -127,7 +126,7 @@ void predicate_map_enum(predicate_map_t* pm, void (*callback)(void* param, predi
 static void clear_callback(void* p, uint64_t k, void* v)
 {
 	struct callback_param* cp = p;
-	unsigned int sub_type = get_term_subtype(&(term_t){ .m_u64val = k });
+	unsigned int sub_type = unpack_term_subtype(&(term_t){ .m_u64val = k });
 	if (sub_type == 0 || sub_type == 3)
 		btree_clear(&(btree_t){ .m_allocator = cp->m_bt->m_allocator, .m_root = v},cp->m_callback ? &callback2 : NULL,cp);
 	else if (cp->m_callback)
@@ -136,8 +135,7 @@ static void clear_callback(void* p, uint64_t k, void* v)
 
 void predicate_map_clear(predicate_map_t* pm, void (*callback)(void* param, predicate_base_t* pred), void* param)
 {
-	struct callback_param p = 
-	{
+	struct callback_param p = {
 		.m_bt = pm,
 		.m_callback = callback,
 		.m_param = param
@@ -186,7 +184,7 @@ typedef struct predicate
 
 /*static int assert_is_callable(context_t* context, const term_t* goal)
 {
-	switch (get_term_type(goal))
+	switch (unpack_term_type(goal))
 	{
 	case prolite_atom:
 	case prolite_var:
@@ -245,7 +243,7 @@ void term_to_clause(context_t* context, const term_t* t, clause_t* clause)
 		return throw_permission_error(context,PACK_ATOM_BUILTIN(modify),PACK_ATOM_BUILTIN(static_procedure),head);
 
 	default:
-		if (get_term_type(head) == prolite_var)
+		if (unpack_term_type(head) == prolite_var)
 			return throw_instantiation_error(context,head);
 
 		if (!assert_is_callable(context,head))

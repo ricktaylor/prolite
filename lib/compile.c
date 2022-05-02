@@ -179,9 +179,9 @@ void append_ret(compile_context_t* context, cfg_block_t* c)
 
 const term_t* compile_deref_var(compile_context_t* context, const term_t* goal)
 {
-	if (get_term_type(goal) == prolite_var)
+	if (unpack_term_type(goal) == prolite_var)
 	{
-		size_t idx = get_var_index(goal);
+		size_t idx = unpack_var_index(goal);
 		assert(context->m_substs && idx < context->m_substs->m_count);
 		const term_t* g = context->m_substs->m_vals[idx];
 		if (g)
@@ -304,7 +304,7 @@ size_t inc_ip(optype_t op)
 	case OP_PUSH_REG:
 		++ip;
 		break;
-	
+
 	case OP_BUILTIN:
 	case OP_EXTERN:
 	case OP_SET_REG:
@@ -312,7 +312,7 @@ size_t inc_ip(optype_t op)
 	case OP_MOV_REG:
 		ip += 2;
 		break;
-		
+
 	case OP_ADD_REG:
 	case OP_SUB_REG:
 		ip += 3;
@@ -409,12 +409,12 @@ static uint64_t cfg_hash_term(const term_t* t)
 {
 	uint64_t h = 0;
 
-	switch (get_term_type(t))
+	switch (unpack_term_type(t))
 	{
 	case prolite_atom:
 	case prolite_chars:
 	case prolite_charcodes:
-		switch (get_term_subtype(t))
+		switch (unpack_term_subtype(t))
 		{
 		case 0:
 		case 3:
@@ -440,18 +440,18 @@ static uint64_t cfg_hash_term(const term_t* t)
 				case 1: h += ((uint64_t)*(s.m_str++));
 				case 0:
 					break;
-				}		
+				}
 			}
 
 		default:
-			return t->m_u64val;	
+			return t->m_u64val;
 		}
 		break;
 
 	case prolite_compound:
 		{
 			h = t->m_u64val;
-			if (get_term_subtype(t) == 0)
+			if (unpack_term_subtype(t) == 0)
 				h += cfg_hash_term(t+1);
 
 			size_t arity;
@@ -476,18 +476,18 @@ static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* duplicates, bt
 {
 	if (!blk || !blk->m_count)
 		return 0;
-	
+
 	if (btree_exists(loop_check,(uintptr_t)blk))
 		return (uintptr_t)btree_lookup(loop_check,(uintptr_t)blk);
 
 	uint64_t h = 0;
-	
+
 	for (size_t i = 0; i < blk->m_count; )
 	{
 		h += blk->m_ops[i].m_term.m_u64val;
 
 		size_t inc = inc_ip(blk->m_ops[i].m_opcode.m_op);
-		
+
 		switch (blk->m_ops[i].m_opcode.m_op)
 		{
 		case OP_PUSH_TERM_REF:
@@ -516,14 +516,14 @@ static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* duplicates, bt
 	}
 
 	btree_insert(loop_check,(uintptr_t)blk,(void*)h);
-		
+
 	cfg_block_t* blk2 = btree_insert(index,h,(void*)blk);
 	if (blk2 && blk != blk2)
 	{
 		btree_t loop_check2 = { .m_allocator = loop_check->m_allocator };
 		if (cfg_compare_blk(&loop_check2,blk,blk2))
 			btree_insert(duplicates,(uintptr_t)blk,blk2);
-		
+
 		btree_clear(&loop_check2,NULL,NULL);
 	}
 
@@ -542,7 +542,7 @@ static void cfg_hash(compile_context_t* context, btree_t* duplicates, btree_t* i
 static void cfg_fold(void* param, uint64_t key, void* val)
 {
 	cfg_block_t* blk = (cfg_block_t*)key;
-	
+
 	// Rewrite blk to JMP to blk2
 	if (blk->m_count < 2)
 		append_opcodes(param,blk,2 - blk->m_count);
@@ -593,7 +593,7 @@ static void cfg_simplify_blk(btree_t* index, cfg_block_t* blk)
 				{
 					*next = (cfg_block_t*)(*next)->m_ops[1].m_term.m_pval;
 				}
-				
+
 				cfg_simplify_blk(index,*next);
 			}
 			break;
@@ -678,7 +678,7 @@ static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const 
 	// Common Sub-expression Elimination (CSE)
 
 	size_t heap_start = heap_top(context->m_heap);
-	
+
 	cfg_t* c = compile_subgoal(context,next);
 	if (c && c->m_entry_point->m_count >= 4)
 	{
@@ -711,7 +711,7 @@ static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const 
 			};
 			cse->m_previous = prev;
 		}
-	
+
 		cfg_t* c1 = new_cfg(context);
 
 		cse_cfg_t* stub = heap_malloc(context->m_heap,sizeof(cse_cfg_t));
@@ -719,11 +719,11 @@ static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const 
 			longjmp(context->m_jmp,1);
 
 		*stub = (cse_cfg_t){
-			.m_cfg = c1, 
+			.m_cfg = c1,
 			.m_next = cse->m_stubs
 		};
 		cse->m_stubs = stub;
-		
+
 		opcode_t* ops = append_opcodes(context,c1->m_entry_point,1);
 		ops->m_term.m_pval = prev;
 
@@ -760,7 +760,7 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 		if (prev->m_refcount > 1)
 		{
 			append_ret(context,prev->m_cfg->m_tail);
-			
+
 			stub->m_cfg->m_entry_point->m_ops[0].m_opcode = (struct op_arg){ .m_op = OP_GOSUB };
 			opcode_t* ops = append_opcodes(context,stub->m_cfg->m_entry_point,3);
 			(ops++)->m_term.m_pval = prev->m_cfg->m_entry_point;
@@ -856,23 +856,23 @@ cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_t arity
 	}
 
 	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_BUILTIN;
+	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = arity };
 	(ops++)->m_term.m_pval = fn;
 
 	cfg_t* cont = compile_subgoal(context,next);
 	if (cont)
 	{
 		ops->m_term.m_pval = cont->m_entry_point;
-		
+
 		append_ret(context,cont->m_tail);
 	}
 
 	while (arity)
 	{
-		opcode_t* ops = append_opcodes(context,c->m_tail,1);
+		ops = append_opcodes(context,c->m_tail,1);
 		ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = (arity > 0xFFFFFFFF ? 0xFFFFFFFF : arity) };
 		arity -= ops->m_opcode.m_arg;
-	}	
+	}
 
 	return c;
 }
@@ -887,7 +887,7 @@ static cfg_t* compile_throw(compile_context_t* context, const continuation_t* go
 static cfg_t* compile_halt(compile_context_t* context, const continuation_t* goal)
 {
 	cfg_t* c;
-	if (get_term_type(goal->m_term) == prolite_atom)
+	if (unpack_term_type(goal->m_term) == prolite_atom)
 	{
 		c = new_cfg(context);
 		set_flags(context,c,FLAG_HALT);
@@ -903,7 +903,7 @@ static cfg_t* compile_halt(compile_context_t* context, const continuation_t* goa
 
 static int compile_is_callable(compile_context_t* context, const term_t* goal)
 {
-	switch (get_term_type(goal))
+	switch (unpack_term_type(goal))
 	{
 	case prolite_atom:
 		return 1;
@@ -1077,7 +1077,7 @@ static cfg_t* compile_repeat(compile_context_t* context, const continuation_t* g
 
 static int compile_occurs_check(compile_context_t* context, const term_t* t1, const term_t* t2)
 {
-	switch (get_term_type(t2))
+	switch (unpack_term_type(t2))
 	{
 	case prolite_var:
 		if (t1->m_u64val == t2->m_u64val)
@@ -1113,7 +1113,7 @@ static int compile_occurs_check(compile_context_t* context, const term_t* t1, co
 
 static cfg_t* compile_unify_shim(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
-	size_t idx = get_var_index(term);
+	size_t idx = unpack_var_index(term);
 	assert(context->m_substs && idx < context->m_substs->m_count);
 
 	cfg_t* c = compile_subgoal(context,next);
@@ -1141,7 +1141,7 @@ typedef struct unify_info
 
 static const continuation_t* compile_unify_var(compile_context_t* context, const term_t* t1, const term_t* t2, unify_info_t* ui, const continuation_t* next)
 {
-	size_t idx = get_var_index(t1);
+	size_t idx = unpack_var_index(t1);
 	assert(context->m_substs && idx < context->m_substs->m_count && context->m_substs->m_vals[idx] == NULL);
 
 	context->m_substs->m_vals[idx] = t2;
@@ -1158,7 +1158,7 @@ static const continuation_t* compile_unify_var(compile_context_t* context, const
 	continuation_t* c = heap_malloc(context->m_heap,sizeof(continuation_t));
 	if (!c)
 		longjmp(context->m_jmp,1);
-	
+
 	c->m_next = next;
 	c->m_shim = &compile_unify_shim;
 	c->m_term = t[0];
@@ -1168,7 +1168,7 @@ static const continuation_t* compile_unify_var(compile_context_t* context, const
 
 static const continuation_t* compile_unify_term(compile_context_t* context, const term_t* t1, const term_t* t2, unify_info_t* ui, const continuation_t* next)
 {
-	prolite_type_t type1 = get_term_type(t1);
+	prolite_type_t type1 = unpack_term_type(t1);
 	if (type1 == prolite_var)
 	{
 		if (t1->m_u64val == t2->m_u64val)
@@ -1177,7 +1177,7 @@ static const continuation_t* compile_unify_term(compile_context_t* context, cons
 		return compile_unify_var(context,t1,t2,ui,next);
 	}
 
-	prolite_type_t type2 = get_term_type(t2);
+	prolite_type_t type2 = unpack_term_type(t2);
 	switch (type2)
 	{
 	case prolite_var:
@@ -1228,10 +1228,8 @@ static cfg_t* compile_unify_end_shim(compile_context_t* context, const term_t* t
 	append_ret(context,cont->m_tail);
 
 	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,5);
-	(ops++)->m_opcode.m_op = OP_PUSH_CONST;
-	(ops++)->m_term.m_u64val = ui->m_var_count;
-	(ops++)->m_opcode.m_op = OP_BUILTIN;
+	opcode_t* ops = append_opcodes(context,c->m_tail,3);
+	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = ui->m_var_count * 2 };
 	(ops++)->m_term.m_pval = ui->m_with_occurs_check ? &prolite_builtin_unify_with_occurs_check : &prolite_builtin_unify;
 	ops->m_term.m_pval = cont->m_entry_point;
 
@@ -1244,7 +1242,7 @@ static cfg_t* compile_unify_end_shim(compile_context_t* context, const term_t* t
 
 	if (ui->m_with_occurs_check)
 		c->m_always_flags = cont->m_always_flags & FLAG_THROW;
-	
+
 	return c;
 }
 
@@ -1262,7 +1260,7 @@ static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, 
 		substitutions_t* substs = heap_malloc(context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
 		if (!substs)
 			longjmp(context->m_jmp,1);
-		
+
 		substs->m_count = context->m_substs->m_count;
 		memcpy(substs->m_vals,context->m_substs->m_vals,context->m_substs->m_count * sizeof(term_t*));
 
@@ -1334,11 +1332,11 @@ static cfg_t* compile_not_unifiable(compile_context_t* context, const continuati
 
 static const continuation_t* compile_unify_head_term(compile_context_t* context, const term_t* t1, const term_t* t2, substitutions_t* next_substs, unify_info_t* ui, const continuation_t* next)
 {
-	prolite_type_t type2 = get_term_type(t2);
+	prolite_type_t type2 = unpack_term_type(t2);
 	if (type2 == prolite_var)
 	{
 		// Equivalent of defer_var for next_substs;
-		size_t idx = get_var_index(t2);
+		size_t idx = unpack_var_index(t2);
 		assert(next_substs && idx < next_substs->m_count);
 
 		if (next_substs->m_vals[idx] != NULL)
@@ -1348,7 +1346,7 @@ static const continuation_t* compile_unify_head_term(compile_context_t* context,
 		return next;
 	}
 
-	prolite_type_t type1 = get_term_type(t1);
+	prolite_type_t type1 = unpack_term_type(t1);
 	if (type1 == prolite_var)
 		return compile_unify_var(context,t1,t2,ui,next);
 
@@ -1457,7 +1455,7 @@ static cfg_t* compile_extern(compile_context_t* context, const term_t* term, con
 			opcode_t* ops = append_opcodes(context,c->m_tail,2);
 			(ops++)->m_opcode.m_op = OP_GOSUB;
 			ops->m_term.m_pval = cont->m_entry_point;
-			
+
 			c->m_always_flags = cont->m_always_flags;
 
 			append_ret(context,cont->m_tail);
@@ -1481,7 +1479,7 @@ static cfg_t* compile_extern(compile_context_t* context, const term_t* term, con
 
 		cont = c;
 	}
-	
+
 	return cont;
 }
 
@@ -1535,12 +1533,12 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	{
 		if (cont2 == cont)
 			cont2 = cont->m_next;
-			
+
 		c = compile_subgoal(context,cont2);
 	}
 
 	context->m_substs = prev_substs;
-	
+
 	return c;
 }
 
@@ -1551,27 +1549,27 @@ static int match_substs(const compile_context_t* context, const substitutions_t*
 
 	if (!ct || !ot)
 		return 0;
-	
-	prolite_type_t ctype = get_term_type(ct);
+
+	prolite_type_t ctype = unpack_term_type(ct);
 	while (ctype == prolite_var)
 	{
-		assert(get_var_index(ct) < context->m_substs->m_count);
-		const term_t* n = context->m_substs->m_vals[get_var_index(ct)];
+		assert(unpack_var_index(ct) < context->m_substs->m_count);
+		const term_t* n = context->m_substs->m_vals[unpack_var_index(ct)];
 		if (!n)
 			break;
 		ct = n;
-		ctype = get_term_type(ct);
+		ctype = unpack_term_type(ct);
 	}
 
-	prolite_type_t otype = get_term_type(ot);
+	prolite_type_t otype = unpack_term_type(ot);
 	while (otype == prolite_var)
 	{
-		assert(get_var_index(ot) < other_substs->m_count);
-		const term_t* n = other_substs->m_vals[get_var_index(ot)];
+		assert(unpack_var_index(ot) < other_substs->m_count);
+		const term_t* n = other_substs->m_vals[unpack_var_index(ot)];
 		if (!n)
 			break;
 		ot = n;
-		otype = get_term_type(ot);
+		otype = unpack_term_type(ot);
 	}
 
 	// TODO char_codes etc
@@ -1584,7 +1582,7 @@ static int match_substs(const compile_context_t* context, const substitutions_t*
 
 	if (!predicate_compare(ct,ot))
 		return 0;
-		
+
 	size_t arity;
 	ct = get_first_arg(ct,&arity);
 	ot = get_first_arg(ot,NULL);
@@ -1593,7 +1591,7 @@ static int match_substs(const compile_context_t* context, const substitutions_t*
 	{
 		if (!match_substs(context,other_substs,ct,ot))
 			return 0;
-		
+
 		ct = get_next_arg(ct);
 		ot = get_next_arg(ot);
 	}
@@ -1617,7 +1615,7 @@ static cfg_t* compile_cce(compile_context_t* context, const term_t* term, const 
 			for (size_t i=0; matched && i < p->m_substs->m_count; ++i)
 				matched = match_substs(context,p->m_substs,context->m_substs->m_vals[i],p->m_substs->m_vals[i]);
 		}
-		
+
 		if (matched)
 			return p->m_cfg;
 	}
@@ -1636,7 +1634,7 @@ static cfg_t* compile_cce(compile_context_t* context, const term_t* term, const 
 		};
 		cce->m_previous = p;
 	}
-	
+
 	return c;
 }
 
@@ -1764,11 +1762,11 @@ static cfg_t* compile_type_test(compile_context_t* context, prolite_type_flags_t
 	(ops++)->m_term.m_u64val = types;
 	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
 	(ops++)->m_term.m_pval = t;
-	(ops++)->m_opcode.m_op = OP_BUILTIN;
+	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = 2 };
 	(ops++)->m_term.m_pval = &prolite_builtin_type_test;
 	(ops++)->m_term.m_pval = cont->m_entry_point;
 	ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = 2 };
-	
+
 	c->m_always_flags = cont->m_always_flags;
 
 	return c;
@@ -1778,7 +1776,7 @@ static cfg_t* compile_var(compile_context_t* context, const continuation_t* goal
 {
 	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
 
-	if (get_term_type(g1) != prolite_var)
+	if (unpack_term_type(g1) != prolite_var)
 		return NULL;
 
 	return compile_type_test(context,type_flag_var,0,g1,goal->m_next);
@@ -1787,7 +1785,7 @@ static cfg_t* compile_var(compile_context_t* context, const continuation_t* goal
 static cfg_t* compile_atom(compile_context_t* context, const continuation_t* goal)
 {
 	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
-	switch (get_term_type(g1))
+	switch (unpack_term_type(g1))
 	{
 	case prolite_var:
 		return compile_type_test(context,type_flag_atom,0,g1,goal->m_next);
@@ -1803,7 +1801,7 @@ static cfg_t* compile_atom(compile_context_t* context, const continuation_t* goa
 static cfg_t* compile_integer(compile_context_t* context, const continuation_t* goal)
 {
 	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
-	switch (get_term_type(g1))
+	switch (unpack_term_type(g1))
 	{
 	case prolite_var:
 		return compile_type_test(context,type_flag_integer,0,g1,goal->m_next);
@@ -1822,7 +1820,7 @@ static cfg_t* compile_integer(compile_context_t* context, const continuation_t* 
 static cfg_t* compile_float(compile_context_t* context, const continuation_t* goal)
 {
 	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
-	switch (get_term_type(g1))
+	switch (unpack_term_type(g1))
 	{
 	case prolite_var:
 		return compile_type_test(context,type_flag_double,0,g1,goal->m_next);
@@ -1841,7 +1839,7 @@ static cfg_t* compile_float(compile_context_t* context, const continuation_t* go
 static cfg_t* compile_atomic(compile_context_t* context, const continuation_t* goal)
 {
 	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
-	switch (get_term_type(g1))
+	switch (unpack_term_type(g1))
 	{
 	case prolite_var:
 		return compile_type_test(context,type_flag_var | type_flag_chars | type_flag_charcodes | type_flag_compound,1,g1,goal->m_next);
@@ -1859,7 +1857,7 @@ static cfg_t* compile_atomic(compile_context_t* context, const continuation_t* g
 static cfg_t* compile_compound(compile_context_t* context, const continuation_t* goal)
 {
 	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
-	switch (get_term_type(g1))
+	switch (unpack_term_type(g1))
 	{
 	case prolite_var:
 		return compile_type_test(context,type_flag_chars | type_flag_charcodes | type_flag_compound,0,g1,goal->m_next);
@@ -1877,7 +1875,7 @@ static cfg_t* compile_compound(compile_context_t* context, const continuation_t*
 static cfg_t* compile_nonvar(compile_context_t* context, const continuation_t* goal)
 {
 	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
-	if (get_term_type(g1) == prolite_var)
+	if (unpack_term_type(g1) == prolite_var)
 		return compile_type_test(context,type_flag_var,1,g1,goal->m_next);
 
 	return compile_subgoal(context,goal->m_next);
@@ -1886,7 +1884,7 @@ static cfg_t* compile_nonvar(compile_context_t* context, const continuation_t* g
 static cfg_t* compile_number(compile_context_t* context, const continuation_t* goal)
 {
 	const term_t* g1 = compile_deref_var(context,get_first_arg(goal->m_term,NULL));
-	switch (get_term_type(g1))
+	switch (unpack_term_type(g1))
 	{
 	case prolite_var:
 		return compile_type_test(context,type_flag_integer | type_flag_double,0,g1,goal->m_next);
@@ -1902,7 +1900,7 @@ static cfg_t* compile_number(compile_context_t* context, const continuation_t* g
 static int compile_is_ground(compile_context_t* context, const term_t* goal)
 {
 	goal = compile_deref_var(context,goal);
-	prolite_type_t t = get_term_type(goal);
+	prolite_type_t t = unpack_term_type(goal);
 	if (t == prolite_var)
 		return 0;
 
@@ -1934,7 +1932,7 @@ static cfg_t* compile_subterm(compile_context_t* context, const continuation_t* 
 {
 	cfg_t* c = NULL;
 
-	const debug_info_t* debug_info = get_debug_info(goal->m_term);
+	const debug_info_t* debug_info = unpack_debug_info(goal->m_term);
 
 	switch (MASK_DEBUG_INFO(goal->m_term->m_u64val))
 	{
@@ -1948,7 +1946,7 @@ static cfg_t* compile_subterm(compile_context_t* context, const continuation_t* 
 #include "builtin_functions.h"
 
 	default:
-		switch (get_term_type(goal->m_term))
+		switch (unpack_term_type(goal->m_term))
 		{
 		case prolite_compound:
 			if ((MASK_DEBUG_INFO(goal->m_term->m_u64val) & PACK_COMPOUND_EMBED_MASK) == PACK_COMPOUND_EMBED_4(0,'c','a','l','l') ||
@@ -2011,7 +2009,7 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 	blks->m_total += blk->m_count;
 
 	int do_again = 0;
-	
+
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
 		switch (blk->m_ops[i].m_opcode.m_op)
@@ -2156,12 +2154,11 @@ static const char* builtinName(const builtin_fn_t fn)
 	{
 		builtin_fn_t fn;
 		const char* name;
-	} bns[] =
-	{
+	} bns[] = {
 		#include "builtin_functions.h"
 
 		{ &prolite_builtin_call, "call" },
-		{ &prolite_builtin_callN, "call/N" },
+		{ &prolite_builtin_callN, "callN" },
 		{ &prolite_builtin_catch, "catch" },
 		{ &prolite_builtin_throw, "throw", },
 		{ &prolite_builtin_throw_evaluable, "throw_evaluable", },
@@ -2282,18 +2279,17 @@ static void dumpPI(const term_t* t, FILE* f)
 
 static void dumpTerm(context_t* context, const term_t* t, FILE* f, int backslash)
 {
-	struct std_output stream =
-	{
+	struct std_output stream = {
 		.m_base.m_fn_write = backslash ? &std_output_stream_write_slash : &std_output_stream_write,
 		.m_file = f
 	};
 
-	if (get_term_type(t) != prolite_var)
+	if (unpack_term_type(t) != prolite_var)
 		fprintf(f,"'");
 
 	write_term(context,&stream.m_base,t,NULL,NULL);
 
-	if (get_term_type(t) != prolite_var)
+	if (unpack_term_type(t) != prolite_var)
 		fprintf(f,"'");
 }
 
@@ -2338,7 +2334,7 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"Builtin\\ %s",builtinName(blk->m_ops[i+1].m_term.m_pval));
+			fprintf(f,"Builtin\\ %s/%"PRIu64,builtinName(blk->m_ops[i+1].m_term.m_pval),(uint64_t)blk->m_ops[i].m_opcode.m_arg);
 			if (blk->m_ops[i+2].m_term.m_pval)
 				fprintf(f,"|<f%zu> Gosub",i+1);
 			break;
@@ -2378,7 +2374,7 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_PUSH_NULL:
-			fprintf(f,"Push\\ NULL\\ *\\ %u",blk->m_ops[i].m_opcode.m_arg);
+			fprintf(f,"Push\\ NULL\\ *\\ %"PRIu64,(uint64_t)blk->m_ops[i].m_opcode.m_arg);
 			break;
 
 		case OP_PUSH_TERM_REF:
@@ -2387,7 +2383,7 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_POP:
-			fprintf(f,"Pop\\ %u",blk->m_ops[i].m_opcode.m_arg);
+			fprintf(f,"Pop\\ %"PRIu64,(uint64_t)blk->m_ops[i].m_opcode.m_arg);
 			break;
 
 		case OP_ALLOC_REGS:
@@ -2511,7 +2507,7 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			break;
 
 		case OP_BUILTIN:
-			fprintf(f,"builtin(%s)",builtinName(code[1].m_term.m_pval));
+			fprintf(f,"builtin(%s/%"PRIu64")",builtinName(code[1].m_term.m_pval),(uint64_t)code[0].m_opcode.m_arg);
 			if (code[2].m_term.m_u64val)
 				fprintf(f," gosub %+d (%zu)",(int)code[2].m_term.m_u64val,(size_t)((code + 2 - start) + (int64_t)code[2].m_term.m_u64val));
 			fprintf(f,";\n");
@@ -2554,7 +2550,7 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			break;
 
 		case OP_PUSH_NULL:
-			fprintf(f,"push NULL * %u;\n",code->m_opcode.m_arg);
+			fprintf(f,"push NULL * %"PRIu64";\n",(uint64_t)code->m_opcode.m_arg);
 			break;
 
 		case OP_PUSH_TERM_REF:
@@ -2564,7 +2560,7 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			break;
 
 		case OP_POP:
-			fprintf(f,"pop %u;\n",code->m_opcode.m_arg);
+			fprintf(f,"pop %"PRIu64";\n",(uint64_t)code->m_opcode.m_arg);
 			break;
 
 		case OP_ALLOC_REGS:
@@ -2611,10 +2607,9 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 
 void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const term_t* goal, size_t var_count)
 {
-	term_t* sp = context->m_stack;
 	size_t heap_start = heap_top(&context->m_heap);
-	compile_context_t cc =
-	{
+	size_t trail_start = heap_top(&context->m_trail);
+	compile_context_t cc = {
 		.m_heap = &context->m_heap,
 		.m_link_fn = link_fn,
 		.m_link_param = link_param
@@ -2647,7 +2642,7 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 		prolite_allocator_t a = heap_allocator(&context->m_heap);
 
 		cfg_vec_t blks = { .m_index.m_allocator = &a };
-		walk_cfgs(&cc,&blks,c->m_entry_point);	
+		walk_cfgs(&cc,&blks,c->m_entry_point);
 
 #if ENABLE_TESTS
 		dumpCFG(context,&blks,"./cfg.dot");
@@ -2655,14 +2650,14 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 
 		if (blks.m_total)
 		{
-			opcode_t* code = heap_malloc(&context->m_heap,blks.m_total * sizeof(opcode_t));
+			opcode_t* code = heap_malloc(&context->m_trail,blks.m_total * sizeof(opcode_t));
 			if (!code)
 				longjmp(cc.m_jmp,1);
 
 			size_t new_size = emit_ops(code,&blks);
 
 			// Resize the memory block for sanity
-			opcode_t* new_code = heap_realloc(&context->m_heap,code,blks.m_total * sizeof(opcode_t),new_size * sizeof(opcode_t));
+			opcode_t* new_code = heap_realloc(&context->m_trail,code,blks.m_total * sizeof(opcode_t),new_size * sizeof(opcode_t));
 			if (!new_code)
 				longjmp(cc.m_jmp,1);
 
@@ -2673,19 +2668,18 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 			dumpTrace(context,code,blks.m_total,"./pcode.txt");
 #endif
 
-			// Put pcode on the stack... JIT later...
-			opcode_t* ops = stack_malloc(&context->m_stack,blks.m_total * sizeof(opcode_t));
-			memcpy(ops,code,blks.m_total * sizeof(opcode_t));
+			// TODO - JIT time!
 		}
-		(--context->m_stack)->m_u64val = blks.m_total;
 	}
 	else
 	{
-		context->m_stack = sp;
+		/* Bulk free all trail allocs */
+		heap_reset(&context->m_trail,trail_start);
 	}
 
 #if ENABLE_TESTS
-	fprintf(stdout,"Mem: %zu\n",heap_top(&context->m_heap) - heap_start);
+	fprintf(stdout,"Heap: %zu\n",heap_top(&context->m_heap) - heap_start);
+	fprintf(stdout,"Trail: %zu\n",heap_top(&context->m_trail) - trail_start);
 #endif
 
 	/* Bulk free all heap allocs */

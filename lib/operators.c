@@ -13,10 +13,10 @@ typedef struct dynamic_operator
 
 static uint64_t operator_key(const term_t* name, int* is_sub_tree)
 {
-	assert(get_term_type(name) == prolite_atom);
+	assert(unpack_term_type(name) == prolite_atom);
 
 	uint64_t key = name->m_u64val;
-	unsigned int sub_type = get_term_subtype(name);
+	unsigned int sub_type = unpack_term_subtype(name);
 	if (sub_type == 0 || sub_type == 3)
 	{
 		string_t s;
@@ -58,8 +58,7 @@ static const dynamic_operator_t* op_map_lookup(const btree_t* om, const term_t* 
 
 static const operator_t* static_op(const term_t* name)
 {
-	static const operator_t s_builtins[] =
-	{
+	static const operator_t s_builtins[] = {
 		/* 0 */ { eXFX, 1200 },
 		/* 1 */ { eXFY, 1100 },
 		/* 2 */ { eXFY, 1050 },
@@ -139,8 +138,7 @@ static const operator_t* static_op(const term_t* name)
 
 static const operator_t* static_prefix_op(const term_t* name)
 {
-	static const operator_t s_builtins[] =
-	{
+	static const operator_t s_builtins[] = {
 		/* 0 */ { eFX, 1200 },
 		/* 1 */ { eFY, 900 },
 		/* 2 */ { eFY, 200 },
@@ -170,50 +168,48 @@ static const operator_t* static_prefix_op(const term_t* name)
 /* Try to find a infix/postfix op, otherwise find prefix */
 const operator_t* lookup_op(context_t* context, const btree_t* ops, const unsigned char* name, size_t name_len)
 {
-	term_t* sp = context->m_stack;
-	context->m_stack = push_string(context->m_stack,prolite_atom,name,name_len,1,NULL);
+	term_t op_name[2];
+	pack_string(op_name,name,name_len);
 
 	const operator_t* op = NULL;
-	const dynamic_operator_t* dyn_op = ops ? op_map_lookup(ops,context->m_stack) : NULL;
+	const dynamic_operator_t* dyn_op = ops ? op_map_lookup(ops,op_name) : NULL;
 	if (dyn_op && dyn_op->m_other.m_precedence)
 		op = &dyn_op->m_other;
 	else
-		op = static_op(context->m_stack);
+		op = static_op(op_name);
 
 	if (!op)
 	{
 		if (dyn_op && dyn_op->m_prefix.m_precedence)
 			op = &dyn_op->m_prefix;
 		else
-			op = static_prefix_op(context->m_stack);
+			op = static_prefix_op(op_name);
 	}
 
-	context->m_stack = sp;
 	return op;
 }
 
 /* Try to find a prefix op, otherwise find infix/suffix */
 const operator_t* lookup_prefix_op(context_t* context, const btree_t* ops, const unsigned char* name, size_t name_len)
 {
-	term_t* sp = context->m_stack;
-	context->m_stack = push_string(context->m_stack,prolite_atom,name,name_len,1,NULL);
+	term_t op_name[2];
+	pack_string(op_name,name,name_len);
 
 	const operator_t* op = NULL;
-	const dynamic_operator_t* dyn_op = ops ? op_map_lookup(ops,context->m_stack) : NULL;
+	const dynamic_operator_t* dyn_op = ops ? op_map_lookup(ops,op_name) : NULL;
 	if (dyn_op && dyn_op->m_prefix.m_precedence)
 		op = &dyn_op->m_prefix;
 	else
-		op = static_prefix_op(context->m_stack);
+		op = static_prefix_op(op_name);
 
 	if (!op)
 	{
 		if (dyn_op && dyn_op->m_other.m_precedence)
 			op = &dyn_op->m_other;
 		else
-			op = static_op(context->m_stack);
+			op = static_op(op_name);
 	}
 
-	context->m_stack = sp;
 	return op;
 }
 
@@ -278,16 +274,14 @@ static int update_operator(context_t* context, operator_table_t* ops, int64_t pr
 	*new_op = (dynamic_operator_t){ .m_name = (term_t*)name };
 
 	// Only copy the name if we need to
-	term_t* name_copy = NULL;
 	if (ops->m_allocator)
 	{
-		name_copy = copy_term(ops->m_allocator,context,name,0,NULL);
-		if (!name_copy)
+		new_op->m_name = copy_term(context,&(emit_buffer_t){ .m_a = ops->m_allocator },name,0,NULL);
+		if (!new_op->m_name)
 		{
 			allocator_free(ops->m_allocator,new_op);
 			return -1;
 		}
-		new_op->m_name = name_copy;
 	}
 
 	if (specifier == eFX || specifier == eFY)
@@ -382,7 +376,7 @@ static int update_operator(context_t* context, operator_table_t* ops, int64_t pr
 
 static void set_op_inner(context_t* context, operator_table_t* ops, int64_t precendence, operator_specifier_t specifier, const term_t* op)
 {
-	if (get_term_type(op) != prolite_atom)
+	if (unpack_term_type(op) != prolite_atom)
 		throw_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),op);
 	else if (MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_1(',') ||
 			MASK_DEBUG_INFO(op->m_u64val) == PACK_ATOM_EMBED_2('{','}') ||
@@ -403,7 +397,7 @@ static void set_op_inner(context_t* context, operator_table_t* ops, int64_t prec
 static void set_op(context_t* context, operator_table_t* ops, const term_t* p, const term_t* s, const term_t* op)
 {
 	unsigned int precendence = 0;
-	switch (get_term_type(p))
+	switch (unpack_term_type(p))
 	{
 	case prolite_var:
 		return throw_instantiation_error(context,p);
@@ -414,7 +408,7 @@ static void set_op(context_t* context, operator_table_t* ops, const term_t* p, c
 
 		if (p->m_dval < 0 || p->m_dval > 1200)
 			return throw_domain_error(context,PACK_ATOM_BUILTIN(operator_priority),p);
-			
+
 		precendence = p->m_dval;
 		break;
 
@@ -423,7 +417,7 @@ static void set_op(context_t* context, operator_table_t* ops, const term_t* p, c
 	}
 
 	operator_specifier_t specifier;
-	switch (get_term_type(s))
+	switch (unpack_term_type(s))
 	{
 	case prolite_var:
 		return throw_instantiation_error(context,s);
@@ -468,7 +462,7 @@ static void set_op(context_t* context, operator_table_t* ops, const term_t* p, c
 		return throw_type_error(context,PACK_ATOM_EMBED_4('a','t','o','m'),s);
 	}
 
-	switch (get_term_type(op))
+	switch (unpack_term_type(op))
 	{
 	case prolite_var:
 		return throw_instantiation_error(context,op);
@@ -502,14 +496,14 @@ void directive_op(context_t* context, operator_table_t* ops, const term_t* goal)
 	set_op(context,ops,p,s,op);
 }
 
-void builtin_op(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+PROLITE_EXPORT void prolite_builtin_op(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	set_op(context,&context->m_module->m_operators,argv[0],argv[1],argv[2]);
 	if (!(context->m_flags & FLAG_THROW))
 		builtin_gosub(context,gosub);
 }
 
-void builtin_current_op(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+PROLITE_EXPORT void prolite_builtin_current_op(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 
 }

@@ -64,7 +64,6 @@ typedef void (*prolite_exception_handler_fn_t)(const char* err_msg, size_t err_l
 typedef struct prolite_environment
 {
     prolite_allocator_t*           m_allocator;
-    size_t                         m_stack_size;
     prolite_stream_resolver_t*     m_resolver;
     prolite_exception_handler_fn_t m_handler;
 

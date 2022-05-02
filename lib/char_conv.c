@@ -44,25 +44,25 @@ static uint32_t atom_to_code(const term_t* a)
 		count = 4;
 		val = (s.m_str[0] & 0x7);
 	}
-	
+
 	if (s.m_len != count)
 		return -1;
 
 	for (size_t i = 1; i < count; ++i)
 		val = (val << 6) | (s.m_str[i] & 0x3F);
-	
+
 	return val;
 }
 
 static void set_char_conversion(context_t* context, char_conv_table_t* cc, const term_t* in_char, const term_t* out_char)
 {
-	switch (get_term_type(in_char))
+	switch (unpack_term_type(in_char))
 	{
 	case prolite_var:
 		return throw_instantiation_error(context,in_char);
 
 	case prolite_atom:
-		switch (get_term_type(out_char))
+		switch (unpack_term_type(out_char))
 		{
 		case prolite_var:
 			return throw_instantiation_error(context,out_char);
@@ -106,14 +106,14 @@ void directive_char_conversion(context_t* context, char_conv_table_t* cc, const 
 	set_char_conversion(context,cc,in_char,out_char);
 }
 
-void builtin_char_conversion(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+PROLITE_EXPORT void prolite_builtin_char_conversion(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	set_char_conversion(context,&context->m_module->m_char_conversion,argv[0],argv[1]);
 	if (!(context->m_flags & FLAG_THROW))
 		builtin_gosub(context,gosub);
 }
 
-void builtin_current_char_conversion(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+PROLITE_EXPORT void prolite_builtin_current_char_conversion(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	assert(0);
 }

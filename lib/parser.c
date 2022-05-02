@@ -27,9 +27,6 @@ typedef enum token_type
 {
 	tokNeedMore = 0,
 	tokEOF,
-	tokInvalidSeq,
-	tokInvalidEscape,
-	tokInvalidChar,
 	tokMissingSQ,
 	tokMissingDQ,
 	tokMissingBQ,
@@ -366,8 +363,7 @@ enum eAction
 	eaBackQuote
 };
 
-static const enum eAction c_actions[128] =
-{
+static const enum eAction c_actions[128] = {
 	/* \x0 */ eaErr, /* \x1 */ eaErr, /* \x2 */ eaErr, /* \x3 */ eaErr,
 	/* \x4 */ eaErr, /* \x5 */ eaErr, /* \x6 */ eaErr, /* \x7 */ eaErr,
 	/* \x8 */ eaErr, /* \t */ eaWhitespace,/* \n */ eaWhitespace,/* \xb */ eaErr,
@@ -492,16 +488,10 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 			if (*state == eLayout)
 			{
 				if (c == CHAR_ILLEGAL_SEQ)
-				{
-					*state = eStart;
-					return tokInvalidSeq;
-				}
+					syntax_error(parser,AST_SYNTAX_ERR_INVALID_UTF8);
 
 				if (c > 0x7f)
-				{
-					*state = eStart;
-					return tokInvalidChar;
-				}
+					syntax_error(parser,AST_SYNTAX_ERR_INVALID_CHAR);
 
 				switch (c_actions[c & 0x7F])
 				{
@@ -593,8 +583,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 
 				case eaErr:
 				default:
-					*state = eStart;
-					return tokInvalidChar;
+					syntax_error(parser,AST_SYNTAX_ERR_INVALID_CHAR);
 				}
 			}
 			else if (*state == eSingleComment)
@@ -697,7 +686,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 				{
 					*state = eStart;
 					return tokMissingSQ;
-				}		
+				}
 				if (*state == eDoubleQuote)
 				{
 					*state = eStart;
@@ -709,9 +698,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 			case CHAR_ILLEGAL_SEQ:
 				parser->m_line_info.m_end_line = peek_line;
 				parser->m_line_info.m_end_col = peek_col;
-				*p = peek;
-				*state = eStart;
-				return tokInvalidSeq;
+				syntax_error(parser,AST_SYNTAX_ERR_INVALID_UTF8);
 
 			case '\\':
 				c = token_get_char(&peek,pe,parser->m_eof,&peek_line,&peek_col);
@@ -763,12 +750,10 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 					{
 						parser->m_line_info.m_end_line = peek_line;
 						parser->m_line_info.m_end_col = peek_col;
-						*p = peek;
-						*state = eStart;
 						if (c == CHAR_ILLEGAL_SEQ)
-							return tokInvalidSeq;
+							syntax_error(parser,AST_SYNTAX_ERR_INVALID_UTF8);
 
-						return tokInvalidEscape;
+						syntax_error(parser,AST_SYNTAX_ERR_INVALID_ESCAPE);
 					}
 				}
 				break;
@@ -856,9 +841,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 				{
 					parser->m_line_info.m_end_line = peek_line;
 					parser->m_line_info.m_end_col = peek_col;
-					*p = peek;
-					*state = eStart;
-					return tokInvalidChar;
+					syntax_error(parser,AST_SYNTAX_ERR_INVALID_CHAR);
 				}
 				token_append_unicode_char(parser,token,c);
 				break;
@@ -901,11 +884,10 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 					goto quote;
 				}
 
-				*state = eStart;
 				if (c == CHAR_ILLEGAL_SEQ)
-					return tokInvalidSeq;
+					syntax_error(parser,AST_SYNTAX_ERR_INVALID_UTF8);
 
-				return tokInvalidEscape;
+				syntax_error(parser,AST_SYNTAX_ERR_INVALID_ESCAPE);
 			}
 
 		octal_char:
@@ -914,9 +896,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 			{
 				parser->m_line_info.m_end_line = peek_line;
 				parser->m_line_info.m_end_col = peek_col;
-				*p = peek;
-				*state = eStart;
-				return tokInvalidEscape;
+				syntax_error(parser,AST_SYNTAX_ERR_INVALID_ESCAPE);
 			}
 		}
 
@@ -952,11 +932,10 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 					goto quote;
 				}
 
-				*state = eStart;
 				if (c == CHAR_ILLEGAL_SEQ)
-					return tokInvalidSeq;
+					syntax_error(parser,AST_SYNTAX_ERR_INVALID_UTF8);
 
-				return tokInvalidEscape;
+				syntax_error(parser,AST_SYNTAX_ERR_INVALID_ESCAPE);
 			}
 
 		hex_char:
@@ -972,9 +951,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 			{
 				parser->m_line_info.m_end_line = peek_line;
 				parser->m_line_info.m_end_col = peek_col;
-				*p = peek;
-				*state = eStart;
-				return tokInvalidEscape;
+				syntax_error(parser,AST_SYNTAX_ERR_INVALID_ESCAPE);
 			}
 		}
 
@@ -1144,9 +1121,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 			{
 				parser->m_line_info.m_end_line = peek_line;
 				parser->m_line_info.m_end_col = peek_col;
-				*p = peek;
-				*state = eStart;
-				return tokInvalidEscape;
+				syntax_error(parser,AST_SYNTAX_ERR_INVALID_ESCAPE);
 			}
 		}
 
@@ -1196,9 +1171,7 @@ static token_type_t parse_token(parser_t* parser, enum eState* state, const unsi
 			{
 				parser->m_line_info.m_end_line = peek_line;
 				parser->m_line_info.m_end_col = peek_col;
-				*p = peek;
-				*state = eStart;
-				return tokInvalidEscape;
+				syntax_error(parser,AST_SYNTAX_ERR_INVALID_ESCAPE);
 			}
 		}
 
@@ -1410,10 +1383,9 @@ static token_type_t token_next(parser_t* parser, token_t* token)
 					unsigned char* new_str = allocator_realloc(parser->m_context->m_heap.m_allocator,parser->m_buffer->m_str,new_size);
 					if (!new_str)
 					{
-						allocator_free(parser->m_context->m_heap.m_allocator,parser->m_buffer->m_str);
-						parser->m_buffer->m_str = NULL;
+						parser->m_buffer->m_str = allocator_free(parser->m_context->m_heap.m_allocator,parser->m_buffer->m_str);
 						parser->m_buffer->m_len = parser->m_buffer->m_alloc = 0;
-						longjmp(parser->m_jmp,1);
+						syntax_error(parser,AST_ERR_OUTOFMEMORY);
 					}
 
 					parser->m_buffer->m_alloc = new_size;
@@ -1450,7 +1422,7 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 		if (!node)
 			syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
-		*node = (ast_node_t){ .m_type = prolite_number	};		
+		*node = (ast_node_t){ .m_type = prolite_number	};
 	}
 
 	if (*next_type == tokFloat)
@@ -1533,9 +1505,9 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 static ast_node_t* parse_negative(parser_t* parser, ast_node_t* node, token_type_t* next_type, token_t* next)
 {
 	node = parse_number(parser,node,next_type,next,1);
-	
+
 	node->m_dval = -node->m_dval;
-		
+
 	return node;
 }
 
@@ -1665,7 +1637,7 @@ static ast_node_t* parse_list_term(parser_t* parser, token_type_t* next_type, to
 
 	if (*next_type != tokCloseL)
 		syntax_error(parser,AST_SYNTAX_ERR_MISSING_CLOSE_L);
-		
+
 	*next_type = token_next(parser,next);
 	return node;
 }
@@ -1695,13 +1667,13 @@ static ast_node_t* parse_name(parser_t* parser, unsigned int* max_prec, token_ty
 
 	*max_prec = 0;
 
-	*next_type = token_next(parser,next);	
+	*next_type = token_next(parser,next);
 	if (*next_type == tokOpenCt)
 		return parse_compound_term(parser,node,next_type,next);
-	
+
 	if (node->m_str_len == 1 && node->m_str[0] == '-' && *next_type >= tokInt && *next_type <= tokFloat)
 		return parse_negative(parser,node,next_type,next);
-		
+
 	if (op && *next_type != tokClose && *next_type != tokComma)
 	{
 		node->m_type = prolite_compound;
@@ -1712,7 +1684,7 @@ static ast_node_t* parse_name(parser_t* parser, unsigned int* max_prec, token_ty
 
 		*max_prec = op->m_precedence;
 	}
-			
+
 	return node;
 }
 
@@ -1831,9 +1803,6 @@ static ast_node_t* parse_term_base(parser_t* parser, unsigned int* max_prec, tok
 	case tokEnd:
 		syntax_error(parser,AST_SYNTAX_ERR_UNEXPECTED_TOKEN);
 
-	case tokInvalidChar:
-		syntax_error(parser,AST_SYNTAX_ERR_INVALID_CHAR);
-
 	case tokMissingSQ:
 		syntax_error(parser,AST_SYNTAX_ERR_MISSING_SQ);
 
@@ -1842,12 +1811,6 @@ static ast_node_t* parse_term_base(parser_t* parser, unsigned int* max_prec, tok
 
 	case tokMissingBQ:
 		syntax_error(parser,AST_SYNTAX_ERR_MISSING_BQ);
-
-	case tokInvalidSeq:
-		syntax_error(parser,AST_SYNTAX_ERR_INVALID_UTF8);
-
-	case tokInvalidEscape:
-		syntax_error(parser,AST_SYNTAX_ERR_INVALID_ESCAPE);
 
 	case tokEOF:
 		return NULL;
@@ -1992,141 +1955,149 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 	return node;
 }
 
-static term_t* emit_ast_node(term_t* stack, ast_node_t* node)
+static void emit_ast_node(parser_t* parser, emit_buffer_t* out, ast_node_t* node)
 {
 	switch (node->m_type)
 	{
 	case prolite_compound:
 		for (size_t i = node->m_arity; i--;)
-			stack = emit_ast_node(stack,node->m_params[i]);
+			emit_ast_node(parser,out,node->m_params[i]);
 
-		// TODO: We could de-duplicate here...
-		return push_predicate(stack,node->m_arity,node->m_str,node->m_str_len,0,node->m_debug_info);
-		
+		if (!emit_predicate(out,node->m_arity,node->m_str,node->m_str_len,0,node->m_debug_info))
+			syntax_error(parser,AST_ERR_OUTOFMEMORY);
+		break;
+
 	case prolite_atom:
 	case prolite_chars:
 	case prolite_charcodes:
-		// TODO: We could de-duplicate here...
-		return push_string(stack,node->m_type,node->m_str,node->m_str_len,0,node->m_debug_info);
-				
+		if (!emit_string(out,node->m_type,node->m_str,node->m_str_len,0,node->m_debug_info))
+			syntax_error(parser,AST_ERR_OUTOFMEMORY);
+		break;
+
 	case prolite_var:
-		return push_var(stack,node->m_arity,node->m_debug_info);
-		
+		if (!emit_var(out,node->m_arity,node->m_debug_info))
+			syntax_error(parser,AST_ERR_OUTOFMEMORY);
+		break;
+
 	case prolite_number:
 	default:
-		return push_number(stack,node->m_dval,node->m_debug_info);
+		if (!emit_number(out,node->m_dval,node->m_debug_info))
+			syntax_error(parser,AST_ERR_OUTOFMEMORY);
+		break;
 	}
 }
 
-static void emit_error_line_info(parser_t* parser)
+static int emit_error_line_info(parser_t* parser, emit_buffer_t* out)
 {
-	// TODO: Line if
-	(--parser->m_context->m_stack)->m_u64val = PACK_ATOM_EMBED_4('t','o','d','o');
+	// TODO: Line info
+	term_t* r = emit_buffer_append(out,1);
+	if (!r)
+		return 0;
+
+	r->m_u64val = PACK_ATOM_EMBED_4('t','o','d','o');
+
+	return 1;
 }
 
-static void emit_syntax_error_missing(parser_t* parser, uint64_t missing_atom)
+static int emit_syntax_error_missing(parser_t* parser, emit_buffer_t* out, uint64_t missing_atom)
 {
-	emit_error_line_info(parser);
+	term_t* r = emit_buffer_append(out,4);
+	if (!r)
+		return 0;
 
-	(--parser->m_context->m_stack)->m_u64val = missing_atom;
-	(--parser->m_context->m_stack)->m_u64val = PACK_COMPOUND_BUILTIN(missing,1);
-	(--parser->m_context->m_stack)->m_u64val = PACK_COMPOUND_BUILTIN(syntax_error,1);
-	(--parser->m_context->m_stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+	r[0].m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+	r[1].m_u64val = PACK_COMPOUND_BUILTIN(syntax_error,1);
+	r[2].m_u64val = PACK_COMPOUND_BUILTIN(missing,1);
+	r[3].m_u64val = missing_atom;
 
-	parser->m_context->m_flags = FLAG_THROW;
+	return emit_error_line_info(parser,out);
 }
 
-static void emit_simple_error(parser_t* parser, uint64_t f, uint64_t arg)
+static int emit_simple_error(parser_t* parser, emit_buffer_t* out, uint64_t f, uint64_t arg)
 {
-	emit_error_line_info(parser);
+	term_t* r = emit_buffer_append(out,3);
+	if (!r)
+		return 0;
 
-	(--parser->m_context->m_stack)->m_u64val = arg;
-	(--parser->m_context->m_stack)->m_u64val = f;
-	(--parser->m_context->m_stack)->m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+	r[0].m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
+	r[1].m_u64val = f;
+	r[2].m_u64val = arg;
 
-	parser->m_context->m_flags = FLAG_THROW;
+	return emit_error_line_info(parser,out);
 }
 
-static void emit_eof_error(parser_t* parser)
+static int emit_eof_error(parser_t* parser, emit_buffer_t* out)
 {
-	emit_simple_error(parser,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(past_end_of_stream));
+	return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(past_end_of_stream));
 }
 
-static void emit_ast_error(parser_t* parser, ast_error_t ast_err)
+static int emit_ast_error(parser_t* parser, emit_buffer_t* out, ast_error_t ast_err)
 {
 	switch (ast_err)
 	{
 	case AST_ERR_NONE:
 	default:
 		assert(0);
-		break;
+		return 1;
 
 	case AST_ERR_OUTOFMEMORY:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'));
 
 	case AST_ERR_FLOAT_OVERFLOW:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(evaluation_error,1),PACK_ATOM_BUILTIN(float_overflow));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(evaluation_error,1),PACK_ATOM_BUILTIN(float_overflow));
 
 	case AST_ERR_FLOAT_UNDERFLOW:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(evaluation_error,1),PACK_ATOM_BUILTIN(underflow));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(evaluation_error,1),PACK_ATOM_BUILTIN(underflow));
 
 	case AST_ERR_MAX_INTEGER:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(max_integer));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(max_integer));
 
 	case AST_ERR_MIN_INTEGER:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(min_integer));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(min_integer));
 
 	case AST_ERR_MAX_ARITY:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(max_arity));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(representation_error,1),PACK_ATOM_BUILTIN(max_arity));
 
 	case AST_SYNTAX_ERR_MISSING_DOT:
-		return emit_syntax_error_missing(parser,PACK_ATOM_EMBED_1('.'));
+		return emit_syntax_error_missing(parser,out,PACK_ATOM_EMBED_1('.'));
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE:
-		return emit_syntax_error_missing(parser,PACK_ATOM_EMBED_1(')'));
+		return emit_syntax_error_missing(parser,out,PACK_ATOM_EMBED_1(')'));
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE_L:
-		return emit_syntax_error_missing(parser,PACK_ATOM_EMBED_1(']'));
+		return emit_syntax_error_missing(parser,out,PACK_ATOM_EMBED_1(']'));
 
 	case AST_SYNTAX_ERR_MISSING_CLOSE_C:
-		return emit_syntax_error_missing(parser,PACK_ATOM_EMBED_1('}'));
+		return emit_syntax_error_missing(parser,out,PACK_ATOM_EMBED_1('}'));
 
 	case AST_SYNTAX_ERR_MISSING_SQ:
-		return emit_syntax_error_missing(parser,PACK_ATOM_EMBED_1('\''));
+		return emit_syntax_error_missing(parser,out,PACK_ATOM_EMBED_1('\''));
 
 	case AST_SYNTAX_ERR_MISSING_DQ:
-		return emit_syntax_error_missing(parser,PACK_ATOM_EMBED_1('"'));
+		return emit_syntax_error_missing(parser,out,PACK_ATOM_EMBED_1('"'));
 
 	case AST_SYNTAX_ERR_MISSING_BQ:
-		return emit_syntax_error_missing(parser,PACK_ATOM_EMBED_1('`'));
+		return emit_syntax_error_missing(parser,out,PACK_ATOM_EMBED_1('`'));
 
 	case AST_SYNTAX_ERR_INVALID_ARG:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_argument));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_argument));
 
 	case AST_SYNTAX_ERR_UNEXPECTED_TOKEN:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(unexpected_token));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(unexpected_token));
 
 	case AST_SYNTAX_ERR_UNEXPECTED_EOF:
-		return emit_eof_error(parser);
+		return emit_eof_error(parser,out);
 
 	case AST_SYNTAX_ERR_INVALID_CHAR:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_character));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_character));
 
 	case AST_SYNTAX_ERR_INVALID_ESCAPE:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_escape));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_escape));
 
 	case AST_SYNTAX_ERR_INVALID_UTF8:
-		return emit_simple_error(parser,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_utf8));
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_utf8));
 	}
 }
-
-typedef struct var_info
-{
-	size_t               m_use_count;
-	const unsigned char* m_name;
-	size_t               m_name_len;
-	const debug_info_t*  m_debug_info;
-} var_info_t;
 
 static void collate_var_info(parser_t* parser, var_info_t** varinfo, size_t* var_count, ast_node_t* node)
 {
@@ -2177,98 +2148,94 @@ static void collate_var_info(parser_t* parser, var_info_t** varinfo, size_t* var
 	}
 }
 
-static ast_node_t* parse_dotted_term(parser_t* parser)
+void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiterm)
 {
 	size_t heap_start = heap_top(&parser->m_context->m_heap);
 
-	token_t next = {0};
-	token_type_t next_type = token_next(parser,&next);
-	ast_node_t* node = parse_term(parser,1201,&next_type,&next);
-	if (!node)
-		return NULL;
-
-	if (next_type != tokEnd)
+	ast_node_t* node = NULL;
+	ast_error_t ast_err = setjmp(parser->m_jmp);
+	if (!ast_err)
 	{
-		if (parser->m_multiterm)
+		token_t next = {0};
+		token_type_t next_type = token_next(parser,&next);
+		if (!(node = parse_term(parser,1201,&next_type,&next)))
+			return;
+
+		if (next_type != tokEnd)
+			syntax_error(parser,AST_SYNTAX_ERR_MISSING_DOT);
+	}
+	else if (multiterm)
+	{
+		heap_reset(&parser->m_context->m_heap,heap_start);
+
+		// Skip to '.'
+		token_t next = {0};
+		token_type_t next_type = tokNeedMore;
+		do
 		{
-			// Skip to '.'
-			do
-			{
-				heap_reset(&parser->m_context->m_heap,heap_start);
-				token_reset(&next);
+			if (!setjmp(parser->m_jmp))
+				next_type = token_next(parser,&next);
 
-				next_type = token_next(parser,&next);			
-
-			} while (next_type != tokEnd && next_type != tokEOF);
+			heap_reset(&parser->m_context->m_heap,heap_start);
+			token_reset(&next);
 		}
-
-		syntax_error(parser,AST_SYNTAX_ERR_MISSING_DOT);
+		while (next_type != tokEnd && next_type != tokEOF);
 	}
 
-	return node;
-}
+	size_t trail_start = heap_top(&parser->m_context->m_trail);
+	prolite_allocator_t trail_alloc = heap_allocator(&parser->m_context->m_trail);
 
-const term_t* read_term(parser_t* parser)
-{
-	size_t heap_start = heap_top(&parser->m_context->m_heap);
-	term_t* sp = parser->m_context->m_stack;
-
-	const term_t* ret = NULL;
-	ast_error_t ast_err = setjmp(parser->m_jmp);
-	if (ast_err == AST_ERR_NONE)
+	if (!ast_err)
 	{
-		ast_node_t* node = parse_dotted_term(parser);
-		if (node)
+		ast_err = setjmp(parser->m_jmp);
+		if (!ast_err)
 		{
-			parser->m_line_info.m_start_col = parser->m_line_info.m_end_col;
-
 			var_info_t* varinfo = NULL;
 			size_t var_count = 0;
 			collate_var_info(parser,&varinfo,&var_count,node);
-			
-			parser->m_context->m_stack = emit_ast_node(parser->m_context->m_stack,node);
 
-			/* Write out var count */
-			for (size_t i = var_count; i--; )
-			{
-				/* use count */
-				(--parser->m_context->m_stack)->m_u64val = varinfo[i].m_use_count;
+			emit_buffer_t out = {
+				.m_a = &trail_alloc
+			};
+			emit_ast_node(parser,&out,node);
 
-				/* variable name */
-				parser->m_context->m_stack = push_string(parser->m_context->m_stack,prolite_atom,varinfo[i].m_name,varinfo[i].m_name_len,0,varinfo[i].m_debug_info);
-			}
-			(--parser->m_context->m_stack)->m_u64val = var_count;
-
-			ret = parser->m_context->m_stack;
+			(*callback)(parser->m_context,param,out.m_buf,var_count,varinfo);
 		}
 	}
-	else
+
+	if (ast_err)
 	{
-		parser->m_context->m_stack = sp;
-	
-		emit_ast_error(parser,ast_err);
+		heap_reset(&parser->m_context->m_heap,heap_start);
+		heap_reset(&parser->m_context->m_trail,trail_start);
+
+		parser->m_context->m_flags |= FLAG_THROW;
+
+		emit_buffer_t out = {
+			.m_a = &trail_alloc
+		};
+		if (emit_ast_error(parser,&out,ast_err))
+			(*callback)(parser->m_context,param,out.m_buf,0,NULL);
+		else
+		{
+			// We are so out of memory it hurts!
+			(*callback)(parser->m_context,param,NULL,0,NULL);
+		}
 	}
 
-	/* Reset the heap */
+	heap_reset(&parser->m_context->m_trail,trail_start);
 	heap_reset(&parser->m_context->m_heap,heap_start);
-
-	return ret;
 }
 
-void read_term_todo(context_t* context, prolite_stream_t* s)
+/*void read_term_todo(context_t* context, prolite_stream_t* s)
 {
-	parser_t parser = 
-	{
+	parser_t parser = {
 		.m_context = context,
 		.m_flags = &context->m_module->m_flags,
-		.m_s = s,
-		.m_line_info.m_start_col = 1,
-		.m_line_info.m_end_col = 1,
-		.m_line_info.m_start_line = 1,
-		.m_line_info.m_end_line = 1
+		.m_s = s
 	};
 
 	const term_t* ret = read_term(&parser);
 	if (!ret && !(context->m_flags & FLAG_THROW))
 		emit_eof_error(&parser);
 }
+*/

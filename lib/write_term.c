@@ -31,7 +31,7 @@ typedef enum char_class
 	ccSingleQuote,
 	ccDot,
 	ccSingleComment,
-	ccFwSlash,	
+	ccFwSlash,
 	ccOpen,
 	ccClose,
 	ccOpenL,
@@ -42,8 +42,7 @@ typedef enum char_class
 	ccComma
 } char_class_t;
 
-static const char_class_t c_char_classes[256] =
-{
+static const char_class_t c_char_classes[256] = {
 	/* \x0 */ ccErr, /* \x1 */ ccErr, /* \x2 */ ccErr, /* \x3 */ ccErr,
 	/* \x4 */ ccErr, /* \x5 */ ccErr, /* \x6 */ ccErr, /* \x7 */ ccErr,
 	/* \x8 */ ccErr, /* \t */ ccWhitespace,/* \n */ ccWhitespace,/* \xb */ ccErr,
@@ -88,7 +87,7 @@ static void write_chars(write_context_t* context, const void* src, size_t len)
 	{
 		// TODO: Push some kind of error
 
-		longjmp(context->m_jmp,1);
+		longjmp(context->m_jmp,err);
 	}
 }
 
@@ -107,11 +106,11 @@ static char_class_t write_quoted(write_context_t* context, const unsigned char* 
 		case '\a':
 			write_chars(context,"\\a",2);
 			break;
-		
+
 		case '\b':
 			write_chars(context,"\\b",2);
 			break;
-		
+
 		case '\f':
 			write_chars(context,"\\f",2);
 			break;
@@ -146,7 +145,7 @@ static char_class_t write_quoted(write_context_t* context, const unsigned char* 
 					count = 2;
 				else if ((src[i] & 0xF8) == 0xF0)
 					count = 3;
-				
+
 				if (!count || i + count >= len)
 				{
 					// This should catch malformed UTF-8 and non-printables
@@ -195,7 +194,7 @@ static int should_quote_atom(const string_t* str)
 				return 1;
 		}
 		return 0;
-	
+
 	case ccDot:
 		if (str->m_len == 1)
 			return 1;
@@ -224,7 +223,7 @@ static int should_quote_atom(const string_t* str)
 
 	default:
 		return 1;
-	}	
+	}
 }
 
 static int write_variable_name_inner(write_context_t* context, char_class_t cc_prev, const term_t* term, const term_t* vn)
@@ -232,7 +231,7 @@ static int write_variable_name_inner(write_context_t* context, char_class_t cc_p
 	if (MASK_DEBUG_INFO(vn->m_u64val) == PACK_COMPOUND_EMBED_1(2,'='))
 	{
 		const term_t* a = get_first_arg(vn,NULL);
-		if (get_term_type(a) == prolite_atom)
+		if (unpack_term_type(a) == prolite_atom)
 		{
 			const term_t* v = get_next_arg(a);
 			if (term_compare(v,term))
@@ -266,7 +265,7 @@ static int write_variable_name(write_context_t* context, char_class_t cc_prev, c
 
 	if (!ret && MASK_DEBUG_INFO(vn->m_u64val) != PACK_ATOM_EMBED_2('[',']'))
 		ret = write_variable_name_inner(context,cc_prev,term,vn);
-	
+
 	return ret;
 }
 
@@ -378,7 +377,7 @@ static char_class_t write_operator(write_context_t* context, char_class_t cc_pre
 	if (left_prec)
 	{
 		context->m_precendence = left_prec;
-		
+
 		cc_prev = write_term_inner(context,cc_prev,arg);
 
 		switch (c_char_classes[str->m_str[0]])
@@ -398,14 +397,14 @@ static char_class_t write_operator(write_context_t* context, char_class_t cc_pre
 		default:
 			break;
 		}
-		
+
 		if (right_prec)
 			arg = get_next_arg(arg);
 	}
 
 	write_chars(context,str->m_str,str->m_len);
 	cc_prev = c_char_classes[str->m_str[str->m_len-1]];
-	
+
 	if (right_prec)
 	{
 		context->m_add_spaces = 1;
@@ -430,8 +429,8 @@ static int is_write_number_vars(const term_t* term)
 	{
 		size_t arity;
 		const term_t* arg = get_first_arg(term,&arity);
-		if (arity == 1 && get_term_type(arg) == prolite_number && nearbyint(arg->m_dval) == arg->m_dval && arg->m_dval >= 0)
-			return 1;		
+		if (arity == 1 && unpack_term_type(arg) == prolite_number && nearbyint(arg->m_dval) == arg->m_dval && arg->m_dval >= 0)
+			return 1;
 	}
 
 	return 0;
@@ -439,18 +438,15 @@ static int is_write_number_vars(const term_t* term)
 
 static char_class_t write_term_inner(write_context_t* context, char_class_t cc_prev, const term_t* term)
 {
-	prolite_type_t type = get_term_type(term);
+	prolite_type_t type = unpack_term_type(term);
 	switch (type)
 	{
 	case prolite_var:
 		{
-			if (context->m_context->m_locals)
-			{
-				const term_t* v = deref_local_var(context->m_context,term);
-				if (v != term)
-					return write_term_inner(context,cc_prev,v);
-			}
-			
+			const term_t* v = deref_local_var(context->m_context,term);
+			if (v != term)
+				return write_term_inner(context,cc_prev,v);
+
 			if (context->m_options.variable_names)
 				return write_variable_name(context,cc_prev,term);
 
@@ -468,14 +464,14 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 					break;
 				}
 			}
-			
+
 			char buf[22];
-			int p = snprintf(buf,sizeof(buf)-1,"_%zu",get_var_index(term));
+			int p = snprintf(buf,sizeof(buf)-1,"_%zu",unpack_var_index(term));
 			write_chars(context,buf,p);
 			cc_prev = ccNumeric;
 		}
 		break;
-		
+
 	case prolite_number:
 		{
 			if (context->m_add_spaces)
@@ -483,7 +479,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 				if (cc_prev == ccLower || cc_prev == ccUpper || cc_prev == ccNumeric)
 					write_chars(context," ",1);
 			}
-			
+
 			char buf[30];
 			int p = snprintf(buf,sizeof(buf)-1,"%.17g",term->m_dval);
 			if (context->m_options.quoted)
@@ -494,7 +490,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 			cc_prev = ccNumeric;
 		}
 		break;
-			
+
 	case prolite_atom:
 		{
 			string_t str;
@@ -528,7 +524,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 					break;
 				}
 			}
-			
+
 			write_chars(context,str.m_str,str.m_len);
 			cc_prev = c_char_classes[str.m_str[str.m_len-1]];
 		}
@@ -538,19 +534,19 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 		{
 			string_t str;
 			unpack_string(term,&str,NULL);
-			
+
 			if (str.m_len == 0 || !context->m_options.ignore_ops)
 				write_chars(context,"[",1);
-			
+
 			size_t closes = 0;
 			for (size_t i = 0; i < str.m_len; ++i)
 			{
 				if (i)
 					write_chars(context,",",1);
-					
+
 				if (context->m_options.ignore_ops)
 					write_chars(context,"'.'(",4);
-				
+
 				if (str.m_str[i] < 32 || str.m_str[i] >= 0x7F)
 				{
 					unsigned int count = 0;
@@ -560,7 +556,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 						count = 2;
 					else if ((str.m_str[i] & 0xF8) == 0xF0)
 						count = 3;
-					
+
 					if (!count || i + count >= str.m_len)
 					{
 						// This should catch malformed UTF-8 and non-printables
@@ -600,19 +596,19 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 			char buf[20];
 			string_t str;
 			unpack_string(term,&str,NULL);
-			
+
 			if (str.m_len == 0 || !context->m_options.ignore_ops)
 				write_chars(context,"[",1);
-			
+
 			size_t closes = 0;
 			for (size_t i = 0; i < str.m_len; ++i)
 			{
 				if (i)
 					write_chars(context,",",1);
-					
+
 				if (context->m_options.ignore_ops)
 					write_chars(context,"'.'(",4);
-				
+
 				uint32_t val = str.m_str[i];
 				if (str.m_str[i] > 0x7F)
 				{
@@ -632,16 +628,16 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 						count = 3;
 						val = (str.m_str[i] & 0x7);
 					}
-					
+
 					if (count && i + count < str.m_len)
 					{
 						for (unsigned int j = 0; j < count; ++j)
 							val = (val << 6) | (str.m_str[i + j + 1] & 0x3F);
-						
+
 						i += count;
 					}
 				}
-				
+
 				int p = snprintf(buf,sizeof(buf)-1,"%u",val);
 				write_chars(context,buf,p);
 
@@ -701,7 +697,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 				write_chars(context,",",1);
 				cc_prev = ccComma;
 			}
-			
+
 			if (MASK_DEBUG_INFO(term->m_u64val) != PACK_ATOM_EMBED_2('[',']'))
 			{
 				write_chars(context,"|",1);
@@ -715,7 +711,7 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 		else if (!context->m_options.ignore_ops && MASK_DEBUG_INFO(term->m_u64val) == PACK_COMPOUND_EMBED_2(1,'{','}'))
 		{
 			write_chars(context,"{",1);
-			
+
 			unsigned int prev_precedence = context->m_precendence;
 			context->m_precendence = 1201;
 
@@ -735,10 +731,10 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 				op = lookup_prefix_op(context->m_context,context->m_operators,str.m_str,str.m_len);
 			else
 				op = lookup_op(context->m_context,context->m_operators,str.m_str,str.m_len);
-			
+
 			if (op && !context->m_options.ignore_ops)
 				return write_operator(context,cc_prev,term,&str,arity,op);
-							
+
 			cc_prev = write_compound(context,cc_prev,term,&str,arity,op ? 1 : 0);
 		}
 		break;
@@ -747,10 +743,9 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 	return cc_prev;
 }
 
-void write_term(context_t* context, prolite_stream_t* s, const term_t* term, const write_options_t* options, const operator_table_t* ops)
+prolite_stream_error_t write_term(context_t* context, prolite_stream_t* s, const term_t* term, const write_options_t* options, const operator_table_t* ops)
 {
-	write_context_t wc =
-	{
+	write_context_t wc = {
 		.m_context = context,
 		.m_s = s,
 		.m_operators = ops,
@@ -759,8 +754,11 @@ void write_term(context_t* context, prolite_stream_t* s, const term_t* term, con
 	if (options)
 		wc.m_options = *options;
 
-	if (!setjmp(wc.m_jmp))
+	prolite_stream_error_t err = setjmp(wc.m_jmp);
+	if (!err)
 		write_term_inner(&wc,ccWhitespace,term);
+
+	return err;
 }
 
 

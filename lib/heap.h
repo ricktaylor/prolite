@@ -36,12 +36,14 @@ static inline void* allocator_realloc(prolite_allocator_t* a, void* ptr, size_t 
 	return a ? (*a->m_fn_realloc)(a->m_user_data,ptr,bytes) : realloc(ptr,bytes);
 }
 
-static inline void allocator_free(prolite_allocator_t* a, void* ptr)
+static inline void* allocator_free(prolite_allocator_t* a, void* ptr)
 {
 	if (a)
 		(*a->m_fn_free)(a->m_user_data,ptr);
 	else
 		free(ptr);
+
+	return NULL;
 }
 
 void heap_destroy(heap_t* s);

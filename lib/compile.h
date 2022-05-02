@@ -46,15 +46,15 @@ typedef enum optype
 	OP_MOV_REG,
 	OP_ADD_REG,
 	OP_SUB_REG,
-	
+
 } optype_t;
 
 size_t inc_ip(optype_t op);
 
 typedef struct op_arg
 {
-	optype_t m_op;
-	uint32_t m_arg;
+	optype_t m_op : 8;
+	uint64_t m_arg : 48;
 } op_arg_t;
 
 typedef union opcode
@@ -112,7 +112,7 @@ typedef struct compile_predicate
 	predicate_base_t  m_base;
 	_Bool             m_dynamic;
 	compile_clause_t* m_clauses;
-		
+
 } compile_predicate_t;
 
 static_assert(offsetof(compile_predicate_t,m_base) == 0,"structure members reorganised");
