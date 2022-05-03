@@ -38,40 +38,6 @@ static term_t* emit_error_debug_info(emit_buffer_t* out, const term_t* t)
 	return r;
 }
 
-static const term_t s_oom[] = {
-	{ .m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r') },
-	{ .m_u64val = PACK_COMPOUND_BUILTIN(resource_error,1) },
-	{ .m_u64val = PACK_ATOM_EMBED_4('h','e','a','p') },
-	{ .m_u64val = PACK_ATOM_EMBED_2('[',']') }
-};
-
-static term_t* emit_error_debug_info(emit_buffer_t* out, const term_t* t)
-{
-	const debug_info_t* di = NULL;
-	if (t)
-		di = unpack_debug_info(t);
-
-	term_t* r = NULL;
-	if (di)
-	{
-		// TODO: Line info
-		r = emit_buffer_append(out,1);
-		if (r)
-			r->m_u64val = PACK_ATOM_EMBED_4('t','o','d','o');
-	}
-	else
-	{
-		r = emit_buffer_append(out,1);
-		if (r)
-			r->m_u64val = PACK_ATOM_EMBED_2('[',']');
-	}
-
-	if (!r)
-		allocator_free(out->m_a,out->m_buf);
-
-	return r;
-}
-
 void throw_out_of_memory_error(context_t* context, const term_t* t)
 {
 	// 't' just gives us debug info
@@ -260,7 +226,6 @@ PROLITE_EXPORT void prolite_builtin_halt(context_t* context, const term_t* gosub
 	default:
 		return throw_type_error(context,PACK_ATOM_BUILTIN(integer),argv[0]);
 	}
-}
 
 	context->m_exception = allocator_malloc(context->m_trail.m_allocator,sizeof(term_t));
 	if (!context->m_exception)
