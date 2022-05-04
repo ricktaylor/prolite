@@ -276,7 +276,7 @@ static int update_operator(context_t* context, operator_table_t* ops, int64_t pr
 	// Only copy the name if we need to
 	if (ops->m_allocator)
 	{
-		new_op->m_name = copy_term(context,&(emit_buffer_t){ .m_a = ops->m_allocator },name,0,0,NULL);
+		new_op->m_name = copy_term(context,ops->m_allocator,name,0,0,NULL);
 		if (!new_op->m_name)
 		{
 			allocator_free(ops->m_allocator,new_op);

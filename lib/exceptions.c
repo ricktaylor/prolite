@@ -57,6 +57,9 @@ void throw_out_of_memory_error(context_t* context, const term_t* t)
 			if (emit_error_debug_info(&out,t))
 				context->m_exception = out.m_buf;
 		}
+
+		if (!context->m_exception)
+			allocator_free(context->m_trail.m_allocator,out.m_buf);
 	}
 
 	if (!context->m_exception)
@@ -81,7 +84,10 @@ void throw_instantiation_error(context_t* context, const term_t* t)
 	e[2].m_u64val = t->m_u64val;
 
 	if (!emit_error_debug_info(&out,t))
+	{
+		allocator_free(context->m_trail.m_allocator,out.m_buf);
 		return throw_out_of_memory_error(context,t);
+	}
 
 	context->m_exception = out.m_buf;
 	context->m_flags |= FLAG_THROW;
@@ -154,7 +160,7 @@ PROLITE_EXPORT void prolite_builtin_throw(context_t* context, const term_t* gosu
 	assert(!context->m_exception);
 
 	size_t var_count = 0;
-	context->m_exception = copy_term(context,&(emit_buffer_t){ .m_a = context->m_trail.m_allocator },argv[0],0,1,&var_count);
+	context->m_exception = copy_term(context,context->m_trail.m_allocator,argv[0],0,1,&var_count);
 	if (!context->m_exception)
 		return throw_out_of_memory_error(context,argv[0]);
 
@@ -173,8 +179,7 @@ PROLITE_EXPORT void prolite_builtin_catch(context_t* context, const term_t* gosu
 
 	if (context->m_exception)
 	{
-		prolite_allocator_t ta = heap_allocator(&context->m_trail);
-		const term_t* ball = copy_term(context,&(emit_buffer_t){ .m_a = &ta },context->m_exception,0,0,NULL);
+		const term_t* ball = copy_term(context,&heap_allocator(&context->m_trail),context->m_exception,0,0,NULL);
 		if (!ball)
 		{
 			if (context->m_exception != s_oom)
@@ -296,10 +301,8 @@ void unhandled_exception(context_t* context, const operator_table_t* ops)
 		heap_free(s.m_heap,s.m_ptr,s.m_alloc);
 
 	if (context->m_exception != s_oom)
-	{
-		prolite_allocator_t ha = heap_allocator(&context->m_heap);
-		allocator_free(&ha,context->m_exception);
-	}
+		allocator_free(context->m_trail.m_allocator,context->m_exception);
+
 	context->m_exception = NULL;
 	context->m_flags &= ~FLAG_THROW;
 }

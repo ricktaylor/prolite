@@ -27,7 +27,7 @@ void heap_destroy(heap_t* heap)
 	if (heap)
 	{
 		heap_compact(heap);
-		
+
 		while (heap->m_page)
 		{
 			struct heap_page* p = heap->m_page->m_prev;
@@ -75,7 +75,7 @@ void* heap_malloc(heap_t* heap, size_t len)
 			heap->m_page->m_next->m_base = heap->m_page->m_base + heap->m_page->m_top;
 			heap->m_page = heap->m_page->m_next;
 		}
-		
+
 		if (!heap->m_page || heap->m_page->m_top + align_len >= heap->m_page->m_count)
 		{
 			size_t alloc_size = next_pot(align_len * sizeof(uint64_t) + sizeof(struct heap_page));
@@ -85,7 +85,7 @@ void* heap_malloc(heap_t* heap, size_t len)
 			struct heap_page* new_page = allocator_malloc(heap->m_allocator,alloc_size);
 			if (!new_page)
 				return NULL;
-			
+
 			new_page->m_top = 0;
 			new_page->m_count = (alloc_size / sizeof(uint64_t)) - bytes_to_cells(sizeof(struct heap_page),sizeof(uint64_t));
 			new_page->m_prev = heap->m_page;
@@ -111,7 +111,7 @@ void heap_free(heap_t* heap, void* ptr, size_t len)
 	if (heap && heap->m_page && ptr && len)
 	{
 		size_t align_len = bytes_to_cells(len,sizeof(uint64_t));
-		
+
 		if (heap->m_page->m_top >= align_len && ptr == heap->m_page->m_data + (heap->m_page->m_top - align_len))
 			heap->m_page->m_top -= align_len;
 	}
@@ -159,45 +159,35 @@ void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len)
 	return ptr;
 }
 
-static void* heap_allocator_malloc(void* param, size_t bytes)
+void* heap_allocator_malloc(void* param, size_t bytes)
 {
 	uint64_t* p = heap_malloc((heap_t*)param,bytes + sizeof(uint64_t));
 	if (p)
 		*p++ = bytes;
-	
+
 	return p;
 }
 
-static void* heap_allocator_realloc(void* param, void* ptr, size_t bytes)
+void* heap_allocator_realloc(void* param, void* ptr, size_t bytes)
 {
 	if (!ptr)
 		return heap_allocator_malloc(param,bytes);
 
-	uint64_t* base_ptr = ((uint64_t*)ptr) - 1; 
+	uint64_t* base_ptr = ((uint64_t*)ptr) - 1;
 	size_t old_bytes = *base_ptr;
 	uint64_t* p = heap_realloc((heap_t*)param,base_ptr,old_bytes + sizeof(uint64_t),bytes + sizeof(uint64_t));
 	if (p)
 		*p++ = bytes;
-	
+
 	return p;
 }
 
-static void heap_allocator_free(void* param, void* ptr)
+void heap_allocator_free(void* param, void* ptr)
 {
 	if (ptr)
 	{
-		uint64_t* base_ptr = ((uint64_t*)ptr) - 1; 
+		uint64_t* base_ptr = ((uint64_t*)ptr) - 1;
 		size_t bytes = *base_ptr;
 		heap_free((heap_t*)param,base_ptr,bytes + sizeof(uint64_t));
 	}
-}
-
-prolite_allocator_t heap_allocator(heap_t* h)
-{
-	return (prolite_allocator_t){
-		.m_fn_malloc = &heap_allocator_malloc,
-		.m_fn_realloc = &heap_allocator_realloc,
-		.m_fn_free = &heap_allocator_free,
-		.m_user_data = h
-	};
 }

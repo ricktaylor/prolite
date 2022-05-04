@@ -395,8 +395,7 @@ static int cfg_compare(compile_context_t* context, const cfg_t* c1, const cfg_t*
 	if (c1 == c2 || c1->m_entry_point == c2->m_entry_point)
 		return 1;
 
-	prolite_allocator_t a = heap_allocator(context->m_heap);
-	btree_t index = { .m_allocator = &a };
+	btree_t index = { .m_allocator = &heap_allocator(context->m_heap) };
 
 	int r = cfg_compare_blk(&index,c1->m_entry_point,c2->m_entry_point);
 
@@ -2639,8 +2638,7 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 
 		cfg_simplify(&cc,c);
 
-		prolite_allocator_t a = heap_allocator(&context->m_heap);
-		cfg_vec_t blks = { .m_index.m_allocator = &a };
+		cfg_vec_t blks = { .m_index.m_allocator = &heap_allocator(&context->m_heap) };
 		walk_cfgs(&cc,&blks,c->m_entry_point);
 
 #if ENABLE_TESTS

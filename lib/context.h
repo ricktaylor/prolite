@@ -95,7 +95,7 @@ static inline void* stack_malloc(term_t** stack, size_t bytes)
 	return *stack;
 }
 
-term_t* copy_term(context_t* context, emit_buffer_t* out, const term_t* src, int shallow, int deref, size_t* var_count);
+term_t* copy_term(context_t* context, prolite_allocator_t* a, const term_t* src, int shallow, int deref, size_t* var_count);
 
 context_t* context_new(void* user_data, const prolite_environment_t* env);
 void context_delete(context_t* c);

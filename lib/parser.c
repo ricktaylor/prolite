@@ -2176,7 +2176,6 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 	}
 
 	size_t trail_start = heap_top(&parser->m_context->m_trail);
-	prolite_allocator_t trail_alloc = heap_allocator(&parser->m_context->m_trail);
 
 	if (!ast_err)
 	{
@@ -2187,18 +2186,16 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 			size_t var_count = 0;
 			collate_var_info(parser,&varinfo,&var_count,node);
 
-			emit_buffer_t out = {
-				.m_a = &trail_alloc
-			};
+			emit_buffer_t out = { .m_a = &heap_allocator(&parser->m_context->m_trail) };
 			emit_ast_node(parser,&out,node);
 
 			heap_reset(&parser->m_context->m_heap,heap_start);
 
 			(*callback)(parser->m_context,param,out.m_buf,var_count,varinfo);
 		}
-		else
-			heap_reset(&parser->m_context->m_trail,trail_start);
 	}
+
+	heap_reset(&parser->m_context->m_heap,heap_start);
 
 	if (ast_err)
 	{
@@ -2206,9 +2203,7 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 
 		parser->m_context->m_flags |= FLAG_THROW;
 
-		emit_buffer_t out = {
-			.m_a = &trail_alloc
-		};
+		emit_buffer_t out = { .m_a = &heap_allocator(&parser->m_context->m_trail) };
 		if (emit_ast_error(parser,&out,ast_err))
 			(*callback)(parser->m_context,param,out.m_buf,0,NULL);
 		else

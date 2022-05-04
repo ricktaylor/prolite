@@ -989,27 +989,25 @@ static void copy_term_inner(context_t* context, emit_buffer_t* out, const term_t
 	}
 }
 
-term_t* copy_term(context_t* context, emit_buffer_t* out, const term_t* src, int shallow, int deref, size_t* var_count)
+term_t* copy_term(context_t* context, prolite_allocator_t* a, const term_t* src, int shallow, int deref, size_t* var_count)
 {
+	emit_buffer_t out = { .m_a = a };
 	size_t heap_start = heap_top(&context->m_heap);
-	term_t* r = NULL;
 
 	jmp_buf jmp;
 	if (!setjmp(jmp))
 	{
-		size_t offset = out->m_count;
-
 		size_t vc = 0;
 		uint64_t* var_mapping = NULL;
-		copy_term_inner(context,out,src,shallow,deref,&var_mapping,&vc,&jmp);
+		copy_term_inner(context,&out,src,shallow,deref,&var_mapping,&vc,&jmp);
 
 		if (var_count)
 			*var_count = vc;
-
-		r = out->m_buf + offset;
 	}
+	else
+		out.m_buf = allocator_free(a,out.m_buf);
 
 	heap_reset(&context->m_heap,heap_start);
 
-	return r;
+	return out.m_buf;
 }

@@ -68,6 +68,14 @@ void heap_free(heap_t* heap, void* ptr, size_t len);
 
 void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len);
 
-prolite_allocator_t heap_allocator(heap_t* h);
+void* heap_allocator_malloc(void* param, size_t bytes);
+void* heap_allocator_realloc(void* param, void* ptr, size_t bytes);
+void heap_allocator_free(void* param, void* ptr);
+
+#define heap_allocator(h) (prolite_allocator_t){ \
+		.m_fn_malloc = &heap_allocator_malloc, \
+		.m_fn_realloc = &heap_allocator_realloc, \
+		.m_fn_free = &heap_allocator_free, \
+		.m_user_data = (h) }
 
 #endif /* HEAP_H_ */
