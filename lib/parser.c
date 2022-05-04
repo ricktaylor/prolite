@@ -1949,7 +1949,7 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 	return node;
 }
 
-static void emit_ast_node(parser_t* parser, emit_buffer_t* out, ast_node_t* node)
+static const term_t* emit_ast_node(parser_t* parser, emit_buffer_t* out, ast_node_t* node)
 {
 	switch (node->m_type)
 	{
@@ -1979,60 +1979,61 @@ static void emit_ast_node(parser_t* parser, emit_buffer_t* out, ast_node_t* node
 			syntax_error(parser,AST_ERR_OUTOFMEMORY);
 		break;
 	}
+
+	return out->m_buf;
 }
 
-static int emit_error_line_info(parser_t* parser, emit_buffer_t* out)
+static const term_t* emit_error_line_info(parser_t* parser, emit_buffer_t* out)
 {
 	// TODO: Line info
 	term_t* r = emit_buffer_append(out,1);
-	if (!r)
-		return 0;
+	if (r)
+		r->m_u64val = PACK_ATOM_EMBED_4('t','o','d','o');
 
-	r->m_u64val = PACK_ATOM_EMBED_4('t','o','d','o');
-
-	return 1;
+	return r;
 }
 
-static int emit_syntax_error_missing(parser_t* parser, emit_buffer_t* out, uint64_t missing_atom)
+static const term_t* emit_syntax_error_missing(parser_t* parser, emit_buffer_t* out, uint64_t missing_atom)
 {
 	term_t* r = emit_buffer_append(out,4);
 	if (!r)
-		return 0;
+		return NULL;
 
 	r[0].m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
 	r[1].m_u64val = PACK_COMPOUND_BUILTIN(syntax_error,1);
 	r[2].m_u64val = PACK_COMPOUND_BUILTIN(missing,1);
 	r[3].m_u64val = missing_atom;
 
-	return emit_error_line_info(parser,out);
+	if (!emit_error_line_info(parser,out))
+		return NULL;
+
+	return out->m_buf;
 }
 
-static int emit_simple_error(parser_t* parser, emit_buffer_t* out, uint64_t f, uint64_t arg)
+static const term_t* emit_simple_error(parser_t* parser, emit_buffer_t* out, uint64_t f, uint64_t arg)
 {
 	term_t* r = emit_buffer_append(out,3);
 	if (!r)
-		return 0;
+		return NULL;
 
 	r[0].m_u64val = PACK_COMPOUND_EMBED_5(2,'e','r','r','o','r');
 	r[1].m_u64val = f;
 	r[2].m_u64val = arg;
 
-	return emit_error_line_info(parser,out);
+	if (!emit_error_line_info(parser,out))
+		return NULL;
+
+	return out->m_buf;
 }
 
-static int emit_eof_error(parser_t* parser, emit_buffer_t* out)
-{
-	return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(past_end_of_stream));
-}
-
-static int emit_ast_error(parser_t* parser, emit_buffer_t* out, ast_error_t ast_err)
+static const term_t* emit_ast_error(parser_t* parser, emit_buffer_t* out, ast_error_t ast_err)
 {
 	switch (ast_err)
 	{
 	case AST_ERR_NONE:
 	default:
 		assert(0);
-		return 1;
+		return NULL;
 
 	case AST_ERR_OUTOFMEMORY:
 		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(resource_error,1),PACK_ATOM_EMBED_4('h','e','a','p'));
@@ -2080,7 +2081,7 @@ static int emit_ast_error(parser_t* parser, emit_buffer_t* out, ast_error_t ast_
 		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(unexpected_token));
 
 	case AST_SYNTAX_ERR_UNEXPECTED_EOF:
-		return emit_eof_error(parser,out);
+		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(past_end_of_stream));
 
 	case AST_SYNTAX_ERR_INVALID_CHAR:
 		return emit_simple_error(parser,out,PACK_COMPOUND_BUILTIN(syntax_error,1),PACK_ATOM_BUILTIN(invalid_character));
@@ -2186,12 +2187,11 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 			size_t var_count = 0;
 			collate_var_info(parser,&varinfo,&var_count,node);
 
-			emit_buffer_t out = { .m_a = &heap_allocator(&parser->m_context->m_trail) };
-			emit_ast_node(parser,&out,node);
+			const term_t* t = emit_ast_node(parser,&(emit_buffer_t){ .m_a = &heap_allocator(&parser->m_context->m_trail) },node);
 
 			heap_reset(&parser->m_context->m_heap,heap_start);
 
-			(*callback)(parser->m_context,param,out.m_buf,var_count,varinfo);
+			(*callback)(parser->m_context,param,t,var_count,varinfo);
 		}
 	}
 
@@ -2203,14 +2203,9 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 
 		parser->m_context->m_flags |= FLAG_THROW;
 
-		emit_buffer_t out = { .m_a = &heap_allocator(&parser->m_context->m_trail) };
-		if (emit_ast_error(parser,&out,ast_err))
-			(*callback)(parser->m_context,param,out.m_buf,0,NULL);
-		else
-		{
-			// We are so out of memory it hurts!
-			(*callback)(parser->m_context,param,NULL,0,NULL);
-		}
+		const term_t* t = emit_ast_error(parser,&(emit_buffer_t){ .m_a = &heap_allocator(&parser->m_context->m_trail) },ast_err);
+
+		(*callback)(parser->m_context,param,t,0,NULL);
 	}
 
 	heap_reset(&parser->m_context->m_trail,trail_start);

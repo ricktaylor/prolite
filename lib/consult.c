@@ -460,10 +460,7 @@ static void consult_term(context_t* context, void* param, const term_t* term, si
 {
 	consult_context_t* cc = param;
 	if (!term)
-	{
-		if (context->m_flags & FLAG_THROW)
-			throw_out_of_memory_error(context,NULL);
-	}
+		throw_out_of_memory_error(context,NULL);
 	else if (!(context->m_flags & FLAG_THROW))
 	{
 		if (MASK_DEBUG_INFO(term->m_u64val) == PACK_COMPOUND_EMBED_2(1,':','-'))
