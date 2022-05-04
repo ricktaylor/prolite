@@ -677,17 +677,40 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 				cc_prev = ccNumeric;
 			}
 		}
-		else if (!context->m_options.ignore_ops && MASK_DEBUG_INFO(term->m_u64val) == PACK_COMPOUND_EMBED_1(2,'.'))
+		else if (!context->m_options.ignore_ops && MASK_DEBUG_INFO(term->m_u64val) == PACK_COMPOUND_EMBED_1(2,','))
 		{
-			write_chars(context,"[",1);
 			unsigned int prev_precedence = context->m_precedence;
 			context->m_precedence = 999;
+
+			do
+			{
+				term = get_first_arg(term,NULL);
+
+				write_term_inner(context,cc_prev,term);
+
+				write_chars(context,",",1);
+				cc_prev = ccComma;
+
+				term = get_next_arg(term);
+			}
+			while (MASK_DEBUG_INFO(term->m_u64val) == PACK_COMPOUND_EMBED_1(2,','));
+
+			context->m_precedence = prev_precedence;
+			cc_prev = write_term_inner(context,cc_prev,term);
+		}
+		else if (!context->m_options.ignore_ops && MASK_DEBUG_INFO(term->m_u64val) == PACK_COMPOUND_EMBED_1(2,'.'))
+		{
+			unsigned int prev_precedence = context->m_precedence;
+			context->m_precedence = 999;
+
+			write_chars(context,"[",1);
+			cc_prev = ccOpenL;
 
 			for (;;)
 			{
 				term = get_first_arg(term,NULL);
 
-				write_term_inner(context,ccOpenC,term);
+				write_term_inner(context,cc_prev,term);
 
 				term = get_next_arg(term);
 
@@ -745,6 +768,8 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 
 prolite_stream_error_t write_term(context_t* context, prolite_stream_t* s, const term_t* term, const write_options_t* options, const operator_table_t* ops)
 {
+	//throw_permission_error(context,PACK_ATOM_BUILTIN(output),PACK_ATOM_BUILTIN(stream),op);
+
 	write_context_t wc = {
 		.m_context = context,
 		.m_s = s,
@@ -776,6 +801,3 @@ prolite_stream_error_t dump_term(prolite_stream_t* s, const term_t* term)
 	return err;
 }
 #endif
-
-
-//throw_permission_error(context,PACK_ATOM_BUILTIN(output),PACK_ATOM_BUILTIN(stream),op);
