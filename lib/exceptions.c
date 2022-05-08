@@ -247,7 +247,7 @@ PROLITE_EXPORT void prolite_builtin_halt(context_t* context, const term_t* gosub
 struct trail_output
 {
 	prolite_stream_t m_base;
-	heap_t*          m_heap;
+	heap_t*          m_trail;
 	char*            m_ptr;
 	size_t           m_len;
 	size_t           m_alloc;
@@ -262,7 +262,7 @@ static int trail_stream_write(struct prolite_stream* s, const void* src, size_t 
 		if (stream->m_len + len >= stream->m_alloc)
 		{
 			size_t new_size = (stream->m_alloc ? stream->m_alloc * 2 : 32);
-			void* p = heap_realloc(stream->m_heap,stream->m_ptr,stream->m_alloc,new_size);
+			void* p = bump_allocator_realloc(stream->m_trail,stream->m_ptr,new_size);
 			if (!p)
 			{
 				if (err)
@@ -294,14 +294,15 @@ void unhandled_exception(context_t* context, const operator_table_t* ops)
 
 	struct trail_output s = {
 		.m_base.m_fn_write = &trail_stream_write,
-		.m_heap = &context->m_trail
+		.m_trail = &context->m_trail
 	};
+
+	size_t trail_start = heap_top(&context->m_trail);
 
 	if (write_term(context,&s.m_base,context->m_exception,NULL,ops) == prolite_stream_error_none)
 		(*context->m_eh)(s.m_ptr,s.m_len);
 
-	if (s.m_alloc)
-		heap_free(s.m_heap,s.m_ptr,s.m_alloc);
+	heap_reset(&context->m_trail,trail_start);
 
 	if (context->m_exception != s_oom)
 		allocator_free(context->m_trail.m_allocator,context->m_exception);
