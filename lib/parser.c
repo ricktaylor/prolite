@@ -2187,7 +2187,7 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 			size_t var_count = 0;
 			collate_var_info(parser,&varinfo,&var_count,node);
 
-			const term_t* t = emit_ast_node(parser,&(emit_buffer_t){ .m_a = &heap_allocator(&parser->m_context->m_trail) },node);
+			const term_t* t = emit_ast_node(parser,&(emit_buffer_t){ .m_a = &bump_allocator(&parser->m_context->m_trail) },node);
 
 			heap_reset(&parser->m_context->m_heap,heap_start);
 
@@ -2195,15 +2195,14 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 		}
 	}
 
-	heap_reset(&parser->m_context->m_heap,heap_start);
-
 	if (ast_err)
 	{
+		heap_reset(&parser->m_context->m_heap,heap_start);
 		heap_reset(&parser->m_context->m_trail,trail_start);
 
 		parser->m_context->m_flags |= FLAG_THROW;
 
-		const term_t* t = emit_ast_error(parser,&(emit_buffer_t){ .m_a = &heap_allocator(&parser->m_context->m_trail) },ast_err);
+		const term_t* t = emit_ast_error(parser,&(emit_buffer_t){ .m_a = &bump_allocator(&parser->m_context->m_trail) },ast_err);
 
 		(*callback)(parser->m_context,param,t,0,NULL);
 	}

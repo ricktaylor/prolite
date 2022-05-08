@@ -78,4 +78,14 @@ void heap_allocator_free(void* param, void* ptr);
 		.m_fn_free = &heap_allocator_free, \
 		.m_user_data = (h) }
 
+void* bump_allocator_malloc(void* param, size_t bytes);
+void* bump_allocator_realloc(void* param, void* ptr, size_t bytes);
+void bump_allocator_free(void* param, void* ptr);
+
+#define bump_allocator(h) (prolite_allocator_t){ \
+		.m_fn_malloc = &bump_allocator_malloc, \
+		.m_fn_realloc = &bump_allocator_realloc, \
+		.m_fn_free = &bump_allocator_free, \
+		.m_user_data = (h) }
+
 #endif /* HEAP_H_ */

@@ -82,7 +82,7 @@ static consult_predicate_t* new_predicate(consult_context_t* context, const term
 	string_t f;
 	const debug_info_t* di = NULL;
 	size_t arity = unpack_predicate(t,&f,&di);
-	new_pred->m_base.m_base.m_functor = emit_predicate(&(emit_buffer_t){ .m_a = &heap_allocator(&context->m_heap) },arity,f.m_str,f.m_len,0,di);
+	new_pred->m_base.m_base.m_functor = emit_predicate(&(emit_buffer_t){ .m_a = &bump_allocator(&context->m_heap) },arity,f.m_str,f.m_len,0,di);
 	if (!new_pred->m_base.m_base.m_functor)
 	{
 		heap_reset(&context->m_heap,heap_start);
@@ -251,8 +251,7 @@ static compile_clause_t* append_clause(consult_context_t* context, consult_predi
 
 	*new_clause = (compile_clause_t){ .m_var_count = var_count };
 
-	prolite_allocator_t a = heap_allocator(&context->m_heap);
-	new_clause->m_head = copy_term(context->m_context,&a,t,0,0,NULL);
+	new_clause->m_head = copy_term(context->m_context,&bump_allocator(&context->m_heap),t,0,0,NULL);
 	if (!new_clause->m_head)
 	{
 		heap_reset(&context->m_heap,heap_start);
@@ -287,7 +286,7 @@ static void assert_initializer(consult_context_t* context, const term_t* goal, s
 
 		*new_init = (consult_initializer_t){ .m_var_count = var_count };
 
-		new_init->m_goal = copy_term(context->m_context,&heap_allocator(&context->m_heap),goal,0,0,NULL);
+		new_init->m_goal = copy_term(context->m_context,&bump_allocator(&context->m_heap),goal,0,0,NULL);
 		if (!new_init->m_goal)
 		{
 			heap_reset(&context->m_heap,heap_start);
@@ -538,16 +537,19 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	}
 
 	// Remember that we have loaded the file
+	size_t heap_start = heap_top(&context->m_heap);
 	consult_file_t* f = heap_malloc(&context->m_heap,sizeof(consult_file_t));
 	if (!f)
 		return throw_out_of_memory_error(context->m_context,t);
 
 	*f = (consult_file_t){ .m_next = context->m_loaded_files };
 
-	prolite_allocator_t a = heap_allocator(&context->m_heap);
-	f->m_filename = copy_term(context->m_context,&a,t,0,0,NULL);
+	f->m_filename = copy_term(context->m_context,&bump_allocator(&context->m_heap),t,0,0,NULL);
 	if (!f->m_filename)
+	{
+		heap_reset(&context->m_heap,heap_start);
 		return throw_out_of_memory_error(context->m_context,t);
+	}
 
 	context->m_loaded_files = f;
 

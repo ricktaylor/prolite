@@ -574,7 +574,8 @@ static void dump_btree(const btree_t* bt, const char* filename)
 
 void btree_tests(void)
 {
-	btree_t bt = {0};
+	heap_t h = {0};
+	btree_t bt = { .m_allocator = &heap_allocator(&h) };
 
 	int v = 12;
 	for (size_t i=0; i < 5000; ++i)
@@ -589,5 +590,7 @@ void btree_tests(void)
 	}
 
 	btree_clear(&bt,NULL,NULL);
+
+	heap_destroy(&h);
 }
 #endif // ENABLE_TESTS

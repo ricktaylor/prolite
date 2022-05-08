@@ -393,11 +393,12 @@ static int cfg_compare(compile_context_t* context, const cfg_t* c1, const cfg_t*
 	if (c1 == c2 || c1->m_entry_point == c2->m_entry_point)
 		return 1;
 
-	btree_t index = { .m_allocator = &heap_allocator(context->m_heap) };
+	size_t heap_start = heap_top(context->m_heap);
+	btree_t index = { .m_allocator = &bump_allocator(context->m_heap) };
 
 	int r = cfg_compare_blk(&index,c1->m_entry_point,c2->m_entry_point);
 
-	btree_clear(&index,NULL,NULL);
+	heap_reset(context->m_heap,heap_start);
 
 	return r;
 }
@@ -517,11 +518,8 @@ static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* duplicates, bt
 	cfg_block_t* blk2 = btree_insert(index,h,(void*)blk);
 	if (blk2 && blk != blk2)
 	{
-		btree_t loop_check2 = { .m_allocator = loop_check->m_allocator };
-		if (cfg_compare_blk(&loop_check2,blk,blk2))
+		if (cfg_compare(context,&(cfg_t){ .m_entry_point = blk },&(cfg_t){ .m_entry_point = blk2 }))
 			btree_insert(duplicates,(uintptr_t)blk,blk2);
-
-		btree_clear(&loop_check2,NULL,NULL);
 	}
 
 	return h;
@@ -666,9 +664,10 @@ static void cfg_simplify(compile_context_t* context, const cfg_t* c)
 
 	btree_clear(&index,NULL,NULL);
 
-	cfg_simplify_blk(&index,c->m_entry_point);
-
-	btree_clear(&index,NULL,NULL);
+	// Simplify remaining blocks
+	size_t heap_start = heap_top(context->m_heap);
+	cfg_simplify_blk(&(btree_t){ .m_allocator = &bump_allocator(context->m_heap) },c->m_entry_point);
+	heap_reset(context->m_heap,heap_start);
 }
 
 static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const continuation_t* next)

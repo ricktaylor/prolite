@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 static const size_t c_page_size = 0x10000;
 
@@ -64,99 +65,184 @@ void heap_compact(heap_t* heap)
 	}
 }
 
+static void* heap_malloc_inner(heap_t* heap, size_t align_len)
+{
+	while (heap->m_page && heap->m_page->m_top + align_len >= heap->m_page->m_count && heap->m_page->m_next)
+	{
+		heap->m_page->m_next->m_base = heap->m_page->m_base + heap->m_page->m_top;
+		heap->m_page = heap->m_page->m_next;
+	}
+
+	if (!heap->m_page || heap->m_page->m_top + align_len >= heap->m_page->m_count)
+	{
+		size_t alloc_size = next_pot(align_len * sizeof(uint64_t) + sizeof(struct heap_page));
+		if (alloc_size < c_page_size)
+			alloc_size = c_page_size;
+
+		struct heap_page* new_page = allocator_malloc(heap->m_allocator,alloc_size);
+		if (!new_page)
+			return NULL;
+
+		new_page->m_top = 0;
+		new_page->m_count = (alloc_size / sizeof(uint64_t)) - bytes_to_cells(sizeof(struct heap_page),sizeof(uint64_t));
+		new_page->m_prev = heap->m_page;
+		new_page->m_next = NULL;
+		new_page->m_base = 0;
+		if (heap->m_page)
+		{
+			heap->m_page->m_next = new_page;
+			new_page->m_base = heap->m_page->m_base + heap->m_page->m_top;
+		}
+		heap->m_page = new_page;
+	}
+
+	/* No rounding, just pointer bump */
+	void* ptr = heap->m_page->m_data + heap->m_page->m_top;
+	heap->m_page->m_top += align_len;
+
+	return ptr;
+}
+
 void* heap_malloc(heap_t* heap, size_t len)
 {
 	void* ptr = NULL;
 	if (heap && len)
-	{
-		size_t align_len = bytes_to_cells(len,sizeof(uint64_t));
-		while (heap->m_page && heap->m_page->m_top + align_len >= heap->m_page->m_count && heap->m_page->m_next)
-		{
-			heap->m_page->m_next->m_base = heap->m_page->m_base + heap->m_page->m_top;
-			heap->m_page = heap->m_page->m_next;
-		}
+		ptr = heap_malloc_inner(heap,bytes_to_cells(len,sizeof(uint64_t)));
 
-		if (!heap->m_page || heap->m_page->m_top + align_len >= heap->m_page->m_count)
-		{
-			size_t alloc_size = next_pot(align_len * sizeof(uint64_t) + sizeof(struct heap_page));
-			if (alloc_size < c_page_size)
-				alloc_size = c_page_size;
-
-			struct heap_page* new_page = allocator_malloc(heap->m_allocator,alloc_size);
-			if (!new_page)
-				return NULL;
-
-			new_page->m_top = 0;
-			new_page->m_count = (alloc_size / sizeof(uint64_t)) - bytes_to_cells(sizeof(struct heap_page),sizeof(uint64_t));
-			new_page->m_prev = heap->m_page;
-			new_page->m_next = NULL;
-			new_page->m_base = 0;
-			if (heap->m_page)
-			{
-				heap->m_page->m_next = new_page;
-				new_page->m_base = heap->m_page->m_base + heap->m_page->m_top;
-			}
-			heap->m_page = new_page;
-		}
-
-		/* No rounding, just pointer bump */
-		ptr = heap->m_page->m_data + heap->m_page->m_top;
-		heap->m_page->m_top += align_len;
-	}
 	return ptr;
+}
+
+static void heap_free_inner(heap_t* heap, void* ptr, size_t align_len)
+{
+	assert((uintptr_t)ptr % sizeof(uint64_t) == 0);
+
+	for (struct heap_page* page = heap->m_page; page; page = page->m_prev)
+	{
+		if ((uint64_t*)ptr >= page->m_data && (uint64_t*)ptr < page->m_data + page->m_count)
+		{
+			assert((uint64_t*)ptr <= page->m_data + (page->m_top - align_len));
+
+#if !defined(NDEBUG)
+			memset(ptr,0xdeadbeef,align_len);
+#endif
+			if (ptr == page->m_data + (page->m_top - align_len))
+			{
+				page->m_top -= align_len;
+
+				while (!heap->m_page->m_top && heap->m_page->m_prev)
+					heap->m_page = heap->m_page->m_prev;
+			}
+			break;
+		}
+	}
 }
 
 void heap_free(heap_t* heap, void* ptr, size_t len)
 {
 	if (heap && heap->m_page && ptr && len)
-	{
-		size_t align_len = bytes_to_cells(len,sizeof(uint64_t));
-
-		if (heap->m_page->m_top >= align_len && ptr == heap->m_page->m_data + (heap->m_page->m_top - align_len))
-			heap->m_page->m_top -= align_len;
-	}
+		heap_free_inner(heap,ptr,bytes_to_cells(len,sizeof(uint64_t)));
 }
 
 void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len)
 {
-	if (!heap)
-		return NULL;
-
 	if (new_len == 0)
 	{
 		heap_free(heap,ptr,old_len);
 		return NULL;
 	}
 
-	if (ptr)
+	size_t align_new_len = bytes_to_cells(new_len,sizeof(uint64_t));
+	if (!ptr)
+		return heap_malloc_inner(heap,align_new_len);
+
+	if (!heap || !heap->m_page)
+		return NULL;
+
+	size_t align_old_len = bytes_to_cells(old_len,sizeof(uint64_t));
+	if (align_old_len == align_new_len)
+		return ptr;
+
+	if (ptr == heap->m_page->m_data + heap->m_page->m_top - align_old_len &&
+		heap->m_page->m_top + (align_new_len - align_old_len) <= heap->m_page->m_count)
 	{
-		size_t align_old_len = bytes_to_cells(old_len,sizeof(uint64_t));
-		if (heap->m_page && heap->m_page->m_top >= align_old_len && ptr == heap->m_page->m_data + (heap->m_page->m_top - align_old_len))
-		{
-			size_t align_new_len = bytes_to_cells(new_len,sizeof(uint64_t));
-			if (heap->m_page->m_top + (align_new_len - align_old_len) <= heap->m_page->m_count)
-			{
-				heap->m_page->m_top += (align_new_len - align_old_len);
-				return ptr;
-			}
-		}
+		heap->m_page->m_top += (align_new_len - align_old_len);
+		return ptr;
 	}
 
-	if (!ptr || old_len < new_len)
+	void* new_ptr = heap_malloc_inner(heap,align_new_len);
+	if (!new_ptr)
+		return NULL;
+
+	if (ptr && old_len)
 	{
-		void* new_ptr = heap_malloc(heap,new_len);
+		memcpy(new_ptr,ptr,old_len);
+		heap_free_inner(heap,ptr,align_old_len);
+	}
+	return new_ptr;
+}
+
+void* bump_allocator_malloc(void* param, size_t bytes)
+{
+	return heap_malloc((heap_t*)param,bytes);
+}
+
+void* bump_allocator_realloc(void* param, void* ptr, size_t bytes)
+{
+	heap_t* heap = param;
+	if (bytes == 0)
+	{
+		bump_allocator_free(heap,ptr);
+		return NULL;
+	}
+
+	size_t align_new_len = bytes_to_cells(bytes,sizeof(uint64_t));
+	if (!ptr)
+		return heap_malloc_inner(heap,align_new_len);
+
+	if (!heap || !heap->m_page)
+		return NULL;
+
+	if ((uint64_t*)ptr >= heap->m_page->m_data && (uint64_t*)ptr < heap->m_page->m_data + heap->m_page->m_top)
+	{
+		size_t align_old_len = heap->m_page->m_top - ((uint64_t*)ptr - heap->m_page->m_data);
+
+		if (ptr == heap->m_page->m_data + heap->m_page->m_top - align_old_len &&
+			heap->m_page->m_top + (align_new_len - align_old_len) <= heap->m_page->m_count)
+		{
+			heap->m_page->m_top += (align_new_len - align_old_len);
+			return ptr;
+		}
+
+		void* new_ptr = heap_malloc_inner(heap,align_new_len);
 		if (!new_ptr)
 			return NULL;
 
-		if (ptr && old_len)
+		if (ptr && bytes)
 		{
-			memcpy(new_ptr,ptr,old_len);
-			heap_free(heap,ptr,old_len);
+			memcpy(new_ptr,ptr,bytes);
+			heap_free_inner(heap,ptr,align_old_len);
 		}
-		ptr = new_ptr;
+		return new_ptr;
 	}
 
-	return ptr;
+	assert(0);
+	return NULL;
+}
+
+void bump_allocator_free(void* param, void* ptr)
+{
+	heap_t* heap = param;
+	if (heap && heap->m_page && ptr)
+	{
+		if ((uint64_t*)ptr >= heap->m_page->m_data && (uint64_t*)ptr < heap->m_page->m_data + heap->m_page->m_top)
+		{
+			heap->m_page->m_top = ((uint64_t*)ptr - heap->m_page->m_data);
+			while (!heap->m_page->m_top && heap->m_page->m_prev)
+				heap->m_page = heap->m_page->m_prev;
+		}
+
+		assert(0);
+	}
 }
 
 void* heap_allocator_malloc(void* param, size_t bytes)
