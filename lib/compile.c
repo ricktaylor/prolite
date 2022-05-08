@@ -57,8 +57,7 @@ static cfg_block_t* new_cfg_block(compile_context_t* context)
 	if (!b)
 		longjmp(context->m_jmp,1);
 
-	b->m_count = 0;
-	b->m_ops = NULL;
+	*b = (cfg_block_t){0};
 	return b;
 }
 
@@ -85,9 +84,8 @@ cfg_t* new_cfg(compile_context_t* context)
 	if (!c)
 		longjmp(context->m_jmp,1);
 
-	c->m_always_flags = 0;
-	c->m_tail = new_cfg_block(context);
-	c->m_entry_point = c->m_tail;
+	cfg_block_t* tail = new_cfg_block(context);
+	*c = (cfg_t){ .m_tail = tail, .m_entry_point = tail };
 
 	return c;
 }
@@ -603,14 +601,15 @@ static void cfg_simplify_blk(btree_t* index, cfg_block_t* blk)
 
 		case OP_BUILTIN:
 		case OP_EXTERN:
-			gosub = (cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval;
+			if (blk->m_ops[i+2].m_term.m_pval)
+				gosub = (cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval;
 			break;
 
 		default:
 			break;
 		}
 
-		if (gosub && *gosub)
+		if (gosub)
 		{
 			// Rewrite GOSUB -> JMP => GOSUB
 			while ((*gosub)->m_count == 2 &&
@@ -2023,9 +2022,13 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 
 		case OP_BRANCH:
 		case OP_GOSUB:
+			do_again = 1;
+			break;
+
 		case OP_BUILTIN:
 		case OP_EXTERN:
-			do_again = 1;
+			if (blk->m_ops[i+2].m_term.m_pval)
+				do_again = 1;
 			break;
 
 		default:

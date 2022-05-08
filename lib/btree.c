@@ -461,14 +461,14 @@ static void page_clear(btree_t* bt, struct btree_page* page, void (*callback)(vo
 {
 	if (page->m_internal)
 	{
-		size_t i;
-		for (i=0; i < page->m_count; ++i)
+		size_t i = 0;
+		for (; i < page->m_count; ++i)
 			page_clear(bt,values(page)[i],callback,param);
 		page_clear(bt,values(page)[i],callback,param);
 	}
 	else if (callback)
 	{
-		for (size_t i=0; i < page->m_count; ++i)
+		for (size_t i = 0; i < page->m_count; ++i)
 			(*callback)(param,page->m_keys[i],values(page)[i]);
 	}
 

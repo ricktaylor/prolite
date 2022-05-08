@@ -611,13 +611,12 @@ static int consult(context_t* context, const term_t* filename)
 		.m_parser = &(parser_t){
 			.m_buffer = &(token_t){0}
 		}
-
 	};
 
 	prolite_allocator_t local_allocator = heap_allocator(&cc.m_heap);
-	cc.m_predicates.m_allocator = &local_allocator,
-	cc.m_operators.m_allocator = &local_allocator,
-	cc.m_char_conversion.m_allocator = &local_allocator,
+	cc.m_predicates.m_allocator = &local_allocator;
+	cc.m_operators.m_allocator = &local_allocator;
+	cc.m_char_conversion.m_allocator = &local_allocator;
 
 	cc.m_parser->m_flags = &cc.m_flags;
 	cc.m_parser->m_operators = &cc.m_operators;

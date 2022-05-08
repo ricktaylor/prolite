@@ -179,7 +179,8 @@ PROLITE_EXPORT void prolite_builtin_catch(context_t* context, const term_t* gosu
 
 	if (context->m_exception)
 	{
-		const term_t* ball = copy_term(context,&heap_allocator(&context->m_trail),context->m_exception,0,0,NULL);
+		size_t trail_start = heap_top(&context->m_trail);
+		const term_t* ball = copy_term(context,&bump_allocator(&context->m_trail),context->m_exception,0,0,NULL);
 		if (!ball)
 		{
 			if (context->m_exception != s_oom)
@@ -209,6 +210,8 @@ PROLITE_EXPORT void prolite_builtin_catch(context_t* context, const term_t* gosu
 
 			context->m_substs = prev_substs;
 		}
+
+		heap_reset(&context->m_trail,trail_start);
 	}
 }
 
