@@ -911,7 +911,7 @@ static void copy_term_inner(context_t* context, emit_buffer_t* out, const term_t
 
 				if (i == *var_count)
 				{
-					uint64_t* v = heap_realloc(&context->m_heap,*var_mapping,(*var_count) * sizeof(uint64_t),(*var_count + 1) * sizeof(uint64_t));
+					uint64_t* v = bump_allocator_realloc(&context->m_heap,*var_mapping,(*var_count + 1) * sizeof(uint64_t));
 					if (!v)
 						longjmp(*jmp,1);
 

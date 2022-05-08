@@ -2119,7 +2119,7 @@ static void collate_var_info(parser_t* parser, var_info_t** varinfo, size_t* var
 			if (i == MAX_VAR_INDEX)
 				syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
-			new_varinfo = heap_realloc(&parser->m_context->m_trail,*varinfo,sizeof(var_info_t) * (*var_count),sizeof(var_info_t) * ((*var_count)+1));
+			new_varinfo = bump_allocator_realloc(&parser->m_context->m_trail,*varinfo,sizeof(var_info_t) * ((*var_count)+1));
 			if (!new_varinfo)
 				syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
