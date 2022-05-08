@@ -394,9 +394,8 @@ static int cfg_compare(compile_context_t* context, const cfg_t* c1, const cfg_t*
 		return 1;
 
 	size_t heap_start = heap_top(context->m_heap);
-	btree_t index = { .m_allocator = &bump_allocator(context->m_heap) };
 
-	int r = cfg_compare_blk(&index,c1->m_entry_point,c2->m_entry_point);
+	int r = cfg_compare_blk(&(btree_t){ .m_allocator = &bump_allocator(context->m_heap) },c1->m_entry_point,c2->m_entry_point);
 
 	heap_reset(context->m_heap,heap_start);
 
@@ -660,9 +659,8 @@ static void cfg_simplify(compile_context_t* context, const cfg_t* c)
 	// See if we can fold parts of the cfg...
 	btree_t duplicates = { .m_allocator = &a };
 	cfg_hash(context,&duplicates,&index,c);
-	btree_clear(&duplicates,&cfg_fold,context);
-
 	btree_clear(&index,NULL,NULL);
+	btree_clear(&duplicates,&cfg_fold,context);
 
 	// Simplify remaining blocks
 	size_t heap_start = heap_top(context->m_heap);
