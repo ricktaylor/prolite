@@ -591,6 +591,7 @@ void btree_tests(void)
 
 	btree_clear(&bt,NULL,NULL);
 
+	heap_allocator_destroy(bt.m_allocator);
 	heap_destroy(&h);
 }
 #endif // ENABLE_TESTS

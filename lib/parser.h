@@ -5,9 +5,10 @@
 
 typedef struct token
 {
-	size_t         m_alloc;
-	size_t         m_len;
-	unsigned char* m_str;  /* Need not be zero-terminated! */
+	prolite_allocator_t* m_allocator;
+	size_t               m_alloc;
+	size_t               m_len;
+	unsigned char*       m_str;  /* Need not be zero-terminated! */
 } token_t;
 
 typedef struct line_info
@@ -20,12 +21,13 @@ typedef struct line_info
 
 typedef struct parser
 {
-	context_t*        m_context;
-	prolite_stream_t* m_s;
-	token_t*          m_buffer;
-	line_info_t       m_line_info;
-	jmp_buf           m_jmp;
-	unsigned          m_eof : 1;
+	prolite_allocator_t* m_allocator;
+	context_t*           m_context;
+	prolite_stream_t*    m_s;
+	token_t*             m_buffer;
+	line_info_t          m_line_info;
+	jmp_buf              m_jmp;
+	unsigned             m_eof : 1;
 
 	const prolog_flags_t*    m_flags;
 	const operator_table_t*  m_operators;

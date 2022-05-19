@@ -42,15 +42,15 @@ typedef struct consult_module
 
 typedef struct consult_context
 {
-	unsigned                m_failed : 1;
-	unsigned                m_critical_failure : 1;
+	unsigned int            m_failed : 1;
+	unsigned int            m_critical_failure : 1;
+	prolite_allocator_t*    m_allocator;
 	context_t*              m_context;
 	parser_t*               m_parser;
 	consult_file_t*         m_includes;
 	consult_file_t*         m_loaded_files;
 	consult_predicate_t*    m_current_predicate;
 	consult_module_t*       m_modules;
-	heap_t                  m_heap;
 
 	// TODO: The following are per-module
 	predicate_map_t         m_predicates;
@@ -67,8 +67,7 @@ void directive_char_conversion(context_t* context, char_conv_table_t* cc, const 
 
 static consult_predicate_t* new_predicate(consult_context_t* context, const term_t* t, int public, int dynamic, int multifile, int discontiguous, int* is_new_pred)
 {
-	size_t heap_start = heap_top(&context->m_heap);
-	consult_predicate_t* new_pred = heap_malloc(&context->m_heap,sizeof(consult_predicate_t));
+	consult_predicate_t* new_pred = allocator_malloc(context->m_allocator,sizeof(consult_predicate_t));
 	if (!new_pred)
 		return NULL;
 
@@ -82,10 +81,10 @@ static consult_predicate_t* new_predicate(consult_context_t* context, const term
 	string_t f;
 	const debug_info_t* di = NULL;
 	size_t arity = unpack_predicate(t,&f,&di);
-	new_pred->m_base.m_base.m_functor = emit_predicate(&(emit_buffer_t){ .m_a = &bump_allocator(&context->m_heap) },arity,f.m_str,f.m_len,0,di);
+	new_pred->m_base.m_base.m_functor = emit_predicate(&(emit_buffer_t){ .m_allocator = context->m_allocator },arity,f.m_str,f.m_len,0,di);
 	if (!new_pred->m_base.m_base.m_functor)
 	{
-		heap_reset(&context->m_heap,heap_start);
+		allocator_free(context->m_allocator,new_pred);
 		return NULL;
 	}
 
@@ -95,7 +94,10 @@ static consult_predicate_t* new_predicate(consult_context_t* context, const term
 		*is_new_pred = (pred == &new_pred->m_base.m_base);
 
 	if (!pred || pred != &new_pred->m_base.m_base)
-		heap_reset(&context->m_heap,heap_start);
+	{
+		allocator_free(context->m_allocator,(void*)new_pred->m_base.m_base.m_functor);
+		allocator_free(context->m_allocator,new_pred);
+	}
 
 	return (consult_predicate_t*)pred;
 }
@@ -187,13 +189,13 @@ static void pi_directive_inner(consult_context_t* context, const term_t* pi, voi
 				if (a > MAX_ARITY)
 					return throw_representation_error(context->m_context,PACK_ATOM_BUILTIN(max_arity),arity);
 
-				size_t trail_start = heap_top(&context->m_context->m_trail);
-
 				if (arity->m_dval > 0)
 				{
 					string_t f;
 					unpack_string(functor,&f,NULL);
-					functor = emit_predicate(&(emit_buffer_t){ .m_a = &heap_allocator(&context->m_context->m_trail) },a,f.m_str,f.m_len,1,NULL);
+					functor = emit_predicate(&(emit_buffer_t){ .m_allocator = context->m_allocator },a,f.m_str,f.m_len,1,NULL);
+					if (!functor)
+						return throw_out_of_memory_error(context->m_context,pi);
 				}
 
 				if (predicate_is_builtin(functor))
@@ -201,7 +203,9 @@ static void pi_directive_inner(consult_context_t* context, const term_t* pi, voi
 				else
 					(*fn)(context,functor,pi);
 
-				heap_reset(&context->m_context->m_trail,trail_start);
+				if (arity->m_dval > 0)
+					allocator_free(context->m_allocator,(void*)functor);
+
 				return;
 			}
 		}
@@ -244,17 +248,16 @@ static compile_clause_t* append_clause(consult_context_t* context, consult_predi
 {
 	// Push a clause frame on the heap, and add to linked list
 
-	size_t heap_start = heap_top(&context->m_heap);
-	compile_clause_t* new_clause = heap_malloc(&context->m_heap,sizeof(compile_clause_t));
+	compile_clause_t* new_clause = allocator_malloc(context->m_allocator,sizeof(compile_clause_t));
 	if (!new_clause)
 		return NULL;
 
 	*new_clause = (compile_clause_t){ .m_var_count = var_count };
 
-	new_clause->m_head = copy_term(context->m_context,&bump_allocator(&context->m_heap),t,0,0,NULL);
+	new_clause->m_head = copy_term(context->m_context,context->m_allocator,context->m_allocator,t,0,0,NULL);
 	if (!new_clause->m_head)
 	{
-		heap_reset(&context->m_heap,heap_start);
+		allocator_free(context->m_allocator,new_clause);
 		return NULL;
 	}
 
@@ -279,17 +282,16 @@ static void assert_initializer(consult_context_t* context, const term_t* goal, s
 	{
 		// Push an initializer frame on the heap, and add to linked list
 
-		size_t heap_start = heap_top(&context->m_heap);
-		consult_initializer_t* new_init = heap_malloc(&context->m_heap,sizeof(consult_initializer_t));
+		consult_initializer_t* new_init = allocator_malloc(context->m_allocator,sizeof(consult_initializer_t));
 		if (!new_init)
 			return throw_out_of_memory_error(context->m_context,goal);
 
 		*new_init = (consult_initializer_t){ .m_var_count = var_count };
 
-		new_init->m_goal = copy_term(context->m_context,&bump_allocator(&context->m_heap),goal,0,0,NULL);
+		new_init->m_goal = copy_term(context->m_context,context->m_allocator,context->m_allocator,goal,0,0,NULL);
 		if (!new_init->m_goal)
 		{
-			heap_reset(&context->m_heap,heap_start);
+			allocator_free(context->m_allocator,new_init);
 			return throw_out_of_memory_error(context->m_context,goal);
 		}
 
@@ -468,14 +470,14 @@ static void consult_term(context_t* context, void* param, const term_t* term, si
 			throw_out_of_memory_error(context,term);
 	}
 
-	if (context->m_flags & FLAG_THROW)
+	if (context->m_flags & (FLAG_THROW | FLAG_HALT))
 	{
 		cc->m_failed = 1;
 
-		if (is_out_of_memory_exception(context))
+		if (is_out_of_memory_exception(context) || (context->m_flags & FLAG_HALT))
 			cc->m_critical_failure = 1;
 
-		unhandled_exception(context,cc->m_parser->m_operators);
+		unhandled_exception(context,cc->m_allocator,cc->m_parser->m_operators);
 	}
 }
 
@@ -486,11 +488,15 @@ static void load_file(consult_context_t* context, const term_t* filename, token_
 	{
 		if (term_compare(f->m_filename,filename))
 		{
-			// TODO - Some kind of error?
+			// TODO - Some kind of warning?
 			assert(0);
 			return;
 		}
 	}
+
+	token_t new_buffer = { .m_allocator = context->m_allocator };
+	if (!buffer)
+		buffer = &new_buffer;
 
 	parser_t parser = {
 		.m_context = context->m_context,
@@ -520,15 +526,21 @@ static void load_file(consult_context_t* context, const term_t* filename, token_
 
 		(*parser.m_s->m_fn_close)(parser.m_s);
 	}
+
+	allocator_free(new_buffer.m_allocator,new_buffer.m_str);
 }
 
 static void include(consult_context_t* context, const term_t* t)
 {
+	// TODO - Check for atom
+
 	load_file(context,t,context->m_parser->m_buffer);
 }
 
 static void ensure_loaded(consult_context_t* context, const term_t* t)
 {
+	// TODO - Check for atom
+
 	// Check if we have attempted to load it already
 	for (consult_file_t* f = context->m_loaded_files;f != NULL; f = f->m_next)
 	{
@@ -537,17 +549,16 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	}
 
 	// Remember that we have loaded the file
-	size_t heap_start = heap_top(&context->m_heap);
-	consult_file_t* f = heap_malloc(&context->m_heap,sizeof(consult_file_t));
+	consult_file_t* f = allocator_malloc(context->m_allocator,sizeof(consult_file_t));
 	if (!f)
 		return throw_out_of_memory_error(context->m_context,t);
 
 	*f = (consult_file_t){ .m_next = context->m_loaded_files };
 
-	f->m_filename = copy_term(context->m_context,&bump_allocator(&context->m_heap),t,0,0,NULL);
+	f->m_filename = copy_string(context->m_context,context->m_allocator,t,0);
 	if (!f->m_filename)
 	{
-		heap_reset(&context->m_heap,heap_start);
+		allocator_free(context->m_allocator,f);
 		return throw_out_of_memory_error(context->m_context,t);
 	}
 
@@ -563,9 +574,7 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	char_conv_table_t old_conv = context->m_char_conversion;
 	context->m_char_conversion.m_root = NULL;
 
-	token_t buffer = {0};
-	load_file(context,t,&buffer);
-	allocator_free(context->m_context->m_heap.m_allocator,buffer.m_str);
+	load_file(context,t,NULL);
 
 	context->m_operators = old_ops;
 	context->m_char_conversion = old_conv;
@@ -607,25 +616,21 @@ static int consult(context_t* context, const term_t* filename)
 {
 	size_t heap_start = heap_top(&context->m_heap);
 	consult_context_t cc = {
+		.m_allocator = &heap_allocator(&context->m_heap),
 		.m_context = context,
 		.m_flags = g_default_prolog_flags,
-		.m_heap = { .m_allocator = context->m_heap.m_allocator },
-		.m_parser = &(parser_t){
-			.m_buffer = &(token_t){0}
-		}
+		.m_parser = &(parser_t){0}
 	};
 
-	prolite_allocator_t local_allocator = heap_allocator(&cc.m_heap);
-	cc.m_predicates.m_allocator = &local_allocator;
-	cc.m_operators.m_allocator = &local_allocator;
-	cc.m_char_conversion.m_allocator = &local_allocator;
+	cc.m_predicates.m_allocator = cc.m_allocator;
+	cc.m_operators.m_allocator = cc.m_allocator;
+	cc.m_char_conversion.m_allocator = cc.m_allocator;
 
 	cc.m_parser->m_flags = &cc.m_flags;
 	cc.m_parser->m_operators = &cc.m_operators;
 	cc.m_parser->m_char_conversion = &cc.m_char_conversion;
 
-	load_file(&cc,filename,cc.m_parser->m_buffer);
-	allocator_free(context->m_heap.m_allocator,cc.m_parser->m_buffer->m_str);
+	load_file(&cc,filename,NULL);
 	if (!cc.m_failed)
 	{
 		predicate_map_enum(&cc.m_predicates,&compile_statics,&cc);
@@ -637,13 +642,11 @@ static int consult(context_t* context, const term_t* filename)
 		{
 			string_t s;
 			size_t arity = unpack_predicate(init->m_goal,&s,NULL);
-			fprintf(stdout,"=======================\nCompiling %.*s/%zu\n",(int)s.m_len,s.m_str,arity);
+			fprintf(stdout,"=======================\nCompiling init %.*s/%zu\n",(int)s.m_len,s.m_str,arity);
 
 			compile_goal(context,&inline_call,&cc,init->m_goal,init->m_var_count);
 		}
 	}
-
-	heap_destroy(&cc.m_heap);
 
 	// Reset heap
 	heap_reset(&context->m_heap,heap_start);

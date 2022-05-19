@@ -15,7 +15,7 @@ typedef enum prolite_type
 	prolite_number = 0,
 	prolite_var = 1,
 	prolite_atom = 2,
-	prolite_compound = 3,	
+	prolite_compound = 3,
 	prolite_chars = 4,
 	prolite_charcodes = 5,
 	//prolite_userdata1 = 6,
@@ -89,7 +89,7 @@ int term_compare(const term_t* t1, const term_t* t2);
 
 typedef struct emit_buffer
 {
-	prolite_allocator_t* m_a;
+	prolite_allocator_t* m_allocator;
 	btree_t*             m_pool;
 	size_t               m_alloc;
 	size_t               m_count;
@@ -97,9 +97,9 @@ typedef struct emit_buffer
 } emit_buffer_t;
 
 term_t* emit_buffer_append(emit_buffer_t* out, size_t count);
-const term_t* emit_string(emit_buffer_t* out, prolite_type_t type, const unsigned char* str, size_t len, int external, const debug_info_t* debug_info);
-const term_t* emit_predicate(emit_buffer_t* out, size_t arity, const unsigned char* functor, size_t functor_len, int external, const debug_info_t* debug_info);
-const term_t* emit_var(emit_buffer_t* out, size_t idx, const debug_info_t* debug_info);
-const term_t* emit_number(emit_buffer_t* out, double d, const debug_info_t* debug_info);
+term_t* emit_string(emit_buffer_t* out, prolite_type_t type, const unsigned char* str, size_t len, int external, const debug_info_t* debug_info);
+term_t* emit_predicate(emit_buffer_t* out, size_t arity, const unsigned char* functor, size_t functor_len, int external, const debug_info_t* debug_info);
+term_t* emit_var(emit_buffer_t* out, size_t idx, const debug_info_t* debug_info);
+term_t* emit_number(emit_buffer_t* out, double d, const debug_info_t* debug_info);
 
 #endif /* TYPES_H_ */

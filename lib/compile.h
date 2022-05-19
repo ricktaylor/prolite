@@ -82,11 +82,11 @@ typedef void* (*link_fn_t)(void* context, void* param, const term_t* goal, const
 
 typedef struct compile_context
 {
-	heap_t*          m_heap;
-	substitutions_t* m_substs;
-	jmp_buf          m_jmp;
-	link_fn_t        m_link_fn;
-	void*            m_link_param;
+	prolite_allocator_t* m_allocator;
+	substitutions_t*     m_substs;
+	jmp_buf              m_jmp;
+	link_fn_t            m_link_fn;
+	void*                m_link_param;
 } compile_context_t;
 
 struct continuation;

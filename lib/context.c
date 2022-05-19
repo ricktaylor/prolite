@@ -172,10 +172,15 @@ static void builtin_unify(context_t* context, const term_t* gosub, size_t argc, 
 {
 	assert(argc % 2 == 0);
 
+	size_t heap_start = heap_top(&context->m_heap);
+
 	substitutions_t* prev_substs = context->m_substs;
 	if (context->m_substs)
 	{
-		substitutions_t* new_substs = alloca(sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
+		substitutions_t* new_substs = allocator_malloc(&bump_allocator(&context->m_heap),sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
+		if (!new_substs)
+			return throw_out_of_memory_error(context,argv[0]);
+
 		memcpy(new_substs,context->m_substs,sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
 		context->m_substs = new_substs;
 	}
@@ -189,6 +194,8 @@ static void builtin_unify(context_t* context, const term_t* gosub, size_t argc, 
 		builtin_gosub(context,gosub);
 
 	context->m_substs = prev_substs;
+
+	heap_reset(&context->m_heap,heap_start);
 }
 
 PROLITE_EXPORT void prolite_builtin_unify(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
@@ -205,10 +212,15 @@ PROLITE_EXPORT void prolite_builtin_unify_is(context_t* context, const term_t* g
 {
 	assert(argc == 2);
 
+	size_t heap_start = heap_top(&context->m_heap);
+
 	substitutions_t* prev_substs = context->m_substs;
 	if (context->m_substs)
 	{
-		substitutions_t* new_substs = alloca(sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
+		substitutions_t* new_substs = allocator_malloc(&bump_allocator(&context->m_heap),sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
+		if (!new_substs)
+			return throw_out_of_memory_error(context,argv[0]);
+
 		memcpy(new_substs,context->m_substs,sizeof(substitutions_t) + context->m_substs->m_count * sizeof(const term_t*));
 		context->m_substs = new_substs;
 	}
@@ -219,6 +231,8 @@ PROLITE_EXPORT void prolite_builtin_unify_is(context_t* context, const term_t* g
 		builtin_gosub(context,gosub);
 
 	context->m_substs = prev_substs;
+
+	heap_reset(&context->m_heap,heap_start);
 }
 
 PROLITE_EXPORT void builtin_gosub(context_t* context, const term_t* gosub)
@@ -271,20 +285,6 @@ context_t* context_new(void* user_data, const prolite_environment_t* env)
 		};
 		if (!c->m_eh)
 			c->m_eh = &default_exception_handler;
-
-		/*size_t stack_size = env->m_stack_size;
-		if (!stack_size)
-			stack_size = g_default_env.m_stack_size;
-
-		stack_size = bytes_to_cells(stack_size,sizeof(term_t));
-
-		c->m_stack = allocator_malloc(env->m_allocator,stack_size * sizeof(term_t));
-		if (!c->m_stack)
-		{
-			heap_destroy(&trail);
-			return NULL;
-		}
-		c->m_stack += (stack_size - 1);*/
 
 		term_t user = { .m_u64val = PACK_ATOM_EMBED_4('u','s','e','r') };
 		c->m_module = module_new(c,&user);

@@ -110,7 +110,7 @@ static void token_append_char(parser_t* parser, token_t* token, unsigned char c)
 	if (token->m_alloc == token->m_len)
 	{
 		size_t new_size = (token->m_alloc == 0 ? 16 : token->m_alloc * 2);
-		unsigned char* new_str = heap_realloc(&parser->m_context->m_heap,token->m_str,token->m_alloc,new_size);
+		unsigned char* new_str = allocator_realloc(token->m_allocator,token->m_str,new_size);
 		if (!new_str)
 			syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1356,7 +1356,9 @@ static token_type_t token_next(parser_t* parser, token_t* token)
 			unsigned char c;
 			prolite_stream_error_t err = prolite_stream_error_none;
 			int64_t i = (*parser->m_s->m_fn_read)(parser->m_s,&c,1,&err);
-			if (i <= 0)
+			if (i == 1)
+				token_append_char(parser,parser->m_buffer,c);
+			else
 			{
 				switch (err)
 				{
@@ -1368,25 +1370,6 @@ static token_type_t token_next(parser_t* parser, token_t* token)
 					// TODO: File I/O error?
 					break;
 				}
-			}
-			else
-			{
-				if (parser->m_buffer->m_alloc == parser->m_buffer->m_len)
-				{
-					size_t new_size = (parser->m_buffer->m_alloc == 0 ? 16 : parser->m_buffer->m_alloc * 2);
-					unsigned char* new_str = allocator_realloc(parser->m_context->m_heap.m_allocator,parser->m_buffer->m_str,new_size);
-					if (!new_str)
-					{
-						parser->m_buffer->m_str = allocator_free(parser->m_context->m_heap.m_allocator,parser->m_buffer->m_str);
-						parser->m_buffer->m_len = parser->m_buffer->m_alloc = 0;
-						syntax_error(parser,AST_ERR_OUTOFMEMORY);
-					}
-
-					parser->m_buffer->m_alloc = new_size;
-					parser->m_buffer->m_str = new_str;
-				}
-
-				parser->m_buffer->m_str[parser->m_buffer->m_len++] = c;
 			}
 		}
 
@@ -1412,7 +1395,7 @@ static ast_node_t* parse_number(parser_t* parser, ast_node_t* node, token_type_t
 {
 	if (!node)
 	{
-		node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t));
+		node = allocator_malloc(parser->m_allocator,sizeof(ast_node_t));
 		if (!node)
 			syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1514,7 +1497,7 @@ static ast_node_t* parse_arg(parser_t* parser, token_type_t* next_type, token_t*
 		const operator_t* op = lookup_op(parser->m_operators,next->m_str,next->m_len);
 		if (op && op->m_precedence > 999)
 		{
-			ast_node_t* node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t));
+			ast_node_t* node = allocator_malloc(parser->m_allocator,sizeof(ast_node_t));
 			if (!node)
 				syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1545,7 +1528,7 @@ static ast_node_t* parse_arg(parser_t* parser, token_type_t* next_type, token_t*
 static ast_node_t* parse_compound_term(parser_t* parser, ast_node_t* node, token_type_t* next_type, token_t* next)
 {
 	size_t alloc_arity = 4;
-	node = heap_realloc(&parser->m_context->m_heap,node,sizeof(ast_node_t),sizeof(ast_node_t) + (alloc_arity * sizeof(ast_node_t*)));
+	node = allocator_realloc(parser->m_allocator,node,sizeof(ast_node_t) + (alloc_arity * sizeof(ast_node_t*)));
 	if (!node)
 		syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1561,7 +1544,7 @@ static ast_node_t* parse_compound_term(parser_t* parser, ast_node_t* node, token
 		if (node->m_arity == alloc_arity)
 		{
 			size_t new_arity = alloc_arity * 2;
-			ast_node_t* new_node = heap_realloc(&parser->m_context->m_heap,node,sizeof(ast_node_t) + (alloc_arity * sizeof(ast_node_t*)),sizeof(ast_node_t) + (new_arity * sizeof(ast_node_t*)));
+			ast_node_t* new_node = allocator_realloc(parser->m_allocator,node,sizeof(ast_node_t) + (new_arity * sizeof(ast_node_t*)));
 			if (!new_node)
 				syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1589,7 +1572,7 @@ static ast_node_t* parse_list_term(parser_t* parser, token_type_t* next_type, to
 	{
 		for (;;)
 		{
-			*tail = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t) + (2*sizeof(ast_node_t*)));
+			*tail = allocator_malloc(parser->m_allocator,sizeof(ast_node_t) + (2*sizeof(ast_node_t*)));
 			if (!(*tail))
 				syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1618,7 +1601,7 @@ static ast_node_t* parse_list_term(parser_t* parser, token_type_t* next_type, to
 	}
 	else if (*next_type == tokCloseL)
 	{
-		(*tail) = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t));
+		(*tail) = allocator_malloc(parser->m_allocator,sizeof(ast_node_t));
 		if (!(*tail))
 			syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1642,11 +1625,11 @@ static ast_node_t* parse_name(parser_t* parser, unsigned int* max_prec, token_ty
 
 	const operator_t* op = lookup_prefix_op(parser->m_operators,next->m_str,next->m_len);
 	if (op && op->m_precedence <= *max_prec && (op->m_specifier == eFX || op->m_specifier == eFY))
-		node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t) + sizeof(ast_node_t*));
+		node = allocator_malloc(parser->m_allocator,sizeof(ast_node_t) + sizeof(ast_node_t*));
 	else
 	{
 		op = NULL;
-		node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t));
+		node = allocator_malloc(parser->m_allocator,sizeof(ast_node_t));
 	}
 
 	if (!node)
@@ -1686,7 +1669,7 @@ static ast_node_t* parse_chars_and_codes(parser_t* parser, int chars, token_t* t
 {
 	/* TODO: Check for utf8 chars token and split into multiple lists */
 
-	ast_node_t* node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t));
+	ast_node_t* node = allocator_malloc(parser->m_allocator,sizeof(ast_node_t));
 	if (!node)
 		syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1710,7 +1693,7 @@ static ast_node_t* parse_term_base(parser_t* parser, unsigned int* max_prec, tok
 		return parse_name(parser,max_prec,next_type,next);
 
 	case tokVar:
-		node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t));
+		node = allocator_malloc(parser->m_allocator,sizeof(ast_node_t));
 		if (!node)
 			syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1765,7 +1748,7 @@ static ast_node_t* parse_term_base(parser_t* parser, unsigned int* max_prec, tok
 		return parse_list_term(parser,next_type,next);
 
 	case tokOpenC:
-		node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t) + sizeof(ast_node_t*));
+		node = allocator_malloc(parser->m_allocator,sizeof(ast_node_t) + sizeof(ast_node_t*));
 		if (!node)
 			syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -1918,7 +1901,7 @@ static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_typ
 		{
 			size_t arity = (left_prec != 0 && right_prec != 0) ? 2 : 1;
 
-			ast_node_t* next_node = heap_malloc(&parser->m_context->m_heap,sizeof(ast_node_t) + (arity * sizeof(ast_node_t*)));
+			ast_node_t* next_node = allocator_malloc(parser->m_allocator,sizeof(ast_node_t) + (arity * sizeof(ast_node_t*)));
 			if (!next_node)
 				syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -2119,7 +2102,7 @@ static void collate_var_info(parser_t* parser, var_info_t** varinfo, size_t* var
 			if (i == MAX_VAR_INDEX)
 				syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
-			new_varinfo = bump_allocator_realloc(&parser->m_context->m_trail,*varinfo,sizeof(var_info_t) * ((*var_count)+1));
+			new_varinfo = allocator_realloc(parser->m_allocator,*varinfo,sizeof(var_info_t) * ((*var_count)+1));
 			if (!new_varinfo)
 				syntax_error(parser,AST_ERR_OUTOFMEMORY);
 
@@ -2143,42 +2126,50 @@ static void collate_var_info(parser_t* parser, var_info_t** varinfo, size_t* var
 	}
 }
 
-void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiterm)
+static ast_node_t* parse_node(parser_t* parser, int multiterm, int* ast_err)
 {
-	size_t heap_start = heap_top(&parser->m_context->m_heap);
-
 	ast_node_t* node = NULL;
-	ast_error_t ast_err = setjmp(parser->m_jmp);
-	if (!ast_err)
-	{
-		token_t next = {0};
-		token_type_t next_type = token_next(parser,&next);
-		if (!(node = parse_term(parser,1201,&next_type,&next)))
-			return;
+	token_t next = { .m_allocator = parser->m_allocator };
 
-		if (next_type != tokEnd)
+	*ast_err = setjmp(parser->m_jmp);
+	if (!*ast_err)
+	{
+		token_type_t next_type = token_next(parser,&next);
+		node = parse_term(parser,1201,&next_type,&next);
+
+		if (node && next_type != tokEnd)
 			syntax_error(parser,AST_SYNTAX_ERR_MISSING_DOT);
 	}
 	else if (multiterm)
 	{
 		// Skip to '.'
-		token_t next = {0};
-		token_type_t next_type = tokNeedMore;
-		do
+		for (token_type_t next_type = tokNeedMore; next_type != tokEnd && next_type != tokEOF;)
 		{
-			heap_reset(&parser->m_context->m_heap,heap_start);
+			token_reset(&next);
 
 			if (!setjmp(parser->m_jmp))
 				next_type = token_next(parser,&next);
-
-			token_reset(&next);
 		}
-		while (next_type != tokEnd && next_type != tokEOF);
 	}
 
-	size_t trail_start = heap_top(&parser->m_context->m_trail);
+	allocator_free(next.m_allocator,next.m_str);
 
-	if (!ast_err)
+	return node;
+}
+
+void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiterm)
+{
+	heap_t parse_heap = heap_clone(&parser->m_context->m_heap);
+	prolite_allocator_t* prev_alloc = parser->m_allocator;
+	parser->m_allocator = &heap_allocator(&parse_heap);
+
+	int ast_err = 0;
+	ast_node_t* node = parse_node(parser,multiterm,&ast_err);
+
+	//size_t heap_start = heap_top(&parser->m_context->m_heap);
+	//parser->m_allocator = &bump_allocator(&parser->m_context->m_heap);
+
+	if (!ast_err && node)
 	{
 		ast_err = setjmp(parser->m_jmp);
 		if (!ast_err)
@@ -2187,9 +2178,7 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 			size_t var_count = 0;
 			collate_var_info(parser,&varinfo,&var_count,node);
 
-			const term_t* t = emit_ast_node(parser,&(emit_buffer_t){ .m_a = &bump_allocator(&parser->m_context->m_trail) },node);
-
-			heap_reset(&parser->m_context->m_heap,heap_start);
+			const term_t* t = emit_ast_node(parser,&(emit_buffer_t){ .m_allocator = parser->m_allocator },node);
 
 			(*callback)(parser->m_context,param,t,var_count,varinfo);
 		}
@@ -2197,17 +2186,20 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 
 	if (ast_err)
 	{
-		heap_reset(&parser->m_context->m_heap,heap_start);
-		heap_reset(&parser->m_context->m_trail,trail_start);
+		heap_reset(&parse_heap,0);
 
-		parser->m_context->m_flags |= FLAG_THROW;
+		const term_t* t = emit_ast_error(parser,&(emit_buffer_t){ .m_allocator = parser->m_allocator },ast_err);
 
-		const term_t* t = emit_ast_error(parser,&(emit_buffer_t){ .m_a = &bump_allocator(&parser->m_context->m_trail) },ast_err);
-
+		parser->m_context->m_flags = FLAG_THROW;
 		(*callback)(parser->m_context,param,t,0,NULL);
 	}
 
-	heap_reset(&parser->m_context->m_trail,trail_start);
+	//heap_reset(&parser->m_context->m_heap,heap_start);
+
+	heap_reset(&parse_heap,0);
+	heap_merge(&parser->m_context->m_heap,&parse_heap);
+
+	parser->m_allocator = prev_alloc;
 }
 
 /*void read_term_todo(context_t* context, prolite_stream_t* s)

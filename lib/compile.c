@@ -53,7 +53,7 @@ typedef struct cce_info
 
 static cfg_block_t* new_cfg_block(compile_context_t* context)
 {
-	cfg_block_t* b = heap_malloc(context->m_heap,sizeof(cfg_block_t));
+	cfg_block_t* b = allocator_malloc(context->m_allocator,sizeof(cfg_block_t));
 	if (!b)
 		longjmp(context->m_jmp,1);
 
@@ -66,7 +66,7 @@ opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, size_t co
 	opcode_t* ret = blk->m_ops;
 	if (count)
 	{
-		blk->m_ops = heap_realloc(context->m_heap,blk->m_ops,blk->m_count * sizeof(opcode_t),(blk->m_count + count) * sizeof(opcode_t));
+		blk->m_ops = allocator_realloc(context->m_allocator,blk->m_ops,(blk->m_count + count) * sizeof(opcode_t));
 		if (!blk->m_ops)
 			longjmp(context->m_jmp,1);
 
@@ -80,7 +80,7 @@ opcode_t* append_opcodes(compile_context_t* context, cfg_block_t* blk, size_t co
 
 cfg_t* new_cfg(compile_context_t* context)
 {
-	cfg_t* c = heap_malloc(context->m_heap,sizeof(cfg_t));
+	cfg_t* c = allocator_malloc(context->m_allocator,sizeof(cfg_t));
 	if (!c)
 		longjmp(context->m_jmp,1);
 
@@ -393,13 +393,7 @@ static int cfg_compare(compile_context_t* context, const cfg_t* c1, const cfg_t*
 	if (c1 == c2 || c1->m_entry_point == c2->m_entry_point)
 		return 1;
 
-	size_t heap_start = heap_top(context->m_heap);
-
-	int r = cfg_compare_blk(&(btree_t){ .m_allocator = &bump_allocator(context->m_heap) },c1->m_entry_point,c2->m_entry_point);
-
-	heap_reset(context->m_heap,heap_start);
-
-	return r;
+	return cfg_compare_blk(&(btree_t){ .m_allocator = context->m_allocator },c1->m_entry_point,c2->m_entry_point);
 }
 
 static uint64_t cfg_hash_term(const term_t* t)
@@ -653,32 +647,25 @@ static void cfg_simplify_blk(btree_t* index, cfg_block_t* blk)
 
 static void cfg_simplify(compile_context_t* context, const cfg_t* c)
 {
-	prolite_allocator_t a = heap_allocator(context->m_heap);
-	btree_t index = { .m_allocator = &a };
-
 	// See if we can fold parts of the cfg...
-	btree_t duplicates = { .m_allocator = &a };
+	btree_t index = { .m_allocator = context->m_allocator };
+	btree_t duplicates = { .m_allocator = context->m_allocator };
 	cfg_hash(context,&duplicates,&index,c);
 	btree_clear(&index,NULL,NULL);
 	btree_clear(&duplicates,&cfg_fold,context);
 
 	// Simplify remaining blocks
-	size_t heap_start = heap_top(context->m_heap);
-	cfg_simplify_blk(&(btree_t){ .m_allocator = &bump_allocator(context->m_heap) },c->m_entry_point);
-	heap_reset(context->m_heap,heap_start);
+	cfg_simplify_blk(&index,c->m_entry_point);
+	btree_clear(&index,NULL,NULL);
 }
 
 static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
 	// Common Sub-expression Elimination (CSE)
 
-	size_t heap_start = heap_top(context->m_heap);
-
 	cfg_t* c = compile_subgoal(context,next);
 	if (c && c->m_entry_point->m_count >= 4)
 	{
-		cfg_simplify(context,c);
-
 		cse_info_t* cse = (cse_info_t*)term;
 		cse_previous_t* prev = NULL;
 		for (cse_previous_t* p = cse->m_previous; p; p=p->m_next)
@@ -688,14 +675,13 @@ static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const 
 				++p->m_refcount;
 				prev = p;
 				c = p->m_cfg;
-				heap_reset(context->m_heap,heap_start);
 				break;
 			}
 		}
 
 		if (!prev)
 		{
-			prev = heap_malloc(context->m_heap,sizeof(cse_previous_t));
+			prev = allocator_malloc(context->m_allocator,sizeof(cse_previous_t));
 			if (!prev)
 				longjmp(context->m_jmp,1);
 
@@ -709,7 +695,7 @@ static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const 
 
 		cfg_t* c1 = new_cfg(context);
 
-		cse_cfg_t* stub = heap_malloc(context->m_heap,sizeof(cse_cfg_t));
+		cse_cfg_t* stub = allocator_malloc(context->m_allocator,sizeof(cse_cfg_t));
 		if (!stub)
 			longjmp(context->m_jmp,1);
 
@@ -734,12 +720,10 @@ static cfg_t* compile_cse(compile_context_t* context, const term_t* term, const 
 static void complete_cse(compile_context_t* context, cse_info_t* cse)
 {
 	// See if we can fold parts of each unique cfg...
+	btree_t index = { .m_allocator = context->m_allocator };
 	if (cse->m_previous && cse->m_previous->m_next)
 	{
-		prolite_allocator_t a = heap_allocator(context->m_heap);
-		btree_t index = { .m_allocator = &a };
-		btree_t duplicates = { .m_allocator = &a };
-
+		btree_t duplicates = { .m_allocator = context->m_allocator };
 		for (cse_previous_t* p = cse->m_previous; p; p=p->m_next)
 			cfg_hash(context,&duplicates,&index,p->m_cfg);
 
@@ -772,6 +756,24 @@ static void complete_cse(compile_context_t* context, cse_info_t* cse)
 			(ops++)->m_opcode.m_op = OP_JMP;
 			ops->m_term.m_pval = stub->m_cfg->m_tail;
 		}
+	}
+
+	for (cse_previous_t* p = cse->m_previous; p; )
+	{
+		// Simplify remaining blocks
+		cfg_simplify_blk(&index,p->m_cfg->m_entry_point);
+		btree_clear(&index,NULL,NULL);
+
+		cse_previous_t* n = p->m_next;
+		allocator_free(context->m_allocator,p);
+		p = n;
+	}
+
+	for (cse_cfg_t* stub = cse->m_stubs; stub; )
+	{
+		cse_cfg_t* n = stub->m_next;
+		allocator_free(context->m_allocator,stub);
+		stub = n;
 	}
 }
 
@@ -1108,7 +1110,9 @@ static int compile_occurs_check(compile_context_t* context, const term_t* t1, co
 
 static cfg_t* compile_unify_shim(compile_context_t* context, const term_t* term, const continuation_t* next)
 {
-	size_t idx = unpack_var_index(term);
+	term_t** t = (term_t**)term;
+
+	size_t idx = unpack_var_index(t[0]);
 	assert(context->m_substs && idx < context->m_substs->m_count);
 
 	cfg_t* c = compile_subgoal(context,next);
@@ -1117,13 +1121,15 @@ static cfg_t* compile_unify_shim(compile_context_t* context, const term_t* term,
 		cfg_t* c1 = new_cfg(context);
 		opcode_t* ops = append_opcodes(context,c1->m_tail,4);
 		(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
-		(ops++)->m_term.m_pval = term;
+		(ops++)->m_term.m_pval = t[0];
 		(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
-		ops->m_term.m_pval = term + 1;
+		ops->m_term.m_pval = t[1];
 
 		c1->m_always_flags = c->m_always_flags;
 		c = goto_next(context,c1,c);
 	}
+
+	allocator_free(context->m_allocator,t);
 
 	return c;
 }
@@ -1143,20 +1149,20 @@ static const continuation_t* compile_unify_var(compile_context_t* context, const
 
 	++ui->m_var_count;
 
-	const term_t** t = heap_malloc(context->m_heap,2 * sizeof(term_t*));
+	const term_t** t = allocator_malloc(context->m_allocator,2 * sizeof(term_t*));
 	if (!t)
 		longjmp(context->m_jmp,1);
 
 	t[0] = t1;
 	t[1] = t2;
 
-	continuation_t* c = heap_malloc(context->m_heap,sizeof(continuation_t));
+	continuation_t* c = allocator_malloc(context->m_allocator,sizeof(continuation_t));
 	if (!c)
 		longjmp(context->m_jmp,1);
 
 	c->m_next = next;
 	c->m_shim = &compile_unify_shim;
-	c->m_term = t[0];
+	c->m_term = (const term_t*)t;
 
 	return c;
 }
@@ -1228,7 +1234,7 @@ static cfg_t* compile_unify_end_shim(compile_context_t* context, const term_t* t
 	(ops++)->m_term.m_pval = ui->m_with_occurs_check ? &prolite_builtin_unify_with_occurs_check : &prolite_builtin_unify;
 	ops->m_term.m_pval = cont->m_entry_point;
 
-	for (size_t a = (ui->m_var_count*2) + 1; a != 0;)
+	for (size_t a = (ui->m_var_count*2); a != 0;)
 	{
 		opcode_t* ops = append_opcodes(context,c->m_tail,1);
 		ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = (a > 0xFFFFFFFF ? 0xFFFFFFFF : a) };
@@ -1252,7 +1258,7 @@ static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, 
 	substitutions_t* prev_substs = context->m_substs;
 	if (context->m_substs)
 	{
-		substitutions_t* substs = heap_malloc(context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
+		substitutions_t* substs = allocator_malloc(context->m_allocator,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
 		if (!substs)
 			longjmp(context->m_jmp,1);
 
@@ -1280,6 +1286,7 @@ static cfg_t* compile_unify_inner(compile_context_t* context, const term_t* t1, 
 			c = (*fn)(context,cont2);
 	}
 
+	allocator_free(context->m_allocator,context->m_substs);
 	context->m_substs = prev_substs;
 
 	return c;
@@ -1483,7 +1490,7 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	substitutions_t* prev_substs = context->m_substs;
 	if (context->m_substs)
 	{
-		substitutions_t* substs = heap_malloc(context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
+		substitutions_t* substs = allocator_malloc(context->m_allocator,sizeof(substitutions_t) + (sizeof(term_t) * context->m_substs->m_count));
 		if (!substs)
 			longjmp(context->m_jmp,1);
 
@@ -1496,7 +1503,7 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	substitutions_t* next_substs = NULL;
 	if (clause->m_var_count)
 	{
-		next_substs = heap_malloc(context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * clause->m_var_count));
+		next_substs = allocator_malloc(context->m_allocator,sizeof(substitutions_t) + (sizeof(term_t) * clause->m_var_count));
 		if (!next_substs)
 			longjmp(context->m_jmp,1);
 
@@ -1532,6 +1539,8 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 		c = compile_subgoal(context,cont2);
 	}
 
+	allocator_free(context->m_allocator,next_substs);
+	allocator_free(context->m_allocator,context->m_substs);
 	context->m_substs = prev_substs;
 
 	return c;
@@ -1618,7 +1627,7 @@ static cfg_t* compile_cce(compile_context_t* context, const term_t* term, const 
 	cfg_t* c = compile_cse(context,(const term_t*)&cce->m_cse,next);
 	if (c)
 	{
-		cce_previous_t* p = heap_malloc(context->m_heap,sizeof(cce_previous_t));
+		cce_previous_t* p = allocator_malloc(context->m_allocator,sizeof(cce_previous_t));
 		if (!p)
 			longjmp(context->m_jmp,1);
 
@@ -1985,18 +1994,18 @@ cfg_t* compile_subgoal(compile_context_t* context, const continuation_t* goal)
 
 static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* blk)
 {
-	cfg_block_info_t* bi = heap_malloc(context->m_heap,sizeof(cfg_block_info_t));
+	cfg_block_info_t* bi = allocator_malloc(context->m_allocator,sizeof(cfg_block_info_t));
 	if (!bi)
 		longjmp(context->m_jmp,1);
 
 	*bi = (cfg_block_info_t){ .m_blk = blk };
 	if (btree_insert(&blks->m_index,(uintptr_t)blk,bi) != bi)
 	{
-		heap_free(context->m_heap,bi,sizeof(cfg_block_info_t));
+		allocator_free(context->m_allocator,bi);
 		return;
 	}
 
-	blks->m_blks = heap_realloc(context->m_heap,blks->m_blks,blks->m_count * sizeof(cfg_block_info_t*),(blks->m_count + 1) * sizeof(cfg_block_info_t*));
+	blks->m_blks = allocator_realloc(context->m_allocator,blks->m_blks,(blks->m_count + 1) * sizeof(cfg_block_info_t*));
 	if (!blks->m_blks)
 		longjmp(context->m_jmp,1);
 
@@ -2609,7 +2618,7 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 	size_t heap_start = heap_top(&context->m_heap);
 	size_t trail_start = heap_top(&context->m_trail);
 	compile_context_t cc = {
-		.m_heap = &context->m_heap,
+		.m_allocator = &heap_allocator(&context->m_heap),
 		.m_link_fn = link_fn,
 		.m_link_param = link_param
 	};
@@ -2617,7 +2626,7 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 	{
 		if (var_count)
 		{
-			cc.m_substs = heap_malloc(&context->m_heap,sizeof(substitutions_t) + (sizeof(term_t) * var_count));
+			cc.m_substs = allocator_malloc(cc.m_allocator,sizeof(substitutions_t) + (sizeof(term_t) * var_count));
 			if (!cc.m_substs)
 				longjmp(cc.m_jmp,1);
 
@@ -2638,7 +2647,7 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 
 		cfg_simplify(&cc,c);
 
-		cfg_vec_t blks = { .m_index.m_allocator = &heap_allocator(&context->m_heap) };
+		cfg_vec_t blks = { .m_index.m_allocator = cc.m_allocator };
 		walk_cfgs(&cc,&blks,c->m_entry_point);
 
 #if ENABLE_TESTS
@@ -2651,14 +2660,7 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 			if (!code)
 				longjmp(cc.m_jmp,1);
 
-			size_t new_size = emit_ops(code,&blks);
-
-			// Resize the memory block for sanity
-			code = heap_realloc(&context->m_trail,code,blks.m_total * sizeof(opcode_t),new_size * sizeof(opcode_t));
-			if (!code)
-				longjmp(cc.m_jmp,1);
-
-			blks.m_total = new_size;
+			blks.m_total = emit_ops(code,&blks);
 
 #if ENABLE_TESTS
 			dumpTrace(context,code,blks.m_total,"./pcode.txt");

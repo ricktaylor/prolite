@@ -49,12 +49,23 @@ static expr_node_t* walk_expr(compile_context_t* context, const term_t* expr, ex
 
 static expr_node_t* new_expr_node(compile_context_t* context, expr_node_type_t type)
 {
-	expr_node_t* e = heap_malloc(context->m_heap,sizeof(expr_node_t));
+	expr_node_t* e = allocator_malloc(context->m_allocator,sizeof(expr_node_t));
 	if (!e)
 		longjmp(context->m_jmp,1);
 
-	e->m_type = type;
+	*e = (expr_node_t){ .m_type = type };
 	return e;
+}
+
+static void free_expr_node(compile_context_t* context, expr_node_t* e)
+{
+	if (e)
+	{
+		free_expr_node(context,e->m_child[0]);
+		free_expr_node(context,e->m_child[1]);
+
+		allocator_free(context->m_allocator,e);
+	}
 }
 
 /*static expr_node_t* walk_div(compile_context_t* context, expr_node_t* p1, expr_node_t* p2, const debug_info_t* di)
@@ -88,7 +99,7 @@ static expr_node_t* new_expr_node(compile_context_t* context, expr_node_type_t t
 		return p1;
 	}
 
-	expr_node_t* n = heap_malloc(context->m_heap,sizeof(expr_node_t));
+	expr_node_t* n = allocator_malloc(context->m_allocator,sizeof(expr_node_t));
 	if (!n)
 		longjmp(context->m_jmp,1);
 
@@ -239,16 +250,25 @@ static expr_node_t* walk_expr_add(compile_context_t* context, const term_t* expr
 
 	expr_node_t* e2 = walk_expr(context,t2,substs);
 	if (e2->m_type == EXPR_TYPE_THROW)
+	{
+		free_expr_node(context,e1);
 		return e2;
+	}
 
 	if (e1->m_type == EXPR_TYPE_CONST)
 	{
 		if (e2->m_type == EXPR_TYPE_CONST)
 		{
 			double r = e1->m_dval + e2->m_dval;
+			free_expr_node(context,e2);
+
 			expr_node_t* e = test_fpexcept(context,expr,FE_UNDERFLOW | FE_OVERFLOW);
 			if (e)
+			{
+				free_expr_node(context,e1);
 				return e;
+			}
+
 			e1->m_dval = r;
 			return e1;
 		}
@@ -279,14 +299,21 @@ static expr_node_t* walk_expr_sub(compile_context_t* context, const term_t* expr
 
 	expr_node_t* e2 = walk_expr(context,t2,substs);
 	if (e2->m_type == EXPR_TYPE_THROW)
+	{
+		free_expr_node(context,e1);
 		return e2;
+	}
 
 	if (e1->m_type == EXPR_TYPE_CONST && e2->m_type == EXPR_TYPE_CONST)
 	{
 		double r = e1->m_dval - e2->m_dval;
+		free_expr_node(context,e2);
 		expr_node_t* e = test_fpexcept(context,expr,FE_UNDERFLOW | FE_OVERFLOW);
 		if (e)
+		{
+			free_expr_node(context,e1);
 			return e;
+		}
 		e1->m_dval = r;
 		return e1;
 	}
@@ -464,12 +491,8 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term,
 	case EXPR_TYPE_CONST:
 		if (next->m_shim == &compile_unify_is)
 		{
-			term_t* t = heap_malloc(context->m_heap,sizeof(term_t));
-			if (!t)
-				longjmp(context->m_jmp,1);
-
-			t->m_dval = e->m_dval;
-			return compile_unify_terms(context,next->m_term,t,next->m_next);
+			term_t t = { .m_dval = e->m_dval };
+			return compile_unify_terms(context,next->m_term,&t,next->m_next);
 		}
 
 		c = new_cfg(context);
@@ -536,18 +559,27 @@ static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, c
 	return goto_next(context,c,c1);
 }
 
+static cfg_t* free_wi(compile_context_t* context, const term_t* term, const continuation_t* next)
+{
+	cfg_t* c = compile_subgoal(context,next);
+
+	allocator_free(context->m_allocator,(void*)term);
+
+	return c;
+}
+
 static const continuation_t* walk_expr_vars(compile_context_t* context, const term_t* expr, expr_subst_t* substs, size_t start, size_t idx, const continuation_t* next)
 {
 	while (start < context->m_substs->m_count && !substs[start].m_expr)
 		++start;
 
-	continuation_t* c = heap_malloc(context->m_heap,sizeof(continuation_t));
+	continuation_t* c = allocator_malloc(context->m_allocator,sizeof(continuation_t));
 	if (!c)
 		longjmp(context->m_jmp,1);
 
 	if (start == context->m_substs->m_count)
 	{
-		walk_info_t* wi = heap_malloc(context->m_heap,sizeof(walk_info_t));
+		walk_info_t* wi = allocator_malloc(context->m_allocator,sizeof(walk_info_t));
 		if (!wi)
 			longjmp(context->m_jmp,1);
 
@@ -561,6 +593,17 @@ static const continuation_t* walk_expr_vars(compile_context_t* context, const te
 			.m_term = (const term_t*)wi,
 			.m_next = next
 		};
+
+		continuation_t* c1 = allocator_malloc(context->m_allocator,sizeof(continuation_t));
+		if (!c1)
+			longjmp(context->m_jmp,1);
+
+		*c1 = (continuation_t){
+			.m_shim = &free_wi,
+			.m_term = (const term_t*)wi,
+			.m_next = c
+		};
+		c = c1;
 	}
 	else
 	{
@@ -578,10 +621,9 @@ static const continuation_t* walk_expr_vars(compile_context_t* context, const te
 
 static cfg_t* compile_expr(compile_context_t* context, const term_t* expr, const continuation_t* next)
 {
-	cfg_t* c;
 	if (!context->m_substs || !context->m_substs->m_count)
 	{
-		c = compile_subgoal(context,&(continuation_t){
+		return compile_subgoal(context,&(continuation_t){
 			.m_shim = &compile_expr_inner,
 			.m_term = (const term_t*)&(walk_info_t){
 				.m_expr = expr
@@ -589,17 +631,17 @@ static cfg_t* compile_expr(compile_context_t* context, const term_t* expr, const
 			.m_next = next
 		});
 	}
-	else
-	{
-		expr_subst_t* substs = heap_malloc(context->m_heap,sizeof(expr_subst_t) * context->m_substs->m_count);
-		if (!substs)
-			longjmp(context->m_jmp,1);
 
-		memset(substs,0,sizeof(expr_subst_t) * context->m_substs->m_count);
+	expr_subst_t* substs = allocator_malloc(context->m_allocator,sizeof(expr_subst_t) * context->m_substs->m_count);
+	if (!substs)
+		longjmp(context->m_jmp,1);
 
-		size_t var_count = extract_vars(context,expr,substs);
-		c = compile_subgoal(context,walk_expr_vars(context,expr,substs,0,var_count,next));
-	}
+	memset(substs,0,sizeof(expr_subst_t) * context->m_substs->m_count);
+
+	size_t var_count = extract_vars(context,expr,substs);
+	cfg_t* c = compile_subgoal(context,walk_expr_vars(context,expr,substs,0,var_count,next));
+
+	allocator_free(context->m_allocator,substs);
 
 	return c;
 }

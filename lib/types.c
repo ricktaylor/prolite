@@ -46,7 +46,7 @@ term_t* emit_buffer_append(emit_buffer_t* out, size_t count)
 	{
 		size_t new_count = out->m_count + count;
 
-		r = allocator_realloc(out->m_a,out->m_buf,new_count * sizeof(term_t));
+		r = allocator_realloc(out->m_allocator,out->m_buf,new_count * sizeof(term_t));
 		if (!r)
 			return NULL;
 
@@ -117,7 +117,7 @@ void pack_string(term_t out[2], const unsigned char* str, size_t len)
 	emit_string_type(out,prolite_atom,str,len,builtin);
 }
 
-const term_t* emit_string(emit_buffer_t* out, prolite_type_t type, const unsigned char* str, size_t len, int external, const debug_info_t* debug_info)
+term_t* emit_string(emit_buffer_t* out, prolite_type_t type, const unsigned char* str, size_t len, int external, const debug_info_t* debug_info)
 {
 	size_t offset = out->m_count;
 	term_t* r = NULL;
@@ -159,76 +159,81 @@ const term_t* emit_string(emit_buffer_t* out, prolite_type_t type, const unsigne
 	return (r ? out->m_buf + offset : NULL);
 }
 
-const term_t* emit_predicate(emit_buffer_t* out, size_t arity, const unsigned char* functor, size_t functor_len, int external, const debug_info_t* debug_info)
+term_t* emit_predicate(emit_buffer_t* out, size_t arity, const unsigned char* functor, size_t functor_len, int external, const debug_info_t* debug_info)
 {
 	if (arity == 0)
 		return emit_string(out,prolite_atom,functor,functor_len,external,debug_info);
 
 	size_t offset = out->m_count;
-	term_t* r = emit_buffer_append(out,1);
-	if (r)
+	term_t* r = NULL;
+
+	prolite_type_t type = prolite_compound;
+	builtin_atom_id_t builtin;
+	if (arity <= MAX_ARITY_EMBED && functor_len <= 5)
 	{
-		prolite_type_t type = prolite_compound;
-		builtin_atom_id_t builtin;
-		if (arity <= MAX_ARITY_EMBED && functor_len <= 5)
+		if (debug_info)
+			type |= prolite_debug_info;
+
+		if (!(r = emit_buffer_append(out,1)))
+			return NULL;
+
+		switch (functor_len)
 		{
-			if (debug_info)
-				type |= prolite_debug_info;
+		case 5:
+			r->m_u64val = PACK_TYPE_EMBED(type,arity,5,functor[0],functor[1],functor[2],functor[3],functor[4]);
+			break;
 
-			switch (functor_len)
-			{
-			case 5:
-				r->m_u64val = PACK_TYPE_EMBED(type,arity,5,functor[0],functor[1],functor[2],functor[3],functor[4]);
-				break;
+		case 4:
+			r->m_u64val = PACK_TYPE_EMBED(type,arity,4,functor[0],functor[1],functor[2],functor[3],0);
+			break;
 
-			case 4:
-				r->m_u64val = PACK_TYPE_EMBED(type,arity,4,functor[0],functor[1],functor[2],functor[3],0);
-				break;
+		case 3:
+			r->m_u64val = PACK_TYPE_EMBED(type,arity,3,functor[0],functor[1],functor[2],0,0);
+			break;
 
-			case 3:
-				r->m_u64val = PACK_TYPE_EMBED(type,arity,3,functor[0],functor[1],functor[2],0,0);
-				break;
+		case 2:
+			r->m_u64val = PACK_TYPE_EMBED(type,arity,2,functor[0],functor[1],0,0,0);
+			break;
 
-			case 2:
-				r->m_u64val = PACK_TYPE_EMBED(type,arity,2,functor[0],functor[1],0,0,0);
-				break;
+		case 1:
+			r->m_u64val = PACK_TYPE_EMBED(type,arity,1,functor[0],0,0,0,0);
+			break;
 
-			case 1:
-				r->m_u64val = PACK_TYPE_EMBED(type,arity,1,functor[0],0,0,0,0);
-				break;
-
-			default:
-				r->m_u64val = PACK_TYPE_EMBED(type,arity,0,0,0,0,0,0);
-				break;
-			}
-
-			if (debug_info)
-				r = emit_debug_info(out,debug_info);
+		default:
+			r->m_u64val = PACK_TYPE_EMBED(type,arity,0,0,0,0,0,0);
+			break;
 		}
-		else if (arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(functor,functor_len)) != MAX_BUILTIN_ATOM)
-		{
-			if (debug_info)
-				type |= prolite_debug_info;
 
-			r->m_u64val = (PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0x4000) << 32) | ((arity & MAX_ARITY_BUILTIN) << 32) | builtin));
+		if (debug_info)
+			r = emit_debug_info(out,debug_info);
+	}
+	else if (arity <= MAX_ARITY_BUILTIN && (builtin = is_builtin_string(functor,functor_len)) != MAX_BUILTIN_ATOM)
+	{
+		if (debug_info)
+			type |= prolite_debug_info;
 
-			if (debug_info)
-				r = emit_debug_info(out,debug_info);
-		}
-		else if (arity <= MAX_ARITY)
-		{
-			r->m_u64val = PACK_TYPE(type) | PACK_MANT_48(arity);
-			if (!emit_string(out,prolite_atom,functor,functor_len,external,debug_info))
-				r = NULL;
-		}
-		else
-			r = NULL;
+		if (!(r = emit_buffer_append(out,1)))
+			return NULL;
+
+		r->m_u64val = (PACK_TYPE(type) | PACK_MANT_48((UINT64_C(0x4000) << 32) | ((arity & MAX_ARITY_BUILTIN) << 32) | builtin));
+
+		if (debug_info)
+			r = emit_debug_info(out,debug_info);
+	}
+	else if (arity <= MAX_ARITY)
+	{
+		if (!(r = emit_buffer_append(out,1)))
+			return NULL;
+
+		r->m_u64val = PACK_TYPE(type) | PACK_MANT_48(arity);
+
+		r = emit_string(out,prolite_atom,functor,functor_len,external,debug_info);
 	}
 
 	return (r ? out->m_buf + offset : NULL);
 }
 
-const term_t* emit_number(emit_buffer_t* out, double d, const debug_info_t* debug_info)
+term_t* emit_number(emit_buffer_t* out, double d, const debug_info_t* debug_info)
 {
 	size_t offset = out->m_count;
 	term_t* r = NULL;
@@ -251,7 +256,7 @@ const term_t* emit_number(emit_buffer_t* out, double d, const debug_info_t* debu
 	return (r ? out->m_buf + offset : NULL);
 }
 
-const term_t* emit_var(emit_buffer_t* out, size_t idx, const debug_info_t* debug_info)
+term_t* emit_var(emit_buffer_t* out, size_t idx, const debug_info_t* debug_info)
 {
 	size_t offset = out->m_count;
 	term_t* r = NULL;
@@ -836,7 +841,7 @@ PROLITE_EXPORT void prolite_builtin_ground(context_t* context, const term_t* gos
 	assert(0);
 }
 
-static const term_t* copy_string(emit_buffer_t* out, const term_t* src, int shallow, prolite_type_t type, uint64_t all48, int have_debug_info, jmp_buf* jmp)
+static const term_t* copy_string_inner(emit_buffer_t* out, const term_t* src, int shallow, prolite_type_t type, uint64_t all48, int have_debug_info, jmp_buf* jmp)
 {
 	term_t* r = emit_buffer_append(out,1);
 	if (!r)
@@ -886,7 +891,29 @@ static const term_t* copy_string(emit_buffer_t* out, const term_t* src, int shal
 	return n;
 }
 
-static void copy_term_inner(context_t* context, emit_buffer_t* out, const term_t* src, int shallow, int deref, uint64_t** var_mapping, size_t* var_count, jmp_buf* jmp)
+term_t* copy_string(context_t* context, prolite_allocator_t* a, const term_t* src, int shallow)
+{
+	emit_buffer_t out = { .m_allocator = a };
+
+	jmp_buf jmp;
+	if (!setjmp(jmp))
+	{
+		uint64_t all48;
+		prolite_type_t type;
+		int have_debug_info;
+		unpack_term(src,&type,&have_debug_info,&all48);
+
+		assert(type == prolite_atom || type == prolite_chars || type == prolite_charcodes);
+
+		copy_string_inner(&out,src,shallow,type,all48,have_debug_info,&jmp);
+	}
+	else
+		out.m_buf = allocator_free(a,out.m_buf);
+
+	return out.m_buf;
+}
+
+static const term_t* copy_term_inner(context_t* context, emit_buffer_t* out, const term_t* src, int shallow, int deref, uint64_t** var_mapping, size_t* var_count, jmp_buf* jmp, prolite_allocator_t* tmp_a)
 {
 	uint64_t all48;
 	prolite_type_t type;
@@ -897,11 +924,15 @@ static void copy_term_inner(context_t* context, emit_buffer_t* out, const term_t
 	{
 	case prolite_var:
 		{
+			const debug_info_t* di = NULL;
+			if (have_debug_info)
+				n = skip_debug_info(n,&di);
+
 			const term_t* v = src;
 			if (deref)
 				v = deref_local_var(context,src);
 			if (v != src)
-				copy_term_inner(context,out,v,shallow,deref,var_mapping,var_count,jmp);
+				copy_term_inner(context,out,v,shallow,deref,var_mapping,var_count,jmp,tmp_a);
 			else
 			{
 				size_t idx = unpack_var_index(src);
@@ -911,7 +942,7 @@ static void copy_term_inner(context_t* context, emit_buffer_t* out, const term_t
 
 				if (i == *var_count)
 				{
-					uint64_t* v = bump_allocator_realloc(&context->m_heap,*var_mapping,(*var_count + 1) * sizeof(uint64_t));
+					uint64_t* v = allocator_realloc(tmp_a,*var_mapping,(*var_count + 1) * sizeof(uint64_t));
 					if (!v)
 						longjmp(*jmp,1);
 
@@ -919,7 +950,7 @@ static void copy_term_inner(context_t* context, emit_buffer_t* out, const term_t
 					(*var_mapping)[(*var_count)++] = idx;
 				}
 
-				if (!emit_var(out,i,unpack_debug_info(src)))
+				if (!emit_var(out,i,di))
 					longjmp(*jmp,1);
 			}
 		}
@@ -941,7 +972,7 @@ static void copy_term_inner(context_t* context, emit_buffer_t* out, const term_t
 				arity = all48 & MAX_ARITY;
 
 				unpack_term(n,&type,&have_debug_info,&all48);
-				n = copy_string(out,n,shallow,type,all48,have_debug_info,jmp);
+				n = copy_string_inner(out,n,shallow,type,all48,have_debug_info,jmp);
 			}
 			else
 			{
@@ -961,21 +992,15 @@ static void copy_term_inner(context_t* context, emit_buffer_t* out, const term_t
 				}
 			}
 
-			for (; arity--; n = get_next_arg(n))
-				copy_term_inner(context,out,n,shallow,deref,var_mapping,var_count,jmp);
+			while (arity--)
+				n = copy_term_inner(context,out,n,shallow,deref,var_mapping,var_count,jmp,tmp_a);
 		}
 		break;
 
 	case prolite_atom:
 	case prolite_chars:
 	case prolite_charcodes:
-		{
-			const debug_info_t* di = NULL;
-			if (have_debug_info)
-				skip_debug_info(n,&di);
-
-			copy_string(out,src,shallow,type,all48,have_debug_info,jmp);
-		}
+		n = copy_string_inner(out,src,shallow,type,all48,have_debug_info,jmp);
 		break;
 
 	case prolite_number:
@@ -987,19 +1012,20 @@ static void copy_term_inner(context_t* context, emit_buffer_t* out, const term_t
 		}
 		break;
 	}
+
+	return n;
 }
 
-term_t* copy_term(context_t* context, prolite_allocator_t* a, const term_t* src, int shallow, int deref, size_t* var_count)
+term_t* copy_term(context_t* context, prolite_allocator_t* a, prolite_allocator_t* tmp_a, const term_t* src, int shallow, int deref, size_t* var_count)
 {
-	emit_buffer_t out = { .m_a = a };
-	size_t heap_start = heap_top(&context->m_heap);
+	emit_buffer_t out = { .m_allocator = a };
+	uint64_t* var_mapping = NULL;
 
 	jmp_buf jmp;
 	if (!setjmp(jmp))
 	{
 		size_t vc = 0;
-		uint64_t* var_mapping = NULL;
-		copy_term_inner(context,&out,src,shallow,deref,&var_mapping,&vc,&jmp);
+		copy_term_inner(context,&out,src,shallow,deref,&var_mapping,&vc,&jmp,tmp_a);
 
 		if (var_count)
 			*var_count = vc;
@@ -1007,7 +1033,7 @@ term_t* copy_term(context_t* context, prolite_allocator_t* a, const term_t* src,
 	else
 		out.m_buf = allocator_free(a,out.m_buf);
 
-	heap_reset(&context->m_heap,heap_start);
+	allocator_free(tmp_a,var_mapping);
 
 	return out.m_buf;
 }

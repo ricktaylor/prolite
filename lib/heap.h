@@ -38,11 +38,13 @@ static inline void* allocator_realloc(prolite_allocator_t* a, void* ptr, size_t 
 
 static inline void* allocator_free(prolite_allocator_t* a, void* ptr)
 {
-	if (a)
-		(*a->m_fn_free)(a->m_user_data,ptr);
-	else
-		free(ptr);
-
+	if (ptr)
+	{
+		if (a)
+			(*a->m_fn_free)(a->m_user_data,ptr);
+		else
+			free(ptr);
+	}
 	return NULL;
 }
 
@@ -59,24 +61,25 @@ static inline size_t heap_top(const heap_t* heap)
 }
 
 void heap_reset(heap_t* heap, size_t pos);
-
 void heap_compact(heap_t* heap);
 
-void* heap_malloc(heap_t* heap, size_t len);
+heap_t heap_clone(heap_t* heap);
+void heap_merge(heap_t* to, heap_t* from);
 
+void* heap_malloc(heap_t* heap, size_t len);
 void heap_free(heap_t* heap, void* ptr, size_t len);
 
-void* heap_realloc(heap_t* heap, void* ptr, size_t old_len, size_t new_len);
-
+void* heap_allocator_init(heap_t* heap);
 void* heap_allocator_malloc(void* param, size_t bytes);
 void* heap_allocator_realloc(void* param, void* ptr, size_t bytes);
 void heap_allocator_free(void* param, void* ptr);
+void heap_allocator_destroy(prolite_allocator_t* a);
 
 #define heap_allocator(h) (prolite_allocator_t){ \
 		.m_fn_malloc = &heap_allocator_malloc, \
 		.m_fn_realloc = &heap_allocator_realloc, \
 		.m_fn_free = &heap_allocator_free, \
-		.m_user_data = (h) }
+		.m_user_data = heap_allocator_init(h) }
 
 void* bump_allocator_malloc(void* param, size_t bytes);
 void* bump_allocator_realloc(void* param, void* ptr, size_t bytes);
