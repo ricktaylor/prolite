@@ -59,7 +59,7 @@ enum exec_flags
 	FLAG_THROW = 2,
 	FLAG_HALT = 4
 };
-typedef uint16_t exec_flags_t;
+typedef unsigned int exec_flags_t;
 
 typedef struct substitutions
 {

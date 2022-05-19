@@ -543,7 +543,7 @@ static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, c
 	cfg_t* c1 = compile_subgoal(context,next);
 	if (c1->m_tail->m_count &&
 		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_op == OP_POP &&
-		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_arg < UINT32_MAX)
+		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_arg < c_op_arg_max)
 	{
 		++c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_arg;
 	}

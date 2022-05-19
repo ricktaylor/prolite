@@ -29,7 +29,6 @@ typedef enum optype
 	OP_EXTERN,
 	OP_RET,
 	OP_SET_FLAGS,
-	OP_CLEAR_FLAGS,
 	OP_PUSH_CUT,
 	OP_POP_CUT,
 	OP_PUSH_CONST,
@@ -57,6 +56,8 @@ typedef struct op_arg
 	uint64_t m_arg : 48;
 } op_arg_t;
 
+static const uint64_t c_op_arg_max = (UINT64_C(1) << 49) - 1;
+
 static_assert(sizeof(op_arg_t) <= sizeof(term_t),"unpacked opcodes");
 
 typedef union opcode
@@ -75,7 +76,7 @@ typedef struct cfg
 {
 	cfg_block_t* m_entry_point;
 	cfg_block_t* m_tail;
-	uint8_t      m_always_flags;
+	exec_flags_t m_always_flags;
 } cfg_t;
 
 typedef void* (*link_fn_t)(void* context, void* param, const term_t* goal, const void* cont);

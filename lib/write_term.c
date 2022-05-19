@@ -791,7 +791,11 @@ prolite_stream_error_t dump_term(prolite_stream_t* s, const term_t* term)
 {
 	write_context_t wc = {
 		.m_s = s,
-		.m_precedence = 1201
+		.m_precedence = 1201,
+		.m_options = {
+			.quoted = 1,
+			.numbervars = 1
+		}
 	};
 
 	prolite_stream_error_t err = setjmp(wc.m_jmp);
