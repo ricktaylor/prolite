@@ -2626,12 +2626,11 @@ void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const
 			if (!code)
 				longjmp(cc.m_jmp,1);
 
+			blks.m_total = emit_ops(code,&blks);
+
 #if ENABLE_TESTS
 			dumpTrace(context,code,blks.m_total,"./pcode.txt");
 #endif
-
-			blks.m_total = emit_ops(code,&blks);
-
 			// TODO - JIT time!
 		}
 	}
