@@ -28,7 +28,7 @@ typedef enum optype
 	OP_BUILTIN,
 	OP_EXTERN,
 	OP_RET,
-	OP_SET_FLAGS,
+	OP_CUT,
 	OP_PUSH_CUT,
 	OP_POP_CUT,
 	OP_PUSH_CONST,
@@ -69,6 +69,7 @@ typedef union opcode
 typedef struct cfg_block
 {
 	size_t    m_count;
+	uint64_t  m_hash;
 	opcode_t* m_ops;
 } cfg_block_t;
 
@@ -76,7 +77,6 @@ typedef struct cfg
 {
 	cfg_block_t* m_entry_point;
 	cfg_block_t* m_tail;
-	exec_flags_t m_always_flags;
 } cfg_t;
 
 typedef void* (*link_fn_t)(void* context, void* param, const term_t* goal, const void* cont);
@@ -85,6 +85,7 @@ typedef struct compile_context
 {
 	prolite_allocator_t* m_allocator;
 	substitutions_t*     m_substs;
+	exec_flags_t         m_flags;
 	jmp_buf              m_jmp;
 	link_fn_t            m_link_fn;
 	void*                m_link_param;
@@ -92,7 +93,7 @@ typedef struct compile_context
 
 struct continuation;
 
-typedef cfg_t* (*shim_fn_t)(compile_context_t* context, const term_t* term, const struct continuation* next);
+typedef cfg_t* (*shim_fn_t)(compile_context_t* context, const struct continuation* goal);
 
 typedef struct continuation
 {

@@ -457,9 +457,9 @@ static size_t extract_vars(compile_context_t* context, const term_t* expr, expr_
 	return 0;
 }
 
-static cfg_t* compile_unify_is(compile_context_t* context, const term_t* term, const continuation_t* next)
+static cfg_t* compile_unify_is(compile_context_t* context, const continuation_t* goal)
 {
-	cfg_t* cont = compile_subgoal(context,next);
+	cfg_t* cont = compile_subgoal(context,goal->m_next);
 	if (!cont)
 		return NULL;
 
@@ -468,7 +468,7 @@ static cfg_t* compile_unify_is(compile_context_t* context, const term_t* term, c
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,6);
 	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
-	(ops++)->m_term.m_pval = term;
+	(ops++)->m_term.m_pval = goal->m_term;
 	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = 2 };
 	(ops++)->m_term.m_pval = &prolite_builtin_unify_is;
 	(ops++)->m_term.m_pval = cont->m_entry_point;
@@ -476,9 +476,9 @@ static cfg_t* compile_unify_is(compile_context_t* context, const term_t* term, c
 	return c;
 }
 
-static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term, const continuation_t* next)
+static cfg_t* compile_expr_inner(compile_context_t* context, const continuation_t* goal)
 {
-	walk_info_t* wi = (walk_info_t*)term;
+	walk_info_t* wi = (walk_info_t*)goal->m_term;
 
 	expr_node_t* e = walk_expr(context,wi->m_expr,wi->m_substs);
 
@@ -489,10 +489,10 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term,
 	switch (e->m_type)
 	{
 	case EXPR_TYPE_CONST:
-		if (next->m_shim == &compile_unify_is)
+		if (goal->m_next->m_shim == &compile_unify_is)
 		{
 			term_t t = { .m_dval = e->m_dval };
-			return compile_unify_terms(context,next->m_term,&t,next->m_next);
+			return compile_unify_terms(context,goal->m_next->m_term,&t,goal->m_next->m_next);
 		}
 
 		c = new_cfg(context);
@@ -525,12 +525,12 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const term_t* term,
 		c = goto_next(context,c1,c);
 	}
 
-	return goto_next(context,c,compile_subgoal(context,next));
+	return goto_next(context,c,compile_subgoal(context,goal->m_next));
 }
 
-static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, const continuation_t* next)
+static cfg_t* compile_expr_var(compile_context_t* context, const continuation_t* goal)
 {
-	expr_subst_t* subst = (expr_subst_t*)term;
+	expr_subst_t* subst = (expr_subst_t*)goal->m_term;
 
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,5);
@@ -540,7 +540,7 @@ static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, c
 	(ops++)->m_term.m_pval = &prolite_builtin_expression;
 	//ops->m_term.m_pval = NULL;
 
-	cfg_t* c1 = compile_subgoal(context,next);
+	cfg_t* c1 = compile_subgoal(context,goal->m_next);
 	if (c1->m_tail->m_count &&
 		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_op == OP_POP &&
 		c1->m_tail->m_ops[c1->m_tail->m_count-1].m_opcode.m_arg < c_op_arg_max)
@@ -559,16 +559,16 @@ static cfg_t* compile_expr_var(compile_context_t* context, const term_t* term, c
 	return goto_next(context,c,c1);
 }
 
-static cfg_t* free_wi(compile_context_t* context, const term_t* term, const continuation_t* next)
+static cfg_t* free_wi(compile_context_t* context, const continuation_t* goal)
 {
-	cfg_t* c = compile_subgoal(context,next);
+	cfg_t* c = compile_subgoal(context,goal->m_next);
 
-	allocator_free(context->m_allocator,(void*)term);
+	allocator_free(context->m_allocator,(void*)goal->m_term);
 
 	return c;
 }
 
-static const continuation_t* walk_expr_vars(compile_context_t* context, const term_t* expr, expr_subst_t* substs, size_t start, size_t idx, const continuation_t* next)
+static continuation_t* walk_expr_vars(compile_context_t* context, const term_t* expr, expr_subst_t* substs, size_t start, size_t idx, const continuation_t* next)
 {
 	while (start < context->m_substs->m_count && !substs[start].m_expr)
 		++start;
@@ -637,9 +637,18 @@ static cfg_t* compile_expr(compile_context_t* context, const term_t* expr, const
 		longjmp(context->m_jmp,1);
 
 	memset(substs,0,sizeof(expr_subst_t) * context->m_substs->m_count);
-
 	size_t var_count = extract_vars(context,expr,substs);
-	cfg_t* c = compile_subgoal(context,walk_expr_vars(context,expr,substs,0,var_count,next));
+
+	continuation_t* cont = walk_expr_vars(context,expr,substs,0,var_count,next);
+
+	cfg_t* c = compile_subgoal(context,cont);
+
+	while (cont != next)
+	{
+		continuation_t* n = (continuation_t*)cont->m_next;
+		allocator_free(context->m_allocator,cont);
+		cont = n;
+	}
 
 	allocator_free(context->m_allocator,substs);
 

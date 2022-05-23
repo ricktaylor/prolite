@@ -99,7 +99,7 @@ void throw_out_of_memory_error(context_t* context, const term_t* t)
 	if (!context->m_exception)
 		context->m_exception = (exception_t*)&s_oom;
 
-	context->m_flags = FLAG_THROW;
+	context->m_flags |= FLAG_THROW;
 }
 
 void throw_instantiation_error(context_t* context, const term_t* t)
@@ -131,7 +131,7 @@ void throw_instantiation_error(context_t* context, const term_t* t)
 	}
 
 	context->m_exception->m_term = out.m_buf;
-	context->m_flags = FLAG_THROW;
+	context->m_flags |= FLAG_THROW;
 }
 
 void throw_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t)
@@ -194,38 +194,44 @@ PROLITE_EXPORT void prolite_builtin_throw_float_overflow(context_t* context, con
 	assert(argc == 1);
 }
 
-PROLITE_EXPORT void prolite_builtin_throw(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+void throw_term(context_t* context, const term_t* ball)
 {
-	assert(!gosub);
-	assert(argc == 1);
 	assert(!context->m_exception);
 
 	context->m_exception = exception_create(context);
 	if (!context->m_exception)
-		return throw_out_of_memory_error(context,argv[0]);
+		return throw_out_of_memory_error(context,ball);
 
 	size_t var_count = 0;
-	context->m_exception->m_term = copy_term(context,&bump_allocator(&context->m_exception->m_heap),&bump_allocator(&context->m_heap),argv[0],0,1,&var_count);
+	context->m_exception->m_term = copy_term(context,&bump_allocator(&context->m_exception->m_heap),&bump_allocator(&context->m_heap),ball,0,1,&var_count);
 	if (!context->m_exception->m_term)
 	{
 		context->m_exception = exception_destroy(context,context->m_exception);
-		return throw_out_of_memory_error(context,argv[0]);
+		return throw_out_of_memory_error(context,ball);
 	}
 
 	if (var_count)
 	{
 		context->m_exception = exception_destroy(context,context->m_exception);
-		return throw_instantiation_error(context,argv[0]);
+		return throw_instantiation_error(context,ball);
 	}
 
-	context->m_flags = FLAG_THROW;
+	context->m_flags |= FLAG_THROW;
+}
+
+PROLITE_EXPORT void prolite_builtin_throw(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+	assert(!gosub);
+	assert(argc == 1);
+
+	throw_term(context,argv[0]);
 }
 
 PROLITE_EXPORT void prolite_builtin_catch(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	assert(argc == 1);
 
-	if (context->m_flags == FLAG_THROW)
+	if (context->m_flags & FLAG_THROW)
 	{
 		assert(context->m_exception);
 
@@ -240,7 +246,7 @@ PROLITE_EXPORT void prolite_builtin_catch(context_t* context, const term_t* gosu
 		{
 			exception_t* prev_exception = context->m_exception;
 			context->m_exception = NULL;
-			context->m_flags = 0;
+			context->m_flags &= ~FLAG_THROW;
 
 			substitutions_t* prev_substs = context->m_substs;
 			if (context->m_substs)
@@ -263,12 +269,12 @@ PROLITE_EXPORT void prolite_builtin_catch(context_t* context, const term_t* gosu
 			}
 			else
 			{
-				if (context->m_flags == FLAG_THROW)
+				if (context->m_flags & FLAG_THROW)
 					context->m_exception = prev_exception;
 				else
 					exception_destroy(context,prev_exception);
 
-				context->m_flags = FLAG_THROW;
+				context->m_flags |= FLAG_THROW;
 			}
 
 			context->m_substs = prev_substs;
@@ -374,11 +380,11 @@ void unhandled_exception(context_t* context, prolite_allocator_t* a, const opera
 	};
 
 	if (context->m_flags == FLAG_HALT)
-		heap_stream_write(&s.m_base,"Program halted with code ",25,NULL);
+		heap_stream_write(&s.m_base,"Goal halted with code ",22,NULL);
 	else
 		heap_stream_write(&s.m_base,"Unhandled exception: ",21,NULL);
 
-	if (write_term(context,&s.m_base,context->m_exception->m_term,NULL,ops) == prolite_stream_error_none)
+	if (write_term(context,&s.m_base,context->m_exception->m_term,&(write_options_t){ .quoted = 1 },ops) == prolite_stream_error_none)
 		(*context->m_eh)(s.m_ptr,s.m_len);
 
 	allocator_free(a,s.m_ptr);

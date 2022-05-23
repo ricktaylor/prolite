@@ -2163,43 +2163,40 @@ void read_term(parser_t* parser, void* param, pfn_parse_t callback, int multiter
 	prolite_allocator_t* prev_alloc = parser->m_allocator;
 	parser->m_allocator = &heap_allocator(&parse_heap);
 
+	var_info_t* varinfo = NULL;
+	size_t var_count = 0;
+	const term_t* t = NULL;
 	int ast_err = 0;
 	ast_node_t* node = parse_node(parser,multiterm,&ast_err);
 
-	//size_t heap_start = heap_top(&parser->m_context->m_heap);
-	//parser->m_allocator = &bump_allocator(&parser->m_context->m_heap);
+	parser->m_allocator = prev_alloc;
+	emit_buffer_t out = { .m_allocator = parser->m_allocator };
 
 	if (!ast_err && node)
 	{
 		ast_err = setjmp(parser->m_jmp);
 		if (!ast_err)
 		{
-			var_info_t* varinfo = NULL;
-			size_t var_count = 0;
 			collate_var_info(parser,&varinfo,&var_count,node);
 
-			const term_t* t = emit_ast_node(parser,&(emit_buffer_t){ .m_allocator = parser->m_allocator },node);
-
-			(*callback)(parser->m_context,param,t,var_count,varinfo);
+			t = emit_ast_node(parser,&out,node);
 		}
 	}
-
-	if (ast_err)
-	{
-		heap_reset(&parse_heap,0);
-
-		const term_t* t = emit_ast_error(parser,&(emit_buffer_t){ .m_allocator = parser->m_allocator },ast_err);
-
-		parser->m_context->m_flags = FLAG_THROW;
-		(*callback)(parser->m_context,param,t,0,NULL);
-	}
-
-	//heap_reset(&parser->m_context->m_heap,heap_start);
 
 	heap_reset(&parse_heap,0);
 	heap_merge(&parser->m_context->m_heap,&parse_heap);
 
-	parser->m_allocator = prev_alloc;
+	if (ast_err)
+	{
+		t = emit_ast_error(parser,&out,ast_err);
+
+		parser->m_context->m_flags |= FLAG_THROW;
+	}
+
+	if (t || ast_err)
+		(*callback)(parser->m_context,param,t,var_count,varinfo);
+
+	allocator_free(parser->m_allocator,out.m_buf);
 }
 
 /*void read_term_todo(context_t* context, prolite_stream_t* s)

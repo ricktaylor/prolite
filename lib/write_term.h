@@ -16,6 +16,10 @@ prolite_stream_error_t write_term(context_t* context, prolite_stream_t* s, const
 
 #if ENABLE_TESTS
 prolite_stream_error_t dump_term(prolite_stream_t* s, const term_t* term);
+
+#include <stdio.h>
+
+void dumpTerm(context_t* context, const term_t* t, FILE* f, int backslash);
 #endif
 
 #endif // WRITE_TERM_H_INCLUDED

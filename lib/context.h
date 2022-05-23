@@ -101,6 +101,7 @@ term_t* copy_term(context_t* context, prolite_allocator_t* a, prolite_allocator_
 context_t* context_new(void* user_data, const prolite_environment_t* env);
 void context_delete(context_t* c);
 
+void throw_term(context_t* context, const term_t* ball);
 void throw_out_of_memory_error(context_t* context, const term_t* t);
 void throw_instantiation_error(context_t* context, const term_t* t);
 void throw_permission_error(context_t* context, uint64_t p1, uint64_t p2, const term_t* t);

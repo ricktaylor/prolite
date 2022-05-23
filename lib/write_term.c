@@ -1,6 +1,6 @@
 #include "write_term.h"
 
-#include <stdio.h>
+#include <string.h>
 #include <inttypes.h>
 #include <math.h>
 
@@ -504,6 +504,8 @@ static char_class_t write_term_inner(write_context_t* context, char_class_t cc_p
 			if (context->m_options.quoted && should_quote_atom(&str))
 				return write_quoted(context,str.m_str,str.m_len);
 
+
+
 			if (context->m_add_spaces)
 			{
 				switch (c_char_classes[str.m_str[0]])
@@ -787,10 +789,77 @@ prolite_stream_error_t write_term(context_t* context, prolite_stream_t* s, const
 }
 
 #if ENABLE_TESTS
-prolite_stream_error_t dump_term(prolite_stream_t* s, const term_t* term)
+
+struct std_output
 {
+	prolite_stream_t m_base;
+	FILE* m_file;
+};
+
+static int std_output_stream_write_slash(struct prolite_stream* s, const void* src, size_t len, prolite_stream_error_t* err)
+{
+	struct std_output* stream = (struct std_output*)s;
+
+	const char* str = src;
+	while (len)
+	{
+		const char* c = NULL;
+		for (const char* s = " >|"; *s != '\0'; ++s)
+		{
+			const char* c1 = memchr(str,*s,len);
+			if (c1)
+			{
+				if (!c)
+					c = c1;
+				else if (c1 < c)
+					c = c1;
+			}
+		}
+		if (c)
+		{
+			if (c > str && !fwrite(str,c - str,1,stream->m_file))
+				return feof(stream->m_file) ? 0 : -1;
+
+			if (!fwrite("\\",1,1,stream->m_file) ||
+				!fwrite(c,1,1,stream->m_file))
+			{
+				return feof(stream->m_file) ? 0 : -1;
+			}
+
+			len -= (c - str) + 1;
+			str = c + 1;
+		}
+		else
+		{
+			if (!fwrite(str,len,1,stream->m_file))
+				return feof(stream->m_file) ? 0 : -1;
+
+			len = 0;
+		}
+	}
+
+	return 1;
+}
+
+static int std_output_stream_write(struct prolite_stream* s, const void* src, size_t len, prolite_stream_error_t* err)
+{
+	struct std_output* stream = (struct std_output*)s;
+
+	if (!fwrite(src,len,1,stream->m_file))
+		return feof(stream->m_file) ? 0 : -1;
+
+	return 1;
+}
+
+void dumpTerm(context_t* context, const term_t* t, FILE* f, int backslash)
+{
+	struct std_output stream = {
+		.m_base.m_fn_write = backslash ? &std_output_stream_write_slash : &std_output_stream_write,
+		.m_file = f
+	};
+
 	write_context_t wc = {
-		.m_s = s,
+		.m_s = &stream.m_base,
 		.m_precedence = 1201,
 		.m_options = {
 			.quoted = 1,
@@ -800,8 +869,7 @@ prolite_stream_error_t dump_term(prolite_stream_t* s, const term_t* term)
 
 	prolite_stream_error_t err = setjmp(wc.m_jmp);
 	if (!err)
-		write_term_inner(&wc,ccWhitespace,term);
-
-	return err;
+		write_term_inner(&wc,ccWhitespace,t);
 }
+
 #endif

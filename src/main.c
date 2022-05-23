@@ -19,7 +19,7 @@ void fs_resolver_destroy(prolite_stream_resolver_t* r);
 
 static void exception_handler(const char* err_msg, size_t err_len)
 {
-	fprintf(stderr,"Uncaught Exception: %.*s\n",(int)err_len,err_msg);
+	fprintf(stderr,"%.*s\n",(int)err_len,err_msg);
 }
 
 int main(int argc, char* argv[])
@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
 		if (context)
 		{
 			// TODO!
-			
+
 			prolite_context_destroy(context);
 		}
 

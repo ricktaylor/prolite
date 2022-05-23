@@ -20,7 +20,7 @@ static void throw_flag_value_error(context_t* context, const term_t* flag, const
 {
 	// TODO
 
-	context->m_flags = FLAG_THROW;
+	context->m_flags |= FLAG_THROW;
 }
 
 static void set_prolog_flag_inner(context_t* context, const term_t* flag, const term_t* value)
@@ -263,7 +263,7 @@ void module_delete(module_t* module)
 
 static void default_exception_handler(const char* err_msg, size_t err_len)
 {
-	fprintf(stderr,"Uncaught exception: %.*s\n",(int)err_len,err_msg);
+	fprintf(stderr,"%.*s\n",(int)err_len,err_msg);
 
 	assert(0);
 	exit(EXIT_FAILURE);

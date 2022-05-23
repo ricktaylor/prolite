@@ -462,13 +462,12 @@ static void consult_term(context_t* context, void* param, const term_t* term, si
 	consult_context_t* cc = param;
 	if (!term)
 		throw_out_of_memory_error(context,NULL);
-	else if (!(context->m_flags & FLAG_THROW))
-	{
-		if (MASK_DEBUG_INFO(term->m_u64val) == PACK_COMPOUND_EMBED_2(1,':','-'))
-			directive(cc,get_first_arg(term,NULL),var_count);
-		else if (!assert_clause(cc,term,var_count))
-			throw_out_of_memory_error(context,term);
-	}
+	else if (context->m_flags & FLAG_THROW)
+		throw_term(context,term);
+	else if (MASK_DEBUG_INFO(term->m_u64val) == PACK_COMPOUND_EMBED_2(1,':','-'))
+		directive(cc,get_first_arg(term,NULL),var_count);
+	else if (!assert_clause(cc,term,var_count))
+		throw_out_of_memory_error(context,term);
 
 	if (context->m_flags & (FLAG_THROW | FLAG_HALT))
 	{
@@ -586,7 +585,7 @@ static void* inline_call(void* context, void* param, const term_t* goal, const v
 	return inline_predicate_call(context,(const compile_predicate_t*)predicate_map_lookup(&((consult_context_t*)param)->m_predicates,goal),goal,cont);
 }
 
-#include <stdio.h>
+#include "write_term.h"
 
 static void compile_statics(void* param, predicate_base_t* p)
 {
@@ -602,12 +601,11 @@ static void compile_statics(void* param, predicate_base_t* p)
 		// For each clause
 		for (const compile_clause_t* clause = pred->m_base.m_clauses; clause; clause = clause->m_next)
 		{
-			if (clause->m_body)
-			{
-				fprintf(stdout,"-----\n");
+			fprintf(stdout,"-----\n");
+			dumpTerm(context->m_context,clause->m_head,stdout,0);
+			fprintf(stdout,"\n");
 
-				compile_goal(context->m_context,&inline_call,context,clause->m_body,clause->m_var_count);
-			}
+			compile_goal(context->m_context,&inline_call,context,clause->m_body,clause->m_var_count);
 		}
 	}
 }
@@ -640,9 +638,9 @@ static int consult(context_t* context, const term_t* filename)
 		// Initializer context flags must be the consult flags
 		for (consult_initializer_t* init = cc.m_initializers; init ; init = init->m_next)
 		{
-			string_t s;
-			size_t arity = unpack_predicate(init->m_goal,&s,NULL);
-			fprintf(stdout,"=======================\nCompiling init %.*s/%zu\n",(int)s.m_len,s.m_str,arity);
+			fprintf(stdout,"=======================\nCompiling initializer ");
+			dumpTerm(context,init->m_goal,stdout,0);
+			fprintf(stdout,"\n");
 
 			compile_goal(context,&inline_call,&cc,init->m_goal,init->m_var_count);
 		}
