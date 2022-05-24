@@ -114,27 +114,27 @@ static void free_expr_node(compile_context_t* context, expr_node_t* e)
 
 static cfg_t* compile_throw_zero_div(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_zero_div,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+	return compile_builtin(context,&prolite_builtin_throw_zero_div,1,e->m_pval,NULL);
 }
 
 static cfg_t* compile_throw_underflow(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_underflow,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+	return compile_builtin(context,&prolite_builtin_throw_underflow,1,e->m_pval,NULL);
 }
 
 /*static cfg_t* compile_throw_integer_overflow(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_integer_overflow,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+	return compile_builtin(context,&prolite_builtin_throw_integer_overflow,1,e->m_pval,NULL);
 }*/
 
 static cfg_t* compile_throw_float_overflow(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_float_overflow,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+	return compile_builtin(context,&prolite_builtin_throw_float_overflow,1,e->m_pval,NULL);
 }
 
 static cfg_t* compile_throw_evaluable(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_evaluable,1,e->m_pval,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+	return compile_builtin(context,&prolite_builtin_throw_evaluable,1,e->m_pval,NULL);
 }
 
 static expr_node_t* test_fpexcept(compile_context_t* context, const term_t* expr, int flags)
@@ -538,7 +538,7 @@ static cfg_t* compile_expr_var(compile_context_t* context, const continuation_t*
 	(ops++)->m_term.m_pval = subst->m_expr;
 	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = 1 };
 	(ops++)->m_term.m_pval = &prolite_builtin_expression;
-	//ops->m_term.m_pval = NULL;
+	ops->m_term.m_pval = NULL;
 
 	cfg_t* c1 = compile_subgoal(context,goal->m_next);
 	if (c1->m_tail->m_count &&
@@ -669,7 +669,7 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		switch (unpack_term_type(expr))
 		{
 		case prolite_var:
-			return compile_builtin(context,&prolite_builtin_throw,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+			return compile_builtin(context,&prolite_builtin_throw,1,expr,NULL);
 
 		case prolite_compound:
 			break;
@@ -688,12 +688,12 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 #include "builtin_exprs.h"
 
 			default:
-				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
 			}
 			break;
 
 		default:
-			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
 		}
 		break;
 
@@ -701,7 +701,7 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		switch (unpack_term_type(expr))
 		{
 		case prolite_var:
-			return compile_builtin(context,&prolite_builtin_throw,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+			return compile_builtin(context,&prolite_builtin_throw,1,expr,NULL);
 
 		case prolite_number:
 			if (result->m_dval != expr->m_dval)
@@ -717,14 +717,14 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 #include "builtin_exprs.h"
 
 			default:
-				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
 			}
 
 		case prolite_compound:
 			break;
 
 		default:
-			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
 		}
 		break;
 
@@ -732,7 +732,7 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		switch (unpack_term_type(expr))
 		{
 		case prolite_var:
-			return compile_builtin(context,&prolite_builtin_throw,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+			return compile_builtin(context,&prolite_builtin_throw,1,expr,NULL);
 
 		case prolite_compound:
 			// Need to check for evaluable by compiling although it will never unify
@@ -751,11 +751,11 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 #include "builtin_exprs.h"
 
 			default:
-				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
 			}
 
 		default:
-			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,&(continuation_t){ .m_term = &(term_t){ .m_u64val = PACK_ATOM_EMBED_4('f','a','i','l')} });
+			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
 		}
 		break;
 	}
