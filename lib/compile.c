@@ -623,28 +623,36 @@ static cfg_t* compile_call_term(compile_context_t* context, const continuation_t
 				.m_next = goal->m_next
 			}
 		});
-		if (c)
-		{
-			cfg_t* c1 = new_cfg(context);
-
-			opcode_t* ops = append_opcodes(context,c1->m_tail,1);
-			ops->m_opcode = (op_arg_t){ .m_op = OP_PUSH_CUT };
-
-			c = goto_next(context,c1,c);
-
-			ops = append_opcodes(context,c->m_tail,1);
-			ops->m_opcode = (op_arg_t){ .m_op = OP_POP_CUT };
-		}
+	}
+	else if (callable)
+	{
+		c = compile_builtin(context,&prolite_builtin_call,1,goal->m_term,&(continuation_t){
+			.m_shim = &compile_call_shim,
+			.m_term = (const term_t*)&flags,
+			.m_next = goal->m_next
+		});
 	}
 	else
 	{
-		c = compile_builtin(context,&prolite_builtin_call,1,goal->m_term,callable ? goal->m_next : NULL);
+		c = compile_builtin(context,&prolite_builtin_call,1,goal->m_term,NULL);
 
-		if (!callable)
-			flags |= FLAG_THROW;
+		flags |= FLAG_THROW;
 	}
 
 	context->m_flags = (context->m_flags & ~FLAG_CUT) | flags;
+
+	if (c && !(context->m_flags & (FLAG_THROW | FLAG_HALT)))
+	{
+		cfg_t* c1 = new_cfg(context);
+
+		opcode_t* ops = append_opcodes(context,c1->m_tail,1);
+		ops->m_opcode = (op_arg_t){ .m_op = OP_PUSH_CUT };
+
+		c = goto_next(context,c1,c);
+
+		ops = append_opcodes(context,c->m_tail,1);
+		ops->m_opcode = (op_arg_t){ .m_op = OP_POP_CUT };
+	}
 
 	return c;
 }
