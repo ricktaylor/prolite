@@ -173,9 +173,8 @@ static expr_node_t* test_fpexcept(compile_context_t* context, const term_t* expr
 static cfg_t* compile_set_reg(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
 	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_SET_REG;
-	(ops++)->m_term.m_u64val = (*regs)++;
+	opcode_t* ops = append_opcodes(context,c->m_tail,2);
+	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_SET_REG, .m_arg = (*regs)++ };
 	ops->m_term.m_dval = e->m_dval;
 	return c;
 }
@@ -194,7 +193,7 @@ static cfg_t* combine_binary_op(compile_context_t* context, cfg_t* c1, size_t* r
 				case OP_SET_REG:
 				case OP_LOAD_REG:
 					adjusted = 1;
-					++c1->m_tail->m_ops[c1->m_tail->m_count-2].m_term.m_u64val;
+					++c1->m_tail->m_ops[c1->m_tail->m_count-1].m_term.m_u64val;
 					break;
 
 				default:
@@ -205,7 +204,7 @@ static cfg_t* combine_binary_op(compile_context_t* context, cfg_t* c1, size_t* r
 			if (!adjusted)
 			{
 				opcode_t* ops = append_opcodes(context,c1->m_tail,3);
-				(ops++)->m_opcode.m_op = OP_MOV_REG;
+				(ops++)->m_opcode = (op_arg_t){ .m_op = OP_MOV_REG };
 				(ops++)->m_term.m_u64val = *regs1;
 				(ops++)->m_term.m_u64val = *regs1 - 1;
 			}
@@ -230,7 +229,7 @@ static cfg_t* compile_binop(compile_context_t* context, optype_t op, const expr_
 	cfg_t* c = combine_binary_op(context,c1,&regs1,c2,regs2,regs);
 
 	opcode_t* ops = append_opcodes(context,c->m_tail,4);
-	(ops++)->m_opcode.m_op = op;
+	(ops++)->m_opcode = (op_arg_t){ .m_op = op };
 	(ops++)->m_term.m_u64val = regs1 - 1;
 	(ops++)->m_term.m_u64val = regs2 - 1;
 	ops->m_term.m_u64val = *regs - 1;
@@ -328,9 +327,8 @@ static expr_node_t* walk_expr_sub(compile_context_t* context, const term_t* expr
 static cfg_t* compile_load_reg(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
 	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_tail,3);
-	(ops++)->m_opcode.m_op = OP_LOAD_REG;
-	(ops++)->m_term.m_u64val = (*regs)++;
+	opcode_t* ops = append_opcodes(context,c->m_tail,1);
+	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_LOAD_REG, .m_arg = (*regs)++ };
 	ops->m_term.m_u64val = e->m_idx;
 	return c;
 }
@@ -467,7 +465,7 @@ static cfg_t* compile_unify_is(compile_context_t* context, const continuation_t*
 
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,6);
-	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
+	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_PUSH_TERM_REF };
 	(ops++)->m_term.m_pval = goal->m_term;
 	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = 2 };
 	(ops++)->m_term.m_pval = &prolite_builtin_unify_is;
@@ -497,14 +495,13 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const continuation_
 
 		c = new_cfg(context);
 		ops = append_opcodes(context,c->m_tail,2);
-		(ops++)->m_opcode.m_op = OP_PUSH_CONST;
+		(ops++)->m_opcode = (op_arg_t){ .m_op = OP_PUSH_CONST };
 		ops->m_term.m_dval = e->m_dval;
 		break;
 
 	case EXPR_TYPE_REG:
-		ops = append_opcodes(context,c->m_tail,2);
-		(ops++)->m_opcode.m_op = OP_PUSH_REG;
-		ops->m_term.m_u64val = regs - 1;
+		ops = append_opcodes(context,c->m_tail,1);
+		ops->m_opcode = (op_arg_t){ .m_op = OP_PUSH_REG, .m_arg = regs - 1 };
 		break;
 
 	default:
@@ -514,13 +511,11 @@ static cfg_t* compile_expr_inner(compile_context_t* context, const continuation_
 	if (regs)
 	{
 		cfg_t* c1 = new_cfg(context);
-		ops = append_opcodes(context,c1->m_tail,2);
-		(ops++)->m_opcode.m_op = OP_ALLOC_REGS;
-		ops->m_term.m_u64val = regs;
+		ops = append_opcodes(context,c1->m_tail,1);
+		ops->m_opcode = (op_arg_t){ .m_op = OP_ALLOC_REGS, .m_arg = regs };
 
-		ops = append_opcodes(context,c->m_tail,2);
-		(ops++)->m_opcode.m_op = OP_FREE_REGS;
-		ops->m_term.m_u64val = regs;
+		ops = append_opcodes(context,c->m_tail,1);
+		ops->m_opcode = (op_arg_t){ .m_op = OP_FREE_REGS, .m_arg = regs };
 
 		c = goto_next(context,c1,c);
 	}
@@ -534,7 +529,7 @@ static cfg_t* compile_expr_var(compile_context_t* context, const continuation_t*
 
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,5);
-	(ops++)->m_opcode.m_op = OP_PUSH_TERM_REF;
+	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_PUSH_TERM_REF };
 	(ops++)->m_term.m_pval = subst->m_expr;
 	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = 1 };
 	(ops++)->m_term.m_pval = &prolite_builtin_expression;

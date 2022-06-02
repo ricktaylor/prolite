@@ -580,9 +580,9 @@ static void ensure_loaded(consult_context_t* context, const term_t* t)
 	context->m_flags = old_flags;
 }
 
-static void* inline_call(void* context, void* param, const term_t* goal, const void* cont)
+static cfg_t* inline_call(compile_context_t* context, void* param, const term_t* goal, const continuation_t* cont)
 {
-	return inline_predicate_call(context,(const compile_predicate_t*)predicate_map_lookup(&((consult_context_t*)param)->m_predicates,goal),goal,cont);
+	return compile_predicate_call(context,(const compile_predicate_t*)predicate_map_lookup(&((consult_context_t*)param)->m_predicates,goal),goal,cont);
 }
 
 #include "write_term.h"

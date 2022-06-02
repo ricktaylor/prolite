@@ -79,21 +79,10 @@ typedef struct cfg
 	cfg_block_t* m_tail;
 } cfg_t;
 
-typedef void* (*link_fn_t)(void* context, void* param, const term_t* goal, const void* cont);
-
-typedef struct compile_context
-{
-	prolite_allocator_t* m_allocator;
-	substitutions_t*     m_substs;
-	exec_flags_t         m_flags;
-	jmp_buf              m_jmp;
-	link_fn_t            m_link_fn;
-	void*                m_link_param;
-} compile_context_t;
-
 struct continuation;
+struct compile_context;
 
-typedef cfg_t* (*shim_fn_t)(compile_context_t* context, const struct continuation* goal);
+typedef cfg_t* (*shim_fn_t)(struct compile_context* context, const struct continuation* goal);
 
 typedef struct continuation
 {
@@ -121,6 +110,27 @@ typedef struct compile_predicate
 
 static_assert(offsetof(compile_predicate_t,m_base) == 0,"structure members reorganised");
 
+typedef struct compile_recursion
+{
+	struct compile_recursion*  m_prev;
+	const compile_predicate_t* m_pred;
+} compile_recursion_t;
+
+struct compile_context;
+
+typedef cfg_t* (*link_fn_t)(struct compile_context* context, void* param, const term_t* goal, const continuation_t* cont);
+
+typedef struct compile_context
+{
+	prolite_allocator_t* m_allocator;
+	substitutions_t*     m_substs;
+	exec_flags_t         m_flags;
+	jmp_buf              m_jmp;
+	link_fn_t            m_link_fn;
+	void*                m_link_param;
+	compile_recursion_t* m_recursion;
+} compile_context_t;
+
 const term_t* compile_deref_var(compile_context_t* context, const term_t* goal);
 
 cfg_t* new_cfg(compile_context_t* context);
@@ -132,9 +142,8 @@ void append_ret(compile_context_t* context, cfg_block_t* c);
 cfg_t* compile_unify_terms(compile_context_t* context, const term_t* t1, const term_t* t2, const continuation_t* next);
 cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_t arity, const term_t* arg, const continuation_t* next);
 cfg_t* compile_subgoal(compile_context_t* context, const continuation_t* goal);
+cfg_t* compile_predicate_call(compile_context_t* context, const compile_predicate_t* pred, const term_t* goal, const continuation_t* next);
 
 void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const term_t* goal, size_t var_count);
-
-void* inline_predicate_call(void* context, const compile_predicate_t* pred, const term_t* goal, const void* cont);
 
 #endif // COMPILE_H_
