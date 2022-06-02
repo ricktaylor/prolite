@@ -2047,7 +2047,7 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_POP:
-			fprintf(f,"Pop\\ %"PRIu64,(uint64_t)blk->m_ops[i].m_opcode.m_arg);
+			fprintf(f,"Pop\\ (%"PRIu64")",(uint64_t)blk->m_ops[i].m_opcode.m_arg);
 			break;
 
 		case OP_ALLOC_REGS:
@@ -2210,7 +2210,7 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			break;
 
 		case OP_POP:
-			fprintf(f,"pop %"PRIu64";\n",(uint64_t)code->m_opcode.m_arg);
+			fprintf(f,"pop (%"PRIu64");\n",(uint64_t)code->m_opcode.m_arg);
 			break;
 
 		case OP_ALLOC_REGS:
