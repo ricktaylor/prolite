@@ -1488,6 +1488,7 @@ static ast_node_t* parse_negative(parser_t* parser, ast_node_t* node, token_type
 	return node;
 }
 
+static ast_node_t* parse_compound_term(parser_t* parser, ast_node_t* node, token_type_t* next_type, token_t* next);
 static ast_node_t* parse_term(parser_t* parser, unsigned int max_prec, token_type_t* next_type, token_t* next);
 
 static ast_node_t* parse_arg(parser_t* parser, token_type_t* next_type, token_t* next)
@@ -1508,11 +1509,12 @@ static ast_node_t* parse_arg(parser_t* parser, token_type_t* next_type, token_t*
 			};
 			token_reset(next);
 
-			if (node->m_str_len == 1 && node->m_str[0] == '-')
-			{
-				if (*next_type >= tokInt && *next_type <= tokFloat)
-					return parse_negative(parser,node,next_type,next);
-			}
+			*next_type = token_next(parser,next);
+			if (*next_type == tokOpenCt)
+				return parse_compound_term(parser,node,next_type,next);
+
+			if (node->m_str_len == 1 && node->m_str[0] == '-' && *next_type >= tokInt && *next_type <= tokFloat)
+				return parse_negative(parser,node,next_type,next);
 
 			return node;
 		}
