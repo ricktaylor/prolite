@@ -34,3 +34,5 @@ a(2).
 :- initialization(call((write(3),1))).
 
 :- initialization(call((1;true))).
+
+:- initialization((call((nl,!)), write(9))).

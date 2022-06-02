@@ -15,6 +15,7 @@ PROLITE_EXPORT void prolite_builtin_throw_zero_div(context_t* context, const ter
 PROLITE_EXPORT void prolite_builtin_throw_underflow(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_throw_integer_overflow(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_throw_float_overflow(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
+PROLITE_EXPORT void prolite_builtin_throw_callable(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_halt(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_user_defined(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_callable(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);

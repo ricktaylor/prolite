@@ -194,6 +194,12 @@ PROLITE_EXPORT void prolite_builtin_throw_float_overflow(context_t* context, con
 	assert(argc == 1);
 }
 
+PROLITE_EXPORT void prolite_builtin_throw_callable(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+	assert(!gosub);
+	assert(argc == 1);
+}
+
 void throw_term(context_t* context, const term_t* ball)
 {
 	assert(!context->m_exception);
