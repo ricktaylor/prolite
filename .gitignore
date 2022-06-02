@@ -8,3 +8,4 @@ configure
 Makefile.in
 
 .vscode/
+*.pdf
