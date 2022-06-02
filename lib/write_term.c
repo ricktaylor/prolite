@@ -788,6 +788,41 @@ prolite_stream_error_t write_term(context_t* context, prolite_stream_t* s, const
 	return err;
 }
 
+PROLITE_EXPORT void prolite_builtin_write_term(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+
+}
+
+PROLITE_EXPORT void prolite_builtin_write(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+
+}
+
+PROLITE_EXPORT void prolite_builtin_writeq(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+
+}
+
+PROLITE_EXPORT void prolite_builtin_write_canonical(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+
+}
+
+PROLITE_EXPORT void prolite_builtin_put_char(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+
+}
+
+PROLITE_EXPORT void prolite_builtin_put_code(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+
+}
+
+PROLITE_EXPORT void prolite_builtin_nl(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+
+}
+
 #if ENABLE_TESTS
 
 struct std_output

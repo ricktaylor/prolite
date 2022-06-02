@@ -24,5 +24,12 @@ PROLITE_EXPORT void prolite_builtin_unify_is(context_t* context, const term_t* g
 PROLITE_EXPORT void prolite_builtin_ground(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_type_test(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
+PROLITE_EXPORT void prolite_builtin_write_term(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
+PROLITE_EXPORT void prolite_builtin_write(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
+PROLITE_EXPORT void prolite_builtin_writeq(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
+PROLITE_EXPORT void prolite_builtin_write_canonical(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
+PROLITE_EXPORT void prolite_builtin_put_char(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
+PROLITE_EXPORT void prolite_builtin_put_code(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
+PROLITE_EXPORT void prolite_builtin_nl(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 
 #endif // BUILTINS_H_
