@@ -9,7 +9,7 @@ a(2).
 
 :- initialization(call(fail)).
 
-:- initialization((fail,X)).
+:- initialization(call((fail,X))).
 
 :- initialization(call( (fail, call(1)) )).
 
@@ -17,7 +17,7 @@ a(2).
 
 :- initialization(b(3)).
 
-:- initialization(( Z = !, call( (Z=!, a(X), Z) )) ).
+:- initialization(( Z = !, call( (Z=!, a(X), Z) ))).
 
 :- initialization(call( (Z=!, a(X), Z) )).
 
