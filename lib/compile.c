@@ -109,7 +109,6 @@ size_t inc_ip(optype_t op)
 	switch (op)
 	{
 	case OP_JMP:
-	case OP_GOSUB:
 	case OP_PUSH_CONST:
 	case OP_PUSH_TERM_REF:
 	case OP_BRANCH:
@@ -166,7 +165,6 @@ static int cfg_compare_blk(btree_t* index, const cfg_block_t* blk1, const cfg_bl
 			break;
 
 		case OP_JMP:
-		case OP_GOSUB:
 			if (!cfg_compare_blk(index,blk1->m_ops[i+1].m_term.m_pval,blk2->m_ops[i+1].m_term.m_pval))
 				return 0;
 			break;
@@ -291,7 +289,6 @@ static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* duplicates, bt
 			break;
 
 		case OP_JMP:
-		case OP_GOSUB:
 		case OP_BRANCH:
 			h += cfg_hash_blk(context,duplicates,index,loop_check,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
 			break;
@@ -363,7 +360,6 @@ static int cfg_simplify_blk(btree_t* loop_check, cfg_block_t* blk)
 	int simplify = 0;
 	for (size_t i = 0; i < blk->m_count; i += inc_ip(blk->m_ops[i].m_opcode.m_op))
 	{
-		cfg_block_t** gosub = NULL;
 		switch (blk->m_ops[i].m_opcode.m_op)
 		{
 		case OP_JMP:
@@ -407,67 +403,35 @@ static int cfg_simplify_blk(btree_t* loop_check, cfg_block_t* blk)
 			}
 			break;
 
-		case OP_GOSUB:
-			gosub = (cfg_block_t**)&blk->m_ops[i+1].m_term.m_pval;
-			break;
-
 		case OP_BUILTIN:
 		case OP_EXTERN:
 			if (blk->m_ops[i+2].m_term.m_pval)
-				gosub = (cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval;
+			{
+				cfg_block_t** next = (cfg_block_t**)&blk->m_ops[i+2].m_term.m_pval;
+
+				// Rewrite GOSUB -> JMP => GOSUB
+				while ((*next)->m_count == 2 &&
+					(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
+				{
+					*next = (cfg_block_t*)(*next)->m_ops[1].m_term.m_pval;
+
+					simplify = 1;
+				}
+
+				// Rewrite GOSUB -> RET => NULL
+				if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
+				{
+					*next = NULL;
+
+					simplify = 1;
+				}
+				else
+					simplify = cfg_simplify_blk(loop_check,*next) || simplify;
+			}
 			break;
 
 		default:
 			break;
-		}
-
-		if (gosub)
-		{
-			// Rewrite GOSUB -> JMP => GOSUB
-			while ((*gosub)->m_count == 2 &&
-				(*gosub)->m_ops[0].m_opcode.m_op == OP_JMP)
-			{
-				*gosub = (cfg_block_t*)(*gosub)->m_ops[1].m_term.m_pval;
-
-				simplify = 1;
-			}
-
-			while ((*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB)
-			{
-				// Rewrite { GOSUB, JMP -> JMP } => { GOSUB -> JMP }
-				if ((*gosub)->m_count == 4 && (*gosub)->m_ops[2].m_opcode.m_op == OP_JMP)
-				{
-					cfg_block_t** next = (cfg_block_t**)&(*gosub)->m_ops[3].m_term.m_pval;
-					while ((*next)->m_count == 2 &&
-						(*next)->m_ops[0].m_opcode.m_op == OP_JMP)
-					{
-						*next = (cfg_block_t*)(*next)->m_ops[1].m_term.m_pval;
-
-						simplify = 1;
-					}
-
-					// Rewrite { GOSUB, JMP -> RET => ( GOSUB, RET }
-					if ((*next)->m_count == 1 && (*next)->m_ops[0].m_opcode.m_op == OP_RET)
-					{
-						(*gosub)->m_ops[2].m_opcode = (struct op_arg){ .m_op = OP_RET };
-						--(*gosub)->m_count;
-
-						simplify = 1;
-					}
-				}
-
-				// Rewrite GOSUB -> { GOSUB, RET } => GOSUB
-				while ((*gosub)->m_count == 3 &&
-					(*gosub)->m_ops[0].m_opcode.m_op == OP_GOSUB &&
-					(*gosub)->m_ops[2].m_opcode.m_op == OP_RET)
-				{
-					*gosub = (cfg_block_t*)(*gosub)->m_ops[1].m_term.m_pval;
-
-					simplify = 1;
-				}
-			}
-
-			simplify = cfg_simplify_blk(loop_check,*gosub) || simplify;
 		}
 	}
 
@@ -1801,7 +1765,6 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 			break;
 
 		case OP_BRANCH:
-		case OP_GOSUB:
 			do_again = 1;
 			break;
 
@@ -1823,7 +1786,6 @@ static void walk_cfgs(compile_context_t* context, cfg_vec_t* blks, cfg_block_t* 
 			switch (blk->m_ops[i].m_opcode.m_op)
 			{
 			case OP_BRANCH:
-			case OP_GOSUB:
 				walk_cfgs(context,blks,(cfg_block_t*)blk->m_ops[i+1].m_term.m_pval);
 				break;
 
@@ -1891,7 +1853,6 @@ static size_t emit_ops(opcode_t* code, const cfg_vec_t* blks)
 		{
 		case OP_JMP:
 		case OP_BRANCH:
-		case OP_GOSUB:
 			{
 				const cfg_block_info_t* blk = btree_lookup(&blks->m_index,(uintptr_t)code[1].m_term.m_pval);
 				assert(blk);
@@ -2030,10 +1991,6 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			fprintf(f,"Jmp");
 			break;
 
-		case OP_GOSUB:
-			fprintf(f,"Gosub");
-			break;
-
 		case OP_RET:
 			fprintf(f,"Ret");
 			break;
@@ -2134,10 +2091,6 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [label=\"%s\"];\n",blk,i,blk->m_ops[i+1].m_term.m_pval,buf);
 			break;
 
-		case OP_GOSUB:
-			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0> [dir=both];\n",blk,i,blk->m_ops[i+1].m_term.m_pval);
-			break;
-
 		case OP_JMP:
 			fprintf(f,"\tN%p:<f%zu> -> N%p:<f0>;\n",blk,i,blk->m_ops[i+1].m_term.m_pval);
 			break;
@@ -2195,10 +2148,6 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 
 		case OP_JMP:
 			fprintf(f,"goto %+d (%zu);\n",(int)code[1].m_term.m_u64val,(size_t)((code + 1 - start) + (int64_t)code[1].m_term.m_u64val));
-			break;
-
-		case OP_GOSUB:
-			fprintf(f,"gosub %+d (%zu);\n",(int)code[1].m_term.m_u64val,(size_t)((code + 1 - start) + (int64_t)code[1].m_term.m_u64val));
 			break;
 
 		case OP_RET:

@@ -24,7 +24,6 @@ typedef enum optype
 	OP_CONTINUE,
 	OP_JMP,
 	OP_BRANCH,
-	OP_GOSUB,
 	OP_BUILTIN,
 	OP_EXTERN,
 	OP_RET,
