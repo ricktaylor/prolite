@@ -15,19 +15,7 @@ static uint64_t predicate_key(const term_t* pred, int* is_sub_tree)
 	{
 		string_t s;
 		unpack_predicate(pred,&s,NULL);
-		if (s.m_len <= 8)
-		{
-			union short_str_key
-			{
-				unsigned char m_chars[8];
-				uint64_t      m_u64val;
-			} sk = {0};
-			memcpy(sk.m_chars,s.m_str,s.m_len);
-
-			key = sk.m_u64val;
-		}
-		else
-			key = fnv1a_64(s.m_str,s.m_len);
+		key = fnv1a_64(s.m_str,s.m_len);
 
 		*is_sub_tree = 1;
 	}
