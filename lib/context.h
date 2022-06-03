@@ -108,7 +108,6 @@ void throw_permission_error(context_t* context, uint64_t p1, uint64_t p2, const 
 void throw_type_error(context_t* context, uint64_t p1, const term_t* t);
 void throw_domain_error(context_t* context, uint64_t p1, const term_t* t);
 void throw_representation_error(context_t* context, uint64_t p1, const term_t* t);
-void throw_evaluable_error(context_t* context, const term_t* t);
 
 void unhandled_exception(context_t* context, prolite_allocator_t* a, const operator_table_t* ops);
 int is_out_of_memory_exception(context_t* context);

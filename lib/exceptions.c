@@ -158,12 +158,6 @@ void throw_representation_error(context_t* context, uint64_t p1, const term_t* t
 	assert(0);
 }
 
-void throw_evaluable_error(context_t* context, const term_t* t)
-{
-	// TODO
-	assert(0);
-}
-
 PROLITE_EXPORT void prolite_builtin_throw_evaluable(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
 {
 	assert(!gosub);

@@ -808,7 +808,7 @@ PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t*
 #include "builtin_exprs.h"
 
 		default:
-			return throw_evaluable_error(context,expr);
+			return prolite_builtin_throw_evaluable(context,NULL,1,(const term_t*[]){ expr });
 		}
 		break;
 
@@ -822,12 +822,12 @@ PROLITE_EXPORT void prolite_builtin_expression(context_t* context, const term_t*
 #include "builtin_exprs.h"
 
 		default:
-			return throw_evaluable_error(context,expr);
+			return prolite_builtin_throw_evaluable(context,NULL,1,(const term_t*[]){ expr });
 		}
 		break;
 
 	default:
-		return throw_evaluable_error(context,expr);
+		return prolite_builtin_throw_evaluable(context,NULL,1,(const term_t*[]){ expr });
 	}
 
 	// TODO - Something with result!!
