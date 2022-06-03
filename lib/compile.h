@@ -139,10 +139,10 @@ cfg_t* add_branch(compile_context_t* context, cfg_t* c, exec_flags_t flags, cfg_
 void append_ret(compile_context_t* context, cfg_block_t* c);
 
 cfg_t* compile_unify_terms(compile_context_t* context, const term_t* t1, const term_t* t2, const continuation_t* next);
-cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, size_t arity, const term_t* arg, const continuation_t* next);
+cfg_t* compile_builtin(compile_context_t* context, builtin_fn_t fn, const term_t* arg, const continuation_t* next);
 cfg_t* compile_subgoal(compile_context_t* context, const continuation_t* goal);
 cfg_t* compile_predicate_call(compile_context_t* context, const compile_predicate_t* pred, const term_t* goal, const continuation_t* next);
 
-void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const term_t* goal, size_t var_count);
+void compile_goal(context_t* context, link_fn_t link_fn, void* link_param, const term_t* goal, size_t var_count, const continuation_t* next);
 
 #endif // COMPILE_H_

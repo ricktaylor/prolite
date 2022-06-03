@@ -114,27 +114,32 @@ static void free_expr_node(compile_context_t* context, expr_node_t* e)
 
 static cfg_t* compile_throw_zero_div(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_zero_div,1,e->m_pval,NULL);
+	context->m_flags |= FLAG_THROW;
+	return compile_builtin(context,&prolite_builtin_throw_zero_div,e->m_pval,NULL);
 }
 
 static cfg_t* compile_throw_underflow(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_underflow,1,e->m_pval,NULL);
+	context->m_flags |= FLAG_THROW;
+	return compile_builtin(context,&prolite_builtin_throw_underflow,e->m_pval,NULL);
 }
 
 /*static cfg_t* compile_throw_integer_overflow(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_integer_overflow,1,e->m_pval,NULL);
+	context->m_flags |= FLAG_THROW;
+	return compile_builtin(context,&prolite_builtin_throw_integer_overflow,e->m_pval,NULL);
 }*/
 
 static cfg_t* compile_throw_float_overflow(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_float_overflow,1,e->m_pval,NULL);
+	context->m_flags |= FLAG_THROW;
+	return compile_builtin(context,&prolite_builtin_throw_float_overflow,e->m_pval,NULL);
 }
 
 static cfg_t* compile_throw_evaluable(compile_context_t* context, const expr_node_t* e, size_t* regs)
 {
-	return compile_builtin(context,&prolite_builtin_throw_evaluable,1,e->m_pval,NULL);
+	context->m_flags |= FLAG_THROW;
+	return compile_builtin(context,&prolite_builtin_throw_evaluable,e->m_pval,NULL);
 }
 
 static expr_node_t* test_fpexcept(compile_context_t* context, const term_t* expr, int flags)
@@ -664,7 +669,8 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		switch (unpack_term_type(expr))
 		{
 		case prolite_var:
-			return compile_builtin(context,&prolite_builtin_throw,1,expr,NULL);
+			context->m_flags |= FLAG_THROW;
+			return compile_builtin(context,&prolite_builtin_throw,expr,NULL);
 
 		case prolite_compound:
 			break;
@@ -683,12 +689,14 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 #include "builtin_exprs.h"
 
 			default:
-				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
+				context->m_flags |= FLAG_THROW;
+				return compile_builtin(context,&prolite_builtin_throw_evaluable,expr,NULL);
 			}
 			break;
 
 		default:
-			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
+			context->m_flags |= FLAG_THROW;
+			return compile_builtin(context,&prolite_builtin_throw_evaluable,expr,NULL);
 		}
 		break;
 
@@ -696,7 +704,8 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		switch (unpack_term_type(expr))
 		{
 		case prolite_var:
-			return compile_builtin(context,&prolite_builtin_throw,1,expr,NULL);
+			context->m_flags |= FLAG_THROW;
+			return compile_builtin(context,&prolite_builtin_throw,expr,NULL);
 
 		case prolite_number:
 			if (result->m_dval != expr->m_dval)
@@ -712,14 +721,16 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 #include "builtin_exprs.h"
 
 			default:
-				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
+				context->m_flags |= FLAG_THROW;
+				return compile_builtin(context,&prolite_builtin_throw_evaluable,expr,NULL);
 			}
 
 		case prolite_compound:
 			break;
 
 		default:
-			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
+			context->m_flags |= FLAG_THROW;
+			return compile_builtin(context,&prolite_builtin_throw_evaluable,expr,NULL);
 		}
 		break;
 
@@ -727,7 +738,8 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 		switch (unpack_term_type(expr))
 		{
 		case prolite_var:
-			return compile_builtin(context,&prolite_builtin_throw,1,expr,NULL);
+			context->m_flags |= FLAG_THROW;
+			return compile_builtin(context,&prolite_builtin_throw,expr,NULL);
 
 		case prolite_compound:
 			// Need to check for evaluable by compiling although it will never unify
@@ -746,11 +758,13 @@ cfg_t* compile_is(compile_context_t* context, const continuation_t* goal)
 #include "builtin_exprs.h"
 
 			default:
-				return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
+				context->m_flags |= FLAG_THROW;
+				return compile_builtin(context,&prolite_builtin_throw_evaluable,expr,NULL);
 			}
 
 		default:
-			return compile_builtin(context,&prolite_builtin_throw_evaluable,1,expr,NULL);
+			context->m_flags |= FLAG_THROW;
+			return compile_builtin(context,&prolite_builtin_throw_evaluable,expr,NULL);
 		}
 		break;
 	}

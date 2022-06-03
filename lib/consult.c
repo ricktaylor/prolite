@@ -587,6 +587,17 @@ static cfg_t* inline_call(compile_context_t* context, void* param, const term_t*
 
 #include "write_term.h"
 
+static cfg_t* compile_continue(compile_context_t* context, const continuation_t* goal)
+{
+	assert(!goal->m_next);
+
+	cfg_t* c = new_cfg(context);
+	opcode_t* ops = append_opcodes(context,c->m_entry_point,1);
+	ops->m_opcode = (op_arg_t){ .m_op = OP_CONTINUE };
+
+	return c;
+}
+
 static void compile_statics(void* param, predicate_base_t* p)
 {
 	consult_context_t* context = param;
@@ -605,7 +616,7 @@ static void compile_statics(void* param, predicate_base_t* p)
 			dumpTerm(context->m_context,clause->m_head,stdout,0);
 			fprintf(stdout,"\n");
 
-			compile_goal(context->m_context,&inline_call,context,clause->m_body,clause->m_var_count);
+			compile_goal(context->m_context,&inline_call,context,clause->m_body,clause->m_var_count,&(continuation_t){ .m_shim = &compile_continue });
 		}
 	}
 }
@@ -642,7 +653,7 @@ static int consult(context_t* context, const term_t* filename)
 			dumpTerm(context,init->m_goal,stdout,0);
 			fprintf(stdout,"\n");
 
-			compile_goal(context,&inline_call,&cc,init->m_goal,init->m_var_count);
+			compile_goal(context,&inline_call,&cc,init->m_goal,init->m_var_count,NULL);
 		}
 	}
 

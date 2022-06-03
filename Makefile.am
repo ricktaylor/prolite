@@ -20,7 +20,6 @@ libprolite_la_SOURCES = \
 	lib/parser.c \
 	lib/context.c \
 	lib/compile.c \
-	lib/builtins.c \
 	lib/predicates.c \
 	lib/operators.c \
 	lib/char_conv.c \
