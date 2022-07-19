@@ -114,18 +114,15 @@ size_t inc_ip(optype_t op)
 	case OP_BRANCH:
 	case OP_SET_REG:
 	case OP_LOAD_REG:
+	case OP_MOV_REG:
 		++ip;
 		break;
 
 	case OP_BUILTIN:
 	case OP_EXTERN:
-	case OP_MOV_REG:
-		ip += 2;
-		break;
-
 	case OP_ADD_REG:
 	case OP_SUB_REG:
-		ip += 3;
+		ip += 2;
 		break;
 
 	default:
@@ -278,6 +275,20 @@ static uint64_t cfg_hash_blk(compile_context_t* context, btree_t* duplicates, bt
 		case OP_FREE_REGS:
 		case OP_PUSH_REG:
 			h += blk->m_ops[i].m_opcode.m_arg;
+			break;
+
+		case OP_LOAD_REG:
+		case OP_SET_REG:
+		case OP_MOV_REG:
+			h += blk->m_ops[i].m_opcode.m_arg;
+			h += blk->m_ops[i+1].m_term.m_u64val;
+			break;
+
+		case OP_ADD_REG:
+		case OP_SUB_REG:
+			h += blk->m_ops[i].m_opcode.m_arg;
+			h += blk->m_ops[i+1].m_term.m_u64val;
+			h += blk->m_ops[i+2].m_term.m_u64val;
 			break;
 
 		case OP_PUSH_CONST:
@@ -1196,15 +1207,17 @@ static const continuation_t* compile_unify_head_term(compile_context_t* context,
 	prolite_type_t type2 = unpack_term_type(t2);
 	if (type2 == prolite_var)
 	{
-		// Equivalent of defer_var for next_substs;
+		// Equivalent of defer_var for t2/next_substs;
 		size_t idx = unpack_var_index(t2);
 		assert(next_substs && idx < next_substs->m_count);
 
-		if (next_substs->m_vals[idx] != NULL)
-			return compile_unify_term(context,t1,compile_deref_var(context,next_substs->m_vals[idx]),ui,next);
+		if (!next_substs->m_vals[idx])
+		{
+			next_substs->m_vals[idx] = t1;
+			return next;
+		}
 
-		next_substs->m_vals[idx] = t1;
-		return next;
+		return compile_unify_term(context,t1,next_substs->m_vals[idx],ui,next);
 	}
 
 	if (type1 == prolite_var)
@@ -1263,41 +1276,62 @@ static cfg_t* compile_head_end_shim(compile_context_t* context, const continuati
 {
 	extern_info_t* ei = (extern_info_t*)goal->m_term;
 
+	substitutions_t* prev_substs = context->m_substs;
+
 	cfg_t* c1;
 	if (ei->m_next_substs)
 	{
+		substitutions_t* substs = allocator_malloc(context->m_allocator,sizeof(substitutions_t) + (sizeof(term_t) * ei->m_next_substs->m_count));
+		if (!substs)
+			longjmp(context->m_jmp,1);
+
+		substs->m_count = ei->m_next_substs->m_count;
+
 		c1 = new_cfg(context);
+		opcode_t* ops = NULL;
 		for (size_t i = ei->m_next_substs->m_count; i--;)
 		{
-			if (ei->m_next_substs->m_vals[i] && unpack_term_type(ei->m_next_substs->m_vals[i]) != prolite_var)
+			if (ei->m_next_substs->m_vals[i])
 			{
-				opcode_t* ops = append_opcodes(context,c1->m_tail,2);
-				(ops++)->m_opcode = (op_arg_t){ .m_op = OP_PUSH_TERM_REF };
-				ops->m_term.m_pval = ei->m_next_substs->m_vals[i];
+				const term_t* t = compile_deref_var(context,ei->m_next_substs->m_vals[i]);
+				if (unpack_term_type(t) == prolite_var)
+				{
+					if (ops && ops->m_opcode.m_arg < c_op_arg_max)
+						++ops->m_opcode.m_arg;
+					else
+					{
+						ops = append_opcodes(context,c1->m_tail,1);
+						ops->m_opcode = (op_arg_t){ .m_op = OP_PUSH_NULL, .m_arg = 1};
+					}
+
+					substs->m_vals[i] = NULL;
+				}
+				else
+				{
+					ops = append_opcodes(context,c1->m_tail,2);
+					(ops++)->m_opcode = (op_arg_t){ .m_op = OP_PUSH_TERM_REF };
+					ops->m_term.m_pval = t;
+					ops = NULL;
+
+					substs->m_vals[i] = t;
+				}
 			}
 			else
 			{
-				opcode_t* ops = append_opcodes(context,c1->m_tail,1);
-				ops->m_opcode = (op_arg_t){ .m_op = OP_PUSH_NULL, .m_arg = 1};
-
-				if (ei->m_next_substs->m_vals[i])
-					ei->m_next_substs->m_vals[i] = NULL;
-
-				while (ops->m_opcode.m_arg < c_op_arg_max && i > 0 &&
-					(!ei->m_next_substs->m_vals[i-1] || unpack_term_type(ei->m_next_substs->m_vals[i-1]) == prolite_var))
-				{
+				if (ops && ops->m_opcode.m_arg < c_op_arg_max)
 					++ops->m_opcode.m_arg;
-					--i;
-
-					if (ei->m_next_substs->m_vals[i])
-						ei->m_next_substs->m_vals[i] = NULL;
+				else
+				{
+					ops = append_opcodes(context,c1->m_tail,1);
+					ops->m_opcode = (op_arg_t){ .m_op = OP_PUSH_NULL, .m_arg = 1};
 				}
+
+				substs->m_vals[i] = NULL;
 			}
 		}
-	}
 
-	substitutions_t* prev_substs = context->m_substs;
-	context->m_substs = ei->m_next_substs;
+		context->m_substs = substs;
+	}
 
 	cfg_t* c = compile_subgoal(context,&(continuation_t){
 		.m_term = ei->m_clause->m_body,
@@ -1307,8 +1341,6 @@ static cfg_t* compile_head_end_shim(compile_context_t* context, const continuati
 			.m_next = goal->m_next
 		}
 	});
-
-	context->m_substs = prev_substs;
 
 	if (c && ei->m_next_substs)
 	{
@@ -1320,6 +1352,9 @@ static cfg_t* compile_head_end_shim(compile_context_t* context, const continuati
 			ops->m_opcode = (op_arg_t){ .m_op = OP_POP, .m_arg = (a > c_op_arg_max ? c_op_arg_max : a) };
 			a -= ops->m_opcode.m_arg;
 		}
+
+		allocator_free(context->m_allocator,context->m_substs);
+		context->m_substs = prev_substs;
 	}
 
 	return c;
@@ -1382,76 +1417,90 @@ static cfg_t* compile_head(compile_context_t* context, const term_t* goal, const
 	return c;
 }
 
+static int substs_compare(const substitutions_t* s1, const substitutions_t* s2)
+{
+	int r = (s1 == s2);
+	if (!r && s1 && s2)
+	{
+		if (s1->m_count == s2->m_count)
+		{
+			for (size_t i = 0; i < s1->m_count; ++i)
+			{
+				if (s1->m_vals[i] != s2->m_vals[i])
+				{
+					if (!s1->m_vals[i] || !s2->m_vals[i] || !term_compare(s1->m_vals[i],s2->m_vals[i]))
+						return 0;
+				}
+			}
+			r = 1;
+		}
+	}
+
+	return r;
+}
+
 cfg_t* compile_predicate_call(compile_context_t* context, const compile_predicate_t* pred, const term_t* goal, const continuation_t* next)
 {
-	if (!pred)
-		return NULL;
-
-	if (pred->m_dynamic || !pred->m_clauses)
+	if (!pred || !pred->m_clauses || pred->m_dynamic)
 		return compile_builtin(context,&prolite_builtin_user_defined,goal,next);
 
 	// Check for recursive call
-	if (context->m_recursion)
+	for (compile_recursion_t* r = context->m_recursion; r; r = r->m_prev)
 	{
-		compile_recursion_t* r = context->m_recursion;
-		if (r->m_pred == pred)
+		if (r->m_pred == pred && substs_compare(context->m_substs,r->m_substs))
 		{
-			// TODO: Tail call!
-			return compile_builtin(context,&prolite_builtin_user_defined,goal,next);
-		}
+			/*if (r == context->m_recursion)
+			{
+				// TODO: Tail call!
+			}*/
 
-		for (r = r->m_prev; r; r = r->m_prev)
-		{
-			if (r->m_pred == pred)
-				return compile_builtin(context,&prolite_builtin_user_defined,goal,next);
+			return goto_next(context,new_cfg(context),r->m_cfg);
 		}
 	}
 
 	context->m_recursion = &(compile_recursion_t){
 		.m_prev = context->m_recursion,
-		.m_pred = pred
+		.m_pred = pred,
+		.m_substs = context->m_substs,
+		.m_cfg = new_cfg(context)
 	};
 
 	cfg_t* c_end = NULL;
-	cfg_t* c = NULL;
 	for (const compile_clause_t* clause = pred->m_clauses; clause; clause = clause->m_next)
 	{
 		cfg_t* c1 = compile_head(context,goal,clause,next);
-		if (!c)
-			c = c1;
-		else if (c1)
-			goto_next(context,c,c1);
+		if (c1)
+			goto_next(context,context->m_recursion->m_cfg,c1);
 
 		if (context->m_flags & (FLAG_CUT | FLAG_THROW | FLAG_HALT))
 			break;
 
-		if (c && clause->m_next)
+		if (c1 && clause->m_next)
 		{
 			if (!c_end)
 				c_end = new_cfg(context);
 
-			add_branch(context,c,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
+			add_branch(context,context->m_recursion->m_cfg,FLAG_CUT | FLAG_THROW | FLAG_HALT,c_end);
 		}
 	}
 
-	if (c && c_end)
-		goto_next(context,c,c_end);
+	if (c_end)
+		goto_next(context,context->m_recursion->m_cfg,c_end);
 
-	if (c && pred->m_clauses->m_next)
-		cfg_simplify(context,c);
+	if (pred->m_clauses->m_next)
+		cfg_simplify(context,context->m_recursion->m_cfg);
+
+	if (context->m_recursion->m_cfg->m_entry_point->m_count)
+		c_end = context->m_recursion->m_cfg;
 
 	context->m_recursion = context->m_recursion->m_prev;
 
-	return c;
+	return c_end;
 }
 
 static cfg_t* compile_user_defined(compile_context_t* context, const continuation_t* goal)
 {
-	cfg_t* c = (*context->m_link_fn)(context,context->m_link_param,goal->m_term,goal->m_next);
-	if (!c)
-		c = compile_builtin(context,&prolite_builtin_user_defined,goal->m_term,goal->m_next);
-
-	return c;
+	return (*context->m_link_fn)(context,context->m_link_param,goal->m_term,goal->m_next);
 }
 
 static cfg_t* compile_not_proveable(compile_context_t* context, const continuation_t* goal)
@@ -1549,7 +1598,7 @@ static cfg_t* compile_type_test(compile_context_t* context, prolite_type_flags_t
 	cfg_t* c = new_cfg(context);
 	opcode_t* ops = append_opcodes(context,c->m_tail,8);
 	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_PUSH_CONST };
-	(ops++)->m_term.m_u64val = types;
+	(ops++)->m_term.m_dval = types;
 	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_PUSH_TERM_REF };
 	(ops++)->m_term.m_pval = t;
 	(ops++)->m_opcode = (op_arg_t){ .m_op = OP_BUILTIN, .m_arg = 2 };
@@ -1952,6 +2001,7 @@ static const char* builtinName(const builtin_fn_t fn)
 	} bns[] = {
 		#include "builtin_functions.h"
 
+		{ &prolite_builtin_continue, "continue" },
 		{ &prolite_builtin_call, "call" },
 		{ &prolite_builtin_callN, "callN" },
 		{ &prolite_builtin_catch, "catch" },
@@ -2079,7 +2129,7 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_PUSH_CONST:
-			fprintf(f,"Push\\ Const\\ %"PRIx64,blk->m_ops[i+1].m_term.m_u64val);
+			fprintf(f,"Push\\ Const\\ %g",blk->m_ops[i+1].m_term.m_dval);
 			break;
 
 		case OP_PUSH_NULL:
@@ -2116,15 +2166,15 @@ static void dumpCFGBlock(context_t* context, const cfg_block_t* blk, FILE* f)
 			break;
 
 		case OP_MOV_REG:
-			fprintf(f,"$%zu\\ =\\ $%zu",(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			fprintf(f,"$%zu\\ =\\ $%zu",(size_t)blk->m_ops[i].m_opcode.m_arg,(size_t)blk->m_ops[i+1].m_term.m_u64val);
 			break;
 
 		case OP_ADD_REG:
-			fprintf(f,"$%zu\\ =\\ $%zu\\ +\\ $%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			fprintf(f,"$%zu\\ =\\ $%zu\\ +\\ $%zu",(size_t)blk->m_ops[i].m_opcode.m_arg,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
 			break;
 
 		case OP_SUB_REG:
-			fprintf(f,"$%zu\\ =\\ $%zu\\ -\\ $%zu",(size_t)blk->m_ops[i+3].m_term.m_u64val,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
+			fprintf(f,"$%zu\\ =\\ $%zu\\ -\\ $%zu",(size_t)blk->m_ops[i].m_opcode.m_arg,(size_t)blk->m_ops[i+1].m_term.m_u64val,(size_t)blk->m_ops[i+2].m_term.m_u64val);
 			break;
 
 		default:
@@ -2241,7 +2291,7 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			break;
 
 		case OP_PUSH_CONST:
-			fprintf(f,"push const %" PRIx64 ";\n",code[1].m_term.m_u64val);
+			fprintf(f,"push const %g;\n",code[1].m_term.m_dval);
 			break;
 
 		case OP_PUSH_NULL:
@@ -2279,15 +2329,15 @@ void dumpTrace(context_t* context, const opcode_t* code, size_t count, const cha
 			break;
 
 		case OP_MOV_REG:
-			fprintf(f,"$%zu = $%zu;\n",(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			fprintf(f,"$%zu = $%zu;\n",(size_t)code->m_opcode.m_arg,(size_t)code[1].m_term.m_u64val);
 			break;
 
 		case OP_ADD_REG:
-			fprintf(f,"$%zu = $%zu + $%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			fprintf(f,"$%zu = $%zu + $%zu;\n",(size_t)code->m_opcode.m_arg,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
 			break;
 
 		case OP_SUB_REG:
-			fprintf(f,"$%zu = $%zu - $%zu;\n",(size_t)code[3].m_term.m_u64val,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
+			fprintf(f,"$%zu = $%zu - $%zu;\n",(size_t)code->m_opcode.m_arg,(size_t)code[1].m_term.m_u64val,(size_t)code[2].m_term.m_u64val);
 			break;
 
 		default:
@@ -2376,15 +2426,19 @@ static void jit_goal(context_t* context, const continuation_t* goal)
 
 }
 
+PROLITE_EXPORT void prolite_builtin_continue(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[])
+{
+	assert(!gosub);
+	assert(argc == 1);
+
+	builtin_gosub(context,argv[0]);
+}
+
 static cfg_t* jit_gosub(compile_context_t* context, const continuation_t* goal)
 {
 	assert(!goal->m_next);
 
-	cfg_t* c = new_cfg(context);
-	opcode_t* ops = append_opcodes(context,c->m_entry_point,1);
-	ops->m_opcode = (op_arg_t){ .m_op = OP_CONTINUE };
-
-	return c;
+	return compile_builtin(context,&prolite_builtin_continue,goal->m_term,NULL);
 }
 
 static int jit_can_call(context_t* context, const term_t* t)

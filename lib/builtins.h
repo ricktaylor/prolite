@@ -6,6 +6,7 @@ PROLITE_EXPORT void prolite_builtin_##f(context_t* context, const term_t* gosub,
 
 #include "builtin_functions.h"
 
+PROLITE_EXPORT void prolite_builtin_continue(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_call(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_callN(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);
 PROLITE_EXPORT void prolite_builtin_catch(context_t* context, const term_t* gosub, size_t argc, const term_t* argv[]);

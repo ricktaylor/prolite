@@ -587,7 +587,7 @@ static cfg_t* inline_call(compile_context_t* context, void* param, const term_t*
 
 #include "write_term.h"
 
-static cfg_t* compile_continue(compile_context_t* context, const continuation_t* goal)
+/*static cfg_t* compile_continue(compile_context_t* context, const continuation_t* goal)
 {
 	assert(!goal->m_next);
 
@@ -619,7 +619,7 @@ static void compile_statics(void* param, predicate_base_t* p)
 			compile_goal(context->m_context,&inline_call,context,clause->m_body,clause->m_var_count,&(continuation_t){ .m_shim = &compile_continue });
 		}
 	}
-}
+}*/
 
 static int consult(context_t* context, const term_t* filename)
 {
@@ -642,7 +642,7 @@ static int consult(context_t* context, const term_t* filename)
 	load_file(&cc,filename,NULL);
 	if (!cc.m_failed)
 	{
-		predicate_map_enum(&cc.m_predicates,&compile_statics,&cc);
+		//predicate_map_enum(&cc.m_predicates,&compile_statics,&cc);
 
 		// TODO: We now have a map of predicates...
 

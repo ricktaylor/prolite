@@ -96,6 +96,7 @@ typedef struct compile_clause
 	const term_t*          m_head;
 	const term_t*          m_body;
 	size_t                 m_var_count;
+	size_t                 m_param_count;
 
 } compile_clause_t;
 
@@ -113,6 +114,8 @@ typedef struct compile_recursion
 {
 	struct compile_recursion*  m_prev;
 	const compile_predicate_t* m_pred;
+	const substitutions_t*     m_substs;
+	cfg_t*                     m_cfg;
 } compile_recursion_t;
 
 struct compile_context;

@@ -82,6 +82,6 @@
 #define PACK_COMPOUND_BUILTIN(f,a)  (PACK_TYPE(prolite_compound) | PACK_MANT_48(((UINT64_C(0x4000) | ((uint16_t)(a) & MAX_ARITY_BUILTIN)) << 32) | (uint32_t)(BUILTIN_ATOM_##f)))
 #define PACK_COMPOUND_BUILTIN_MASK  (PACK_TYPE(prolite_compound) | PACK_MANT_48(UINT64_C(0x4000FFFFFFFF)))
 
-#define MAX_VAR_INDEX     ((UINT64_C(1) << 46) - 1)
+#define MAX_VAR_INDEX     ((UINT64_C(1) << 47) - 1)
 
 #endif /* PACKED_TYPES_H */
