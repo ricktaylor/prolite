@@ -1,11 +1,5 @@
-debug/
-autom4te.cache/
-build-aux/
-m4/
-aclocal.m4
-autoheader_dummy.*
-configure
-Makefile.in
+Cargo.lock
 
-.vscode/
 *.pdf
+
+target/
