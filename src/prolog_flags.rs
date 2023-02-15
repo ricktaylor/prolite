@@ -12,17 +12,17 @@ pub enum UnknownFlags {
 }
 
 pub struct Flags {
-    char_conversion: bool,
-    double_quotes: QuoteFlags,
-    back_quotes: QuoteFlags,
-    unknown: UnknownFlags,
-    debug: bool,
-    colon_sets_calling_context: bool
+    pub char_conversion: bool,
+    pub double_quotes: QuoteFlags,
+    pub back_quotes: QuoteFlags,
+    pub unknown: UnknownFlags,
+    pub debug: bool,
+    pub colon_sets_calling_context: bool
 }
 
 impl Default for Flags {
     fn default() -> Self {
-        Flags {
+        Self {
             char_conversion: true,
             double_quotes: QuoteFlags::Chars,
             back_quotes: QuoteFlags::Codes,
