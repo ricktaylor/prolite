@@ -154,11 +154,69 @@ impl<'a> Parser<'a> {
 
     }
 
+    fn list(&mut self) -> Result<Term,Error> {
+        let mut terms = Vec::new();
+        let mut token = self.lexer.next()?;
+        if ! matches!(token,Token::CloseL) {
+            loop {
+                let (term,next) = self.arg(token)?;
+                terms.push(term);
+                token = next;
+
+                match token {
+                    Token::Comma => token = self.lexer.next()?,
+                    _ => break
+                }
+            }
+        }
+
+        let mut list = match token {
+            Token::Bar => {
+                let (term,next) = self.arg(token)?;
+                token = next;
+                term
+            },
+            _ => Term::Atom("[]".to_string())
+        };
+
+        if ! matches!(token,Token::CloseL) {
+            return Err(Error::MissingClose(']'));
+        }
+
+        loop {
+            match terms.pop() {
+                None => break,
+                Some(t) => {
+                    let mut c = Compound::new(".",t);
+                    c.params.push(list);
+                    list = Term::Compound(c);
+                }
+            }
+        }
+        Ok(list)
+    }
+
     fn quoted(&mut self, flags: &QuoteFlags, s: String, max_precedence: u16) -> Result<(Term,Token,u16),Error> {
         match flags {
             QuoteFlags::Atom => self.name(&s,max_precedence),
-            QuoteFlags::Chars => todo!(),
-            QuoteFlags::Codes => todo!()
+            QuoteFlags::Chars => {
+                let mut list = Term::Atom("[]".to_string());
+                for c in s.chars().rev() {
+                    let mut c = Compound::new(".",Term::Atom(c.to_string()));
+                    c.params.push(list);
+                    list = Term::Compound(c);
+                }
+                Ok((list,self.lexer.next()?,0))
+            },
+            QuoteFlags::Codes => {
+                let mut list = Term::Atom("[]".to_string());
+                for c in s.chars().rev() {
+                    let mut c = Compound::new(".",Term::Integer(c as i64));
+                    c.params.push(list);
+                    list = Term::Compound(c);
+                }
+                Ok((list,self.lexer.next()?,0))
+            }
         }
     }
 
@@ -204,7 +262,7 @@ impl<'a> Parser<'a> {
                     _ => return Err(Error::MissingClose('}'))
                 }
             },
-            Token::OpenL => todo!(),
+            Token::OpenL => (self.list()?,self.lexer.next()?,0),
             _ => return Err(Error::UnexpectedToken(token))
         };
 
