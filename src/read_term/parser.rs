@@ -99,10 +99,10 @@ impl<'a> Parser<'a> {
                         _ => Ok((Term::Atom(s.clone()),next))
                     }
                 },
-                _ => self.next(token,999)
+                _ => self.term(token,999)
             }
         } else {
-            self.next(token,999)
+            self.term(token,999)
         }
     }
 
@@ -140,11 +140,11 @@ impl<'a> Parser<'a> {
             _ => {
                 match operators::lookup_prefix_op(&self.context.operators,s) {
                     Some(&Operator::fx(p)) if p <= max_precedence => {
-                        let (term,next) = self.next(next,p-1)?;
+                        let (term,next) = self.term(next,p-1)?;
                         Ok((Term::Compound(Compound::new(s,term)),next,p))
                     },
                     Some(&Operator::fy(p)) if p <= max_precedence => {
-                        let (term,next) = self.next(next,p)?;
+                        let (term,next) = self.term(next,p)?;
                         Ok((Term::Compound(Compound::new(s,term)),next,p))
                     },
                     _ => Ok((Term::Atom(s.to_string()),next,0))
@@ -233,7 +233,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn next(&mut self, token: Token, max_precedence: u16) -> Result<(Term,Token),Error> {
+    fn term(&mut self, token: Token, max_precedence: u16) -> Result<(Term,Token),Error> {
         let (mut term,mut next,precedence) = match token {
             Token::Eof => return Err(Error::UnexpectedEof),
             Token::Name(s) => self.name(&s,max_precedence)?,
@@ -246,7 +246,7 @@ impl<'a> Parser<'a> {
             Token::Open |
             Token::OpenCt => {
                 let next = self.lexer.next()?;
-                let (term,next) = self.next(next,1201)?;
+                let (term,next) = self.term(next,1201)?;
                 match next {
                     Token::Close => (term,next,0),
                     Token::Eof => return Err(Error::UnexpectedEof),
@@ -255,7 +255,7 @@ impl<'a> Parser<'a> {
             },
             Token::OpenC => {
                 let next = self.lexer.next()?;
-                let (term,next) = self.next(next,1201)?;
+                let (term,next) = self.term(next,1201)?;
                 match next {
                     Token::CloseC => (Term::Compound(Compound::new("{}",term)),next,0),
                     Token::Eof => return Err(Error::UnexpectedEof),
@@ -290,7 +290,7 @@ impl<'a> Parser<'a> {
             };
 
             next = if arity == 2 {
-                let (term,next) = self.next(next,r)?;
+                let (term,next) = self.term(next,r)?;
                 c.params.push(term);
                 next
             } else {
@@ -301,17 +301,16 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn next_term(&mut self) -> Result<Option<Term>,Error> {
+    pub fn next(&mut self) -> Result<Option<Term>,Error> {
         let t = self.lexer.next()?;
         if let Token::Eof = t {
             return Ok(None);
         }
 
-        let (term,next) = self.next(t,1201)?;
+        let (term,next) = self.term(t,1201)?;
         match next {
             Token::End => Ok(Some(term)),
             _ => Err(Error::MissingDot)
         }
     }
 }
-
