@@ -4,6 +4,7 @@ pub enum Error {
 	BadFloat(String),
 	InvalidChar(char),
 	Unexpected(char),
+	MissingDigit,
     IOError(std::io::Error)
 }
 
@@ -18,10 +19,7 @@ pub enum Token {
     Eof,
 	Name(String),
 	Var(String),
-	Int(String),
-	BinaryInt(String),
-	OctalInt(String),
-	HexInt(String),
+	Int(String,u32),
 	CharCode(char),
 	Float(String),
 	DoubleQuotedList(String),
@@ -174,14 +172,23 @@ impl<'a> Lexer<'a> {
 				Char::Digit('0') => {
 					match self.peek_char()? {
 						Char::Meta('\'') => todo!(),
-						Char::SmallLetter('b') => todo!(),
-						Char::SmallLetter('o') => todo!(),
-						Char::SmallLetter('x') => todo!(),
+						Char::SmallLetter('b') => {
+							self.next_char()?;
+							return self.integral('1',2);
+						},
+						Char::SmallLetter('o') => {
+							self.next_char()?;
+							return self.integral('7',8);
+						},
+						Char::SmallLetter('x') => {
+							self.next_char()?;
+							return self.integral('9',16);
+						},
 						Char::Digit(c) => {
 							self.next_char()?;
 							return self.numeric(c);
 						},
-						_ => return Ok(Token::Int('0'.to_string()))
+						_ => return Ok(Token::Int('0'.to_string(),10))
 					}
 				},
 				Char::Digit(c) => return self.numeric(c),
@@ -303,6 +310,24 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
+	fn integral(&mut self, max: char, radix: u32) -> Result<Token,Error> {
+		let mut t = String::new();
+		loop {
+			match self.peek_char()? {
+				Char::Digit(c) if c <= max => t.push(c),
+				Char::SmallLetter(c) if radix == 16 && ('a'..='f').contains(&c) => t.push(c),
+				_ => break
+			}
+			self.next_char()?;
+		}
+
+		if t.is_empty() {
+			Err(Error::MissingDigit)
+		} else {
+			Ok(Token::Int(t,radix))
+		}
+	}
+
 	fn numeric(&mut self, c: char) -> Result<Token,Error> {
 		let mut t = c.to_string();
 		loop {
@@ -312,7 +337,7 @@ impl<'a> Lexer<'a> {
 					match self.peek_char()? {
 						Char::Solo('%') |
 						Char::Layout(_) |
-						Char::Eof => return Ok(Token::Int(t)),
+						Char::Eof => return Ok(Token::Int(t,10)),
 						_ => {}
 					}
 					self.next_char()?;
@@ -369,7 +394,7 @@ impl<'a> Lexer<'a> {
 						self.next_char()?;
 					}
 				},
-				_ => return Ok(Token::Int(t))
+				_ => return Ok(Token::Int(t,10))
 			}
 			self.next_char()?;
 		}
@@ -408,7 +433,7 @@ impl<'a> Lexer<'a> {
 						Some('n') => t.push('\n'),
 						Some('v') => t.push('\x0B'),
 						Some('x') => todo!(),
-						Some(c) if matches!(c,'0'..='7') => todo!(),
+						Some(c) if ('0'..='7').contains(&c) => todo!(),
 						Some(c) => return Err(Error::BadEscape(String::from_iter(vec!['\\',c]))),
 						None => return Err(Error::BadEscape("\\".to_string()))
 					}

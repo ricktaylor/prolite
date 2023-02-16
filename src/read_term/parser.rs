@@ -1,6 +1,8 @@
+use std::str::FromStr;
 use super::lexer::*;
 use super::super::operators;
 use super::super::operators::Operator;
+use super::super::prolog_flags::QuoteFlags;
 
 #[derive(Debug)]
 pub struct Compound {
@@ -28,23 +30,46 @@ pub enum Term {
     CharCodes(String)
 }
 
+#[allow(clippy::enum_variant_names)]
 pub enum Error {
-	LexErr(super::lexer::Error),
+	LexerError(super::lexer::Error),
     MissingDot,
     UnexpectedEof,
-    MissingClose,
-    UnexpectedToken
+    MissingClose(char),
+    UnexpectedToken(Token),
+    ParseIntError(std::num::ParseIntError),
+    ParseFloatError(std::num::ParseFloatError)
 }
 
 impl From<super::lexer::Error> for Error {
     fn from(e: super::lexer::Error) -> Self {
-        Error::LexErr(e)
+        Error::LexerError(e)
+    }
+}
+
+impl From<std::num::ParseIntError> for Error {
+    fn from(e: std::num::ParseIntError) -> Self {
+        Error::ParseIntError(e)
+    }
+}
+
+impl From<std::num::ParseFloatError> for Error {
+    fn from(e: std::num::ParseFloatError) -> Self {
+        Error::ParseFloatError(e)
     }
 }
 
 pub struct Parser<'a> {
 	context: &'a super::Context,
     lexer: Lexer<'a>
+}
+
+fn integer(s: String, radix: u32) -> Result<Term,Error> {
+    Ok(Term::Integer(i64::from_str_radix(&s,radix)?))
+}
+
+fn float(s: String) -> Result<Term,Error> {
+    Ok(Term::Float(f64::from_str(&s)?))
 }
 
 impl<'a> Parser<'a> {
@@ -54,10 +79,6 @@ impl<'a> Parser<'a> {
             lexer: Lexer::new(stream,context)
 		}
 	}
-
-    fn number(&self, s: &str, negative: bool) -> Result<(Term,Token,u16),Error> {
-        todo!()
-    }
 
     fn arg(&mut self, token: Token) -> Result<(Term,Token),Error> {
         if let Token::Name(s) = &token {
@@ -71,19 +92,10 @@ impl<'a> Parser<'a> {
                 Some(&Operator::yf(p)) if p > 999 => {
                     let next = self.lexer.next()?;
                     match next {
-                        Token::OpenCt => {
-                            let (term,next,p) = self.compound(s)?;
-                            Ok((term,next))
-                        },
-                        Token::Int(_) |
-                        Token::BinaryInt(_) |
-                        Token::OctalInt(_) |
-                        Token::HexInt(_) |
-                        Token::CharCode(_) |
-                        Token::Float(_) if s == "-" => {
-                            let (term,next,p) = self.number(s,true)?;
-                            Ok((term,next))
-                        },
+                        Token::OpenCt => Ok((self.compound(s)?,self.lexer.next()?)),
+                        Token::Int(t,r) if s == "-" => Ok((integer(format!("{}{}",s,t),r)?,self.lexer.next()?)),
+                        Token::CharCode(c) if s == "-" => Ok((Term::Integer(-(c as i64)),self.lexer.next()?)),
+                        Token::Float(t) if s == "-" => Ok((float(format!("{}{}",s,t))?,self.lexer.next()?)),
                         _ => Ok((Term::Atom(s.clone()),next))
                     }
                 },
@@ -94,7 +106,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn compound(&mut self, s: &str) -> Result<(Term,Token,u16),Error> {
+    fn compound(&mut self, s: &str) -> Result<Term,Error> {
         let mut c = Compound{
             functor: s.to_string(),
             params: Vec::new()
@@ -110,8 +122,8 @@ impl<'a> Parser<'a> {
 
             match next {
                 Token::Comma => {},
-                Token::Close => return Ok((Term::Compound(c),self.lexer.next()?,0)),
-                _ => return Err(Error::MissingClose)
+                Token::Close => return Ok(Term::Compound(c)),
+                _ => return Err(Error::MissingClose(')'))
             }
         }
     }
@@ -119,13 +131,10 @@ impl<'a> Parser<'a> {
     fn name(&mut self, s: &str, max_precedence: u16) -> Result<(Term,Token,u16),Error> {
         let next = self.lexer.next()?;
         match next {
-            Token::OpenCt => self.compound(s),
-            Token::Int(_) |
-            Token::BinaryInt(_) |
-            Token::OctalInt(_) |
-            Token::HexInt(_) |
-            Token::CharCode(_) |
-            Token::Float(_) if s == "-" => self.number(s,true),
+            Token::OpenCt => Ok((self.compound(s)?,self.lexer.next()?,0)),
+            Token::Int(t,r) if s == "-" => Ok((integer(format!("{}{}",s,t),r)?,self.lexer.next()?,0)),
+            Token::CharCode(c) if s == "-" => Ok((Term::Integer(-(c as i64)),self.lexer.next()?,0)),
+            Token::Float(t) if s == "-" => Ok((float(format!("{}{}",s,t))?,self.lexer.next()?,0)),
             Token::Comma |
             Token::Close => Ok((Term::Atom(s.to_string()),next,0)),
             _ => {
@@ -145,6 +154,14 @@ impl<'a> Parser<'a> {
 
     }
 
+    fn quoted(&mut self, flags: &QuoteFlags, s: String, max_precedence: u16) -> Result<(Term,Token,u16),Error> {
+        match flags {
+            QuoteFlags::Atom => self.name(&s,max_precedence),
+            QuoteFlags::Chars => todo!(),
+            QuoteFlags::Codes => todo!()
+        }
+    }
+
     fn lookup_op(&self, s: &str, max_precedence: u16) -> (u16,u16,usize,bool) {
         match operators::lookup_op(&self.context.operators,s) {
             Some(&Operator::fx(p)) |
@@ -160,41 +177,36 @@ impl<'a> Parser<'a> {
 
     fn next(&mut self, token: Token, max_precedence: u16) -> Result<(Term,Token),Error> {
         let (mut term,mut next,precedence) = match token {
-            Token::Eof => Err(Error::UnexpectedEof),
-            Token::Name(s) => self.name(&s,max_precedence),
-            Token::Var(s) => Ok((Term::Var(s),self.lexer.next()?,0)),
-            Token::Int(_) => todo!(),
-            Token::BinaryInt(_) => todo!(),
-            Token::OctalInt(_) => todo!(),
-            Token::HexInt(_) => todo!(),
-            Token::CharCode(_) => todo!(),
-            Token::Float(_) => todo!(),
-            Token::DoubleQuotedList(s) if matches!(self.context.flags.double_quotes,super::super::prolog_flags::QuoteFlags::Atom) => self.name(&s,max_precedence), /* ISO/IEC 13211-1:1995/Cor.1:2007 */
-            Token::DoubleQuotedList(_) => todo!(),
-            Token::BackQuotedString(s) if matches!(self.context.flags.back_quotes,super::super::prolog_flags::QuoteFlags::Atom) => self.name(&s,max_precedence),
-            Token::BackQuotedString(_) => todo!(),
+            Token::Eof => return Err(Error::UnexpectedEof),
+            Token::Name(s) => self.name(&s,max_precedence)?,
+            Token::Var(s) => (Term::Var(s),self.lexer.next()?,0),
+            Token::Int(s,r) => (integer(s,r)?,self.lexer.next()?,0),
+            Token::CharCode(c) => (Term::Integer(c as i64),self.lexer.next()?,0),
+            Token::Float(s) => (float(s)?,self.lexer.next()?,0),
+            Token::DoubleQuotedList(s) => self.quoted(&self.context.flags.double_quotes,s,max_precedence)?, /* ISO/IEC 13211-1:1995/Cor.1:2007 */
+            Token::BackQuotedString(s) => self.quoted(&self.context.flags.back_quotes,s,max_precedence)?,
             Token::Open |
             Token::OpenCt => {
                 let next = self.lexer.next()?;
                 let (term,next) = self.next(next,1201)?;
                 match next {
-                    Token::Close => Ok((term,next,0)),
-                    Token::Eof => Err(Error::UnexpectedEof),
-                    _ => Err(Error::MissingClose)
+                    Token::Close => (term,next,0),
+                    Token::Eof => return Err(Error::UnexpectedEof),
+                    _ => return Err(Error::MissingClose(')'))
                 }
             },
             Token::OpenC => {
                 let next = self.lexer.next()?;
                 let (term,next) = self.next(next,1201)?;
                 match next {
-                    Token::CloseC => Ok((Term::Compound(Compound::new("{}",term)),next,0)),
-                    Token::Eof => Err(Error::UnexpectedEof),
-                    _ => Err(Error::MissingClose)
+                    Token::CloseC => (Term::Compound(Compound::new("{}",term)),next,0),
+                    Token::Eof => return Err(Error::UnexpectedEof),
+                    _ => return Err(Error::MissingClose('}'))
                 }
             },
             Token::OpenL => todo!(),
-            _ => Err(Error::UnexpectedToken)
-        }?;
+            _ => return Err(Error::UnexpectedToken(token))
+        };
 
         /* This is precedence climbing, if you're interested */
         loop {
