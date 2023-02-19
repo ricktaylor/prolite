@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
-use super::super::operators;
-use super::super::operators::Operator;
+use super::super::operators::*;
 use super::super::prolog_flags::QuoteFlags;
 use super::super::term::*;
 use super::*;
@@ -37,6 +36,29 @@ impl From<std::num::ParseFloatError> for Error {
 pub struct Parser<'a> {
 	context: &'a Context,
     lexer: Lexer<'a>
+
+fn lookup_op<'a>(table: &'a OperatorTable, name: &str) -> Option<&'a Operator> {
+    let r= table.get(name)?;
+    for o in r.iter() {
+        if let Operator::fx(_) | Operator::fy(_) = o {
+            continue
+        } else {
+            return Some(o)
+        }
+    }
+    r.first()
+}
+
+fn lookup_prefix_op<'a>(table: &'a OperatorTable, name: &str) -> Option<&'a Operator> {
+    let r= table.get(name)?;
+    for o in r.iter() {
+        if let Operator::fx(_) | Operator::fy(_) = o {
+            return Some(o)
+        } else {
+            continue
+        }
+    }
+    r.first()
 }
 
 fn integer(s: String, radix: u32) -> Result<Term,Error> {
@@ -57,7 +79,7 @@ impl<'a> Parser<'a> {
 
     fn arg(&mut self, token: Token) -> Result<(Term,Token),Error> {
         if let Token::Name(s) = &token {
-            match operators::lookup_prefix_op(&self.context.operators,s) {
+            match lookup_op(&self.context.operators,s) {
                 Some(&Operator::fx(p)) |
                 Some(&Operator::fy(p)) |
                 Some(&Operator::xfx(p)) |
@@ -113,7 +135,7 @@ impl<'a> Parser<'a> {
             Token::Comma |
             Token::Close => Ok((Term::Atom(s.to_string()),next,0)),
             _ => {
-                match operators::lookup_prefix_op(&self.context.operators,s) {
+                match lookup_prefix_op(&self.context.operators,s) {
                     Some(&Operator::fx(p)) if p <= max_precedence => {
                         let (term,next) = self.term(next,p-1)?;
                         Ok((Term::new_compound(s,vec![term]),next,p))
@@ -185,7 +207,7 @@ impl<'a> Parser<'a> {
     }
 
     fn lookup_op(&self, s: &str, max_precedence: u16) -> (u16,u16,usize,bool) {
-        match operators::lookup_op(&self.context.operators,s) {
+        match lookup_op(&self.context.operators,s) {
             Some(&Operator::fx(p)) |
             Some(&Operator::fy(p)) => (0,0,1,p > max_precedence),
             Some(&Operator::xfx(p)) => (p-1,p-1,2,p > max_precedence),
