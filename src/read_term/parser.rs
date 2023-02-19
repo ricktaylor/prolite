@@ -33,10 +33,6 @@ impl From<std::num::ParseFloatError> for Error {
     }
 }
 
-pub struct Parser<'a> {
-	context: &'a Context,
-    lexer: Lexer<'a>
-
 fn lookup_op<'a>(table: &'a OperatorTable, name: &str) -> Option<&'a Operator> {
     let r= table.get(name)?;
     for o in r.iter() {
@@ -61,12 +57,17 @@ fn lookup_prefix_op<'a>(table: &'a OperatorTable, name: &str) -> Option<&'a Oper
     r.first()
 }
 
-fn integer(s: String, radix: u32) -> Result<Term,Error> {
-    Ok(Term::Integer(i64::from_str_radix(&s,radix)?))
+fn parse_integer(s: &str, radix: u32) -> Result<Term,Error> {
+    Ok(Term::Integer(i64::from_str_radix(s,radix)?))
 }
 
-fn float(s: String) -> Result<Term,Error> {
-    Ok(Term::Float(f64::from_str(&s)?))
+fn parse_float(s: &str) -> Result<Term,Error> {
+    Ok(Term::Float(f64::from_str(s)?))
+}
+
+pub struct Parser<'a> {
+    pub lexer: Lexer<'a>,
+	context: &'a Context
 }
 
 impl<'a> Parser<'a> {
@@ -90,9 +91,9 @@ impl<'a> Parser<'a> {
                     let next = self.lexer.next()?;
                     match next {
                         Token::OpenCt => Ok((self.compound(s)?,self.lexer.next()?)),
-                        Token::Int(t,r) if s == "-" => Ok((integer(format!("{}{}",s,t),r)?,self.lexer.next()?)),
+                        Token::Int(t,r) if s == "-" => Ok((parse_integer(&format!("{}{}",s,t),r)?,self.lexer.next()?)),
                         Token::CharCode(c) if s == "-" => Ok((Term::Integer(-(c as i64)),self.lexer.next()?)),
-                        Token::Float(t) if s == "-" => Ok((float(format!("{}{}",s,t))?,self.lexer.next()?)),
+                        Token::Float(t) if s == "-" => Ok((parse_float(&format!("{}{}",s,t))?,self.lexer.next()?)),
                         _ => Ok((Term::Atom(s.clone()),next))
                     }
                 },
@@ -129,9 +130,9 @@ impl<'a> Parser<'a> {
         let next = self.lexer.next()?;
         match next {
             Token::OpenCt => Ok((self.compound(s)?,self.lexer.next()?,0)),
-            Token::Int(t,r) if s == "-" => Ok((integer(format!("{}{}",s,t),r)?,self.lexer.next()?,0)),
+            Token::Int(t,r) if s == "-" => Ok((parse_integer(&format!("{}{}",s,t),r)?,self.lexer.next()?,0)),
             Token::CharCode(c) if s == "-" => Ok((Term::Integer(-(c as i64)),self.lexer.next()?,0)),
-            Token::Float(t) if s == "-" => Ok((float(format!("{}{}",s,t))?,self.lexer.next()?,0)),
+            Token::Float(t) if s == "-" => Ok((parse_float(&format!("{}{}",s,t))?,self.lexer.next()?,0)),
             Token::Comma |
             Token::Close => Ok((Term::Atom(s.to_string()),next,0)),
             _ => {
@@ -223,9 +224,9 @@ impl<'a> Parser<'a> {
         let (mut term,mut next,precedence) = match token {
             Token::Name(s) => self.name(&s,max_precedence)?,
             Token::Var(s) => (Term::Var(s),self.lexer.next()?,0),
-            Token::Int(s,r) => (integer(s,r)?,self.lexer.next()?,0),
+            Token::Int(s,r) => (parse_integer(&s,r)?,self.lexer.next()?,0),
             Token::CharCode(c) => (Term::Integer(c as i64),self.lexer.next()?,0),
-            Token::Float(s) => (float(s)?,self.lexer.next()?,0),
+            Token::Float(s) => (parse_float(&s)?,self.lexer.next()?,0),
             Token::DoubleQuotedList(s) => self.quoted(&self.context.flags.double_quotes,s,max_precedence)?, /* ISO/IEC 13211-1:1995/Cor.1:2007 */
             Token::BackQuotedString(s) => self.quoted(&self.context.flags.back_quotes,s,max_precedence)?,
             Token::Open |

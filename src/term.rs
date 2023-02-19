@@ -1,4 +1,3 @@
-
 #[derive(Debug)]
 pub struct Compound {
     pub functor: String,

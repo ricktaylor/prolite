@@ -40,7 +40,7 @@ pub enum Token {
 }
 
 pub struct Lexer<'a> {
-	stream: &'a dyn Stream,
+	pub stream: &'a dyn Stream,
 	context: &'a Context
 }
 

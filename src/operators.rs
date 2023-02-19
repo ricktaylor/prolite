@@ -60,27 +60,3 @@ impl Operator {
     }
 
 }
-
-pub fn lookup_op<'a>(table: &'a OperatorTable, name: &str) -> Option<&'a Operator> {
-    let r= table.get(name)?;
-    for o in r.iter() {
-        if let Operator::fx(_) | Operator::fy(_) = o {
-            continue
-        } else {
-            return Some(o)
-        }
-    }
-    r.first()
-}
-
-pub fn lookup_prefix_op<'a>(table: &'a OperatorTable, name: &str) -> Option<&'a Operator> {
-    let r= table.get(name)?;
-    for o in r.iter() {
-        if let Operator::fx(_) | Operator::fy(_) = o {
-            return Some(o)
-        } else {
-            continue
-        }
-    }
-    r.first()
-}
