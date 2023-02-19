@@ -240,11 +240,12 @@ impl<'a> Lexer<'a> {
 	}
 
 	fn classify_char(&self, c: Option<char>) -> Result<Char,Error> {
-		if let Some(c) = c {
-			match c {
+		match c {
+			None => Ok(Char::Eof),
+			Some(c) => match c {
 				' ' |
 				'\t' |
-				'\n' => return Ok(Char::Layout(c)),
+				'\n' => Ok(Char::Layout(c)),
 				'!' |
 				'(' |
 				')' |
@@ -255,15 +256,15 @@ impl<'a> Lexer<'a> {
 				'{' |
 				'}' |
 				'|' |
-				'%' => return Ok(Char::Solo(c)),
+				'%' => Ok(Char::Solo(c)),
 				'\\' |
 				'\'' |
 				'"' |
-				'`' => return Ok(Char::Meta(c)),
-				'0' ..= '9' => return Ok(Char::Digit(c)),
-				'_' => return Ok(Char::Underscore),
-				'A' ..= 'Z' => return Ok(Char::CapitalLetter(c)),
-				'a' ..= 'z' => return Ok(Char::SmallLetter(c)),
+				'`' => Ok(Char::Meta(c)),
+				'0' ..= '9' => Ok(Char::Digit(c)),
+				'_' => Ok(Char::Underscore),
+				'A' ..= 'Z' => Ok(Char::CapitalLetter(c)),
+				'a' ..= 'z' => Ok(Char::SmallLetter(c)),
 				'#' |
 				'$' |
 				'&' |
@@ -279,11 +280,10 @@ impl<'a> Lexer<'a> {
 				'?' |
 				'@' |
 				'^' |
-				'~' => return Ok(Char::Graphic(c)),
-				_ => return Err(Error::InvalidChar(c))
+				'~' => Ok(Char::Graphic(c)),
+				_ => Err(Error::InvalidChar(c))
 			}
 		}
-		Ok(Char::Eof)
 	}
 
 	fn next_char(&mut self) -> Result<Char,Error> {
