@@ -1,21 +1,19 @@
-use std::collections::HashMap;
-use std::default::Default;
-
-pub struct Context {
-    flags: super::prolog_flags::Flags,
-    operators: super::operators::OperatorTable,
-    char_conversion: HashMap<char,char>
-}
-
-impl Default for Context {
-    fn default() -> Self {
-        Self {
-            flags: Default::default(),
-            operators: super::operators::Operator::default_table(),
-            char_conversion: HashMap::new()
-        }
-    }
-}
+use super::context::Context;
 
 mod lexer;
 mod parser;
+
+pub enum StreamError {
+    IOError(std::io::Error)
+}
+
+impl From<std::io::Error> for StreamError {
+    fn from(e: std::io::Error) -> Self {
+        StreamError::IOError(e)
+    }
+}
+
+pub trait Stream {
+	fn get(&self) -> Result<Option<char>,StreamError>;
+	fn peek(&self) -> Result<Option<char>,StreamError>;
+}

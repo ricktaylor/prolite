@@ -1,49 +1,24 @@
 use std::str::FromStr;
-use super::lexer::*;
+
 use super::super::operators;
 use super::super::operators::Operator;
 use super::super::prolog_flags::QuoteFlags;
-
-#[derive(Debug)]
-pub struct Compound {
-    functor: String,
-    params: Vec<Term>
-}
-
-impl Compound {
-    pub fn new(functor: &str, term: Term) -> Self {
-		Self {
-			functor: functor.to_string(),
-            params: vec![term]
-		}
-	}
-}
-
-#[derive(Debug)]
-pub enum Term {
-    Integer(i64),
-    Float(f64),
-    Var(String),
-    Atom(String),
-    Compound(Compound),
-    Chars(String),
-    CharCodes(String)
-}
+use super::super::term::*;
+use super::*;
+use lexer::*;
 
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
-	LexerError(super::lexer::Error),
-    MissingDot,
-    UnexpectedEof,
-    MissingClose(char),
+	TokenError(lexer::Error),
+    Expected(char),
     UnexpectedToken(Token),
     ParseIntError(std::num::ParseIntError),
     ParseFloatError(std::num::ParseFloatError)
 }
 
-impl From<super::lexer::Error> for Error {
-    fn from(e: super::lexer::Error) -> Self {
-        Error::LexerError(e)
+impl From<lexer::Error> for Error {
+    fn from(e: lexer::Error) -> Self {
+        Error::TokenError(e)
     }
 }
 
@@ -60,7 +35,7 @@ impl From<std::num::ParseFloatError> for Error {
 }
 
 pub struct Parser<'a> {
-	context: &'a super::Context,
+	context: &'a Context,
     lexer: Lexer<'a>
 }
 
@@ -73,7 +48,7 @@ fn float(s: String) -> Result<Term,Error> {
 }
 
 impl<'a> Parser<'a> {
-	pub fn new(stream: &'a dyn Utf8Stream, context: &'a super::Context) -> Self {
+	pub fn new(context: &'a Context, stream: &'a dyn Stream) -> Self {
 		Self {
 			context,
             lexer: Lexer::new(stream,context)
@@ -109,21 +84,21 @@ impl<'a> Parser<'a> {
     fn compound(&mut self, s: &str) -> Result<Term,Error> {
         let mut c = Compound{
             functor: s.to_string(),
-            params: Vec::new()
+            args: Vec::new()
         };
 
         let mut next = self.lexer.next()?;
         loop {
             next = {
                 let (term,next) = self.arg(next)?;
-                c.params.push(term);
+                c.args.push(term);
                 next
             };
 
             match next {
                 Token::Comma => {},
                 Token::Close => return Ok(Term::Compound(c)),
-                _ => return Err(Error::MissingClose(')'))
+                _ => return Err(Error::Expected(')'))
             }
         }
     }
@@ -141,11 +116,11 @@ impl<'a> Parser<'a> {
                 match operators::lookup_prefix_op(&self.context.operators,s) {
                     Some(&Operator::fx(p)) if p <= max_precedence => {
                         let (term,next) = self.term(next,p-1)?;
-                        Ok((Term::Compound(Compound::new(s,term)),next,p))
+                        Ok((Term::new_compound(s,vec![term]),next,p))
                     },
                     Some(&Operator::fy(p)) if p <= max_precedence => {
                         let (term,next) = self.term(next,p)?;
-                        Ok((Term::Compound(Compound::new(s,term)),next,p))
+                        Ok((Term::new_compound(s,vec![term]),next,p))
                     },
                     _ => Ok((Term::Atom(s.to_string()),next,0))
                 }
@@ -180,18 +155,11 @@ impl<'a> Parser<'a> {
         };
 
         if ! matches!(token,Token::CloseL) {
-            return Err(Error::MissingClose(']'));
+            return Err(Error::Expected(']'));
         }
 
-        loop {
-            match terms.pop() {
-                None => break,
-                Some(t) => {
-                    let mut c = Compound::new(".",t);
-                    c.params.push(list);
-                    list = Term::Compound(c);
-                }
-            }
+        while let Some(t) = terms.pop() {
+            list = Term::new_compound(".",vec![t,list]);
         }
         Ok(list)
     }
@@ -202,18 +170,14 @@ impl<'a> Parser<'a> {
             QuoteFlags::Chars => {
                 let mut list = Term::Atom("[]".to_string());
                 for c in s.chars().rev() {
-                    let mut c = Compound::new(".",Term::Atom(c.to_string()));
-                    c.params.push(list);
-                    list = Term::Compound(c);
+                    list = Term::new_compound(".",vec![Term::Atom(c.to_string()),list]);
                 }
                 Ok((list,self.lexer.next()?,0))
             },
             QuoteFlags::Codes => {
                 let mut list = Term::Atom("[]".to_string());
                 for c in s.chars().rev() {
-                    let mut c = Compound::new(".",Term::Integer(c as i64));
-                    c.params.push(list);
-                    list = Term::Compound(c);
+                    list = Term::new_compound(".",vec![Term::Integer(c as i64),list]);
                 }
                 Ok((list,self.lexer.next()?,0))
             }
@@ -235,7 +199,6 @@ impl<'a> Parser<'a> {
 
     fn term(&mut self, token: Token, max_precedence: u16) -> Result<(Term,Token),Error> {
         let (mut term,mut next,precedence) = match token {
-            Token::Eof => return Err(Error::UnexpectedEof),
             Token::Name(s) => self.name(&s,max_precedence)?,
             Token::Var(s) => (Term::Var(s),self.lexer.next()?,0),
             Token::Int(s,r) => (integer(s,r)?,self.lexer.next()?,0),
@@ -249,17 +212,15 @@ impl<'a> Parser<'a> {
                 let (term,next) = self.term(next,1201)?;
                 match next {
                     Token::Close => (term,next,0),
-                    Token::Eof => return Err(Error::UnexpectedEof),
-                    _ => return Err(Error::MissingClose(')'))
+                    _ => return Err(Error::Expected(')'))
                 }
             },
             Token::OpenC => {
                 let next = self.lexer.next()?;
                 let (term,next) = self.term(next,1201)?;
                 match next {
-                    Token::CloseC => (Term::Compound(Compound::new("{}",term)),next,0),
-                    Token::Eof => return Err(Error::UnexpectedEof),
-                    _ => return Err(Error::MissingClose('}'))
+                    Token::CloseC => (Term::new_compound("{}",vec![term]),next,0),
+                    _ => return Err(Error::Expected('}'))
                 }
             },
             Token::OpenL => (self.list()?,self.lexer.next()?,0),
@@ -279,19 +240,19 @@ impl<'a> Parser<'a> {
                 return Ok((term,next));
             }
 
-            let mut c = Compound{
+            let mut c = Compound {
                 functor: match &next {
-                    Token::Name(s) => s.to_string(),
+                    Token::Name(s) => s.clone(),
                     Token::Comma => ",".to_string(),
                     Token::Bar => "|".to_string(),
                     _ => panic!("Operator name is bogus: {:?}",next)
                 },
-                params: vec![term]
+                args: vec![term]
             };
 
             next = if arity == 2 {
                 let (term,next) = self.term(next,r)?;
-                c.params.push(term);
+                c.args.push(term);
                 next
             } else {
                 next
@@ -310,7 +271,11 @@ impl<'a> Parser<'a> {
         let (term,next) = self.term(t,1201)?;
         match next {
             Token::End => Ok(Some(term)),
-            _ => Err(Error::MissingDot)
+            _ => Err(Error::Expected('.'))
         }
     }
+}
+
+pub fn parse_term(context: &Context, stream: &dyn Stream) -> Result<Option<Term>,Error> {
+    parser::Parser::new(context,stream).next()
 }

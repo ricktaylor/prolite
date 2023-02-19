@@ -1,3 +1,6 @@
+use super::super::context::Context;
+use super::*;
+
 pub enum Error {
 	Missing(char),
 	BadEscape(String),
@@ -5,12 +8,12 @@ pub enum Error {
 	InvalidChar(char),
 	Unexpected(char),
 	MissingDigit,
-    IOError(std::io::Error)
+    StreamError(StreamError)
 }
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Error::IOError(e)
+impl From<StreamError> for Error {
+    fn from(e: StreamError) -> Self {
+        Error::StreamError(e)
     }
 }
 
@@ -36,14 +39,9 @@ pub enum Token {
 	End
 }
 
-pub trait Utf8Stream {
-	fn get(&self) -> Result<Option<char>,Error>;
-	fn peek(&self) -> Result<Option<char>,Error>;
-}
-
 pub struct Lexer<'a> {
-	stream: &'a dyn Utf8Stream,
-	context: &'a super::Context
+	stream: &'a dyn Stream,
+	context: &'a Context
 }
 
 enum Char {
@@ -59,7 +57,7 @@ enum Char {
 }
 
 impl<'a> Lexer<'a> {
-	pub fn new(stream: &'a dyn Utf8Stream, context: &'a super::Context) -> Self {
+	pub fn new(stream: &'a dyn Stream, context: &'a Context) -> Self {
 		Self {
 			stream,
 			context
