@@ -9,7 +9,7 @@ use lexer::*;
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
 	TokenError(lexer::Error),
-    Expected(char),
+    ExpectedToken(Token),
     UnexpectedToken(Token),
     ParseIntError(std::num::ParseIntError),
     ParseFloatError(std::num::ParseFloatError)
@@ -74,7 +74,7 @@ impl<'a> Parser<'a> {
 	pub fn new(context: &'a Context, stream: &'a dyn Stream) -> Self {
 		Self {
 			context,
-            lexer: Lexer::new(stream,context)
+            lexer: Lexer::new(stream,context,false)
 		}
 	}
 
@@ -121,7 +121,7 @@ impl<'a> Parser<'a> {
             match next {
                 Token::Comma => {},
                 Token::Close => return Ok(Term::Compound(c)),
-                _ => return Err(Error::Expected(')'))
+                _ => return Err(Error::ExpectedToken(Token::Close))
             }
         }
     }
@@ -178,7 +178,7 @@ impl<'a> Parser<'a> {
         };
 
         if ! matches!(token,Token::CloseL) {
-            return Err(Error::Expected(']'));
+            return Err(Error::ExpectedToken(Token::CloseL));
         }
 
         while let Some(t) = terms.pop() {
@@ -235,7 +235,7 @@ impl<'a> Parser<'a> {
                 let (term,next) = self.term(next,1201)?;
                 match next {
                     Token::Close => (term,next,0),
-                    _ => return Err(Error::Expected(')'))
+                    _ => return Err(Error::ExpectedToken(Token::Close))
                 }
             },
             Token::OpenC => {
@@ -243,7 +243,7 @@ impl<'a> Parser<'a> {
                 let (term,next) = self.term(next,1201)?;
                 match next {
                     Token::CloseC => (Term::new_compound("{}",vec![term]),next,0),
-                    _ => return Err(Error::Expected('}'))
+                    _ => return Err(Error::ExpectedToken(Token::CloseC))
                 }
             },
             Token::OpenL => (self.list()?,self.lexer.next()?,0),
@@ -294,7 +294,7 @@ impl<'a> Parser<'a> {
         let (term,next) = self.term(t,1201)?;
         match next {
             Token::End => Ok(Some(term)),
-            _ => Err(Error::Expected('.'))
+            _ => Err(Error::ExpectedToken(Token::End))
         }
     }
 }
