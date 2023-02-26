@@ -1,10 +1,31 @@
 use std::str::FromStr;
 
-use super::super::operators::*;
-use super::super::prolog_flags::QuoteFlags;
-use super::super::term::*;
+use crate::context::Context;
+use crate::operators::*;
+use crate::prolog_flags::QuoteFlags;
 use super::*;
 use lexer::*;
+
+#[derive(Debug)]
+pub struct Compound {
+    pub functor: String,
+    pub args: Vec<Term>
+}
+
+#[derive(Debug)]
+pub enum Term {
+    Integer(i64),
+    Float(f64),
+    Var(String),
+    Atom(String),
+    Compound(Compound)
+}
+
+impl Term {
+    pub fn new_compound(functor: &str, args: Vec<Term>) -> Self {
+        Term::Compound(Compound { functor: functor.to_string(), args } )
+    }
+}
 
 #[allow(clippy::enum_variant_names)]
 pub enum Error {
@@ -66,17 +87,21 @@ fn parse_float(s: &str) -> Result<Term,Error> {
 }
 
 pub struct Parser<'a> {
-    pub lexer: Lexer<'a>,
-	context: &'a Context
+    context: &'a Context,
+    lexer: Lexer<'a>
 }
 
 impl<'a> Parser<'a> {
-	pub fn new(context: &'a Context, stream: &'a dyn Stream) -> Self {
+	pub fn new(context: &'a Context, stream: &'a mut dyn Stream) -> Self {
 		Self {
 			context,
-            lexer: Lexer::new(stream,context,false)
+            lexer: Lexer::new(context,stream)
 		}
 	}
+
+    pub fn collect_to_whitespace(&mut self, s: &mut String) -> Result<(),Error> {
+        Ok(self.lexer.collect_to_whitespace(s)?)
+    }
 
     fn arg(&mut self, token: Token) -> Result<(Term,Token),Error> {
         if let Token::Name(s) = &token {
@@ -221,7 +246,7 @@ impl<'a> Parser<'a> {
     }
 
     fn term(&mut self, token: Token, max_precedence: u16) -> Result<(Term,Token),Error> {
-        let (mut term,mut next,precedence) = match token {
+        let (mut term, mut next,precedence) = match token {
             Token::Name(s) => self.name(&s,max_precedence)?,
             Token::Var(s) => (Term::Var(s),self.lexer.next()?,0),
             Token::Int(s,r) => (parse_integer(&s,r)?,self.lexer.next()?,0),
@@ -252,10 +277,21 @@ impl<'a> Parser<'a> {
 
         /* This is precedence climbing, if you're interested */
         loop {
-            let (r,l,arity,do_break) = match &next {
-                Token::Name(s) => self.lookup_op(s,max_precedence),
-                Token::Bar => self.lookup_op("|",max_precedence),  /* ISO/IEC 13211-1:1995/Cor.2:2012 */
-                Token::Comma => (999,1000,2,1000 > max_precedence),
+            let functor: String;
+            let (r,l,arity,do_break) = match next {
+                Token::Name(ref s) => {
+                    functor = s.clone();
+                    self.lookup_op(&s,max_precedence)
+                },
+                Token::Bar => {
+                    /* ISO/IEC 13211-1:1995/Cor.2:2012 */
+                    functor = '|'.to_string();
+                    self.lookup_op("|",max_precedence)
+                },
+                Token::Comma => {
+                    functor =",".to_string();
+                    (999,1000,2,1000 > max_precedence)
+                },
                 _ => return Ok((term,next))
             };
 
@@ -264,12 +300,7 @@ impl<'a> Parser<'a> {
             }
 
             let mut c = Compound {
-                functor: match &next {
-                    Token::Name(s) => s.clone(),
-                    Token::Comma => ",".to_string(),
-                    Token::Bar => "|".to_string(),
-                    _ => panic!("Operator name is bogus: {:?}",next)
-                },
+                functor,
                 args: vec![term]
             };
 
@@ -297,8 +328,4 @@ impl<'a> Parser<'a> {
             _ => Err(Error::ExpectedToken(Token::End))
         }
     }
-}
-
-pub fn parse_term(context: &Context, stream: &dyn Stream) -> Result<Option<Term>,Error> {
-    parser::Parser::new(context,stream).next()
 }

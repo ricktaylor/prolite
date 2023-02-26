@@ -1,4 +1,4 @@
-use super::super::context::Context;
+use crate::context::Context;
 use super::*;
 
 pub enum Error {
@@ -39,9 +39,8 @@ pub enum Token {
 }
 
 pub struct Lexer<'a> {
-	pub stream: &'a dyn Stream,
-	context: &'a Context,
-	greedy: bool
+	stream: &'a mut dyn Stream,
+	context: &'a Context
 }
 
 enum Char {
@@ -58,26 +57,14 @@ enum Char {
 }
 
 impl<'a> Lexer<'a> {
-	pub fn new(stream: &'a dyn Stream, context: &'a Context, greedy: bool) -> Self {
+	pub fn new(context: &'a Context, stream: &'a mut dyn Stream) -> Self {
 		Self {
 			stream,
-			context,
-			greedy
+			context
 		}
 	}
 
 	pub fn next(&mut self) -> Result<Token,Error> {
-		let n = self.next_token();
-		match n {
-			Err(Error::BadEscape(s)) if self.greedy => Err(Error::BadEscape(self.skip_to_whitespace(s)?)),
-			Err(Error::BadInteger(s)) if self.greedy => Err(Error::BadInteger(self.skip_to_whitespace(s)?)),
-			Err(Error::BadFloat(s)) if self.greedy => Err(Error::BadFloat(self.skip_to_whitespace(s)?)),
-			Err(Error::Unexpected(s)) if self.greedy => Err(Error::Unexpected(self.skip_to_whitespace(s)?)),
-			_ => n
-		}
-	}
-
-	fn next_token(&mut self) -> Result<Token,Error> {
 
 		let mut c = self.next_char()?;
 
@@ -241,13 +228,13 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	fn skip_to_whitespace(&mut self, mut s: String) -> Result<String,Error> {
+	pub fn collect_to_whitespace(&mut self, s: &mut String) -> Result<(),Error> {
 		loop {
 			match self.peek_char_raw()? {
 				None |
 				Some(' ') |
 				Some('\t') |
-				Some('\n') => break Ok(s),
+				Some('\n') => break Ok(()),
 				Some(c) => { s.push(c); self.eat_char()?; }
 			}
 		}
@@ -310,22 +297,22 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
+	fn next_char_raw(&mut self) -> Result<Option<char>,Error> {
+		Ok(self.stream.get()?)
+	}
+
+	fn peek_char_raw(&mut self) -> Result<Option<char>,Error> {
+		Ok(self.stream.peek()?)
+	}
+
 	fn next_char(&mut self) -> Result<Char,Error> {
 		let c = self.next_char_raw()?;
 		Ok(self.classify_char(self.convert_char(c)))
 	}
 
-	fn next_char_raw(&mut self) -> Result<Option<char>,Error> {
-		Ok(self.stream.get()?)
-	}
-
 	fn peek_char(&mut self) -> Result<Char,Error> {
 		let c = self.peek_char_raw()?;
 		Ok(self.classify_char(self.convert_char(c)))
-	}
-
-	fn peek_char_raw(&mut self) -> Result<Option<char>,Error> {
-		Ok(self.stream.peek()?)
 	}
 
 	fn eat_char(&mut self) -> Result<(),Error> {

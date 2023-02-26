@@ -1,9 +1,9 @@
-use super::context::Context;
-
-mod lexer;
 mod parser;
+mod consult;
+mod lexer;
+mod multistream;
 
-pub enum StreamError {
+enum StreamError {
     IOError(std::io::Error)
 }
 
@@ -13,7 +13,7 @@ impl From<std::io::Error> for StreamError {
     }
 }
 
-pub trait Stream {
-	fn get(&self) -> Result<Option<char>,StreamError>;
-	fn peek(&self) -> Result<Option<char>,StreamError>;
+trait Stream {
+	fn get(&mut self) -> Result<Option<char>,StreamError>;
+	fn peek(&mut self) -> Result<Option<char>,StreamError>;
 }
