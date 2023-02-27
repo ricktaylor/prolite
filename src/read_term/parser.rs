@@ -281,7 +281,7 @@ impl<'a> Parser<'a> {
             let (r,l,arity,do_break) = match next {
                 Token::Name(ref s) => {
                     functor = s.clone();
-                    self.lookup_op(&s,max_precedence)
+                    self.lookup_op(s,max_precedence)
                 },
                 Token::Bar => {
                     /* ISO/IEC 13211-1:1995/Cor.2:2012 */

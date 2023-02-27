@@ -21,7 +21,7 @@ impl Stream for MultiStream<'_> {
     fn get(&mut self) -> Result<Option<char>,StreamError> {
         while let Some(s)= self.streams.last_mut() {
 			if let Some(c) = s.get()? {
-				return Ok(Some(c.clone()));
+				return Ok(Some(c));
 			}
 			self.streams.pop();
 		}
