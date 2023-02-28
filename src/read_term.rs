@@ -3,6 +3,7 @@ mod consult;
 mod lexer;
 mod multistream;
 
+#[derive(Debug)]
 enum StreamError {
     IOError(std::io::Error)
 }

@@ -1,6 +1,7 @@
 use crate::context::Context;
 use super::*;
 
+#[derive(Debug)]
 pub enum Error {
 	Missing(char),
 	BadEscape(String),
@@ -39,7 +40,6 @@ pub enum Token {
 }
 
 pub struct Lexer<'a> {
-	stream: &'a mut dyn Stream,
 	context: &'a Context
 }
 
@@ -57,16 +57,15 @@ enum Char {
 }
 
 impl<'a> Lexer<'a> {
-	pub fn new(context: &'a Context, stream: &'a mut dyn Stream) -> Self {
+	pub fn new(context: &'a Context) -> Self {
 		Self {
-			stream,
 			context
 		}
 	}
 
-	pub fn next(&mut self) -> Result<Token,Error> {
+	pub fn next(&mut self, stream: &mut dyn Stream) -> Result<Token,Error> {
 
-		let mut c = self.next_char()?;
+		let mut c = self.next_char(stream)?;
 
 		// open ct (* 6.4 *)
 		if let Char::Solo('(') = c {
@@ -78,15 +77,15 @@ impl<'a> Lexer<'a> {
 				Char::Eof => return Ok(Token::Eof),
 
 				// layout text sequence (* 6.4.1 *)
-				Char::Layout(_) => { c = self.next_char()?; },
+				Char::Layout(_) => { c = self.next_char(stream)?; },
 
 				// single line comment (* 6.4.1 *)
 				Char::Solo('%') => {
 					loop {
-						match self.next_char()? {
+						match self.next_char(stream)? {
 							Char::Eof => return Ok(Token::Eof),
 							Char::Layout('\n') => {
-								c = self.next_char()?;
+								c = self.next_char(stream)?;
 								break;
 							},
 							_ => {}
@@ -96,12 +95,12 @@ impl<'a> Lexer<'a> {
 
 				// name (* 6.4 *)
 				// letter digit token (* 6.4.2 *)
-				Char::SmallLetter(c) => return Ok(Token::Name(self.alpha_numeric(c)?)),
+				Char::SmallLetter(c) => return Ok(Token::Name(self.alpha_numeric(stream,c)?)),
 
 				// graphic token (* 6.4.2 *)
 				Char::Graphic('.') => {
 					let mut t = String::from('.');
-					match self.peek_char()? {
+					match self.peek_char(stream)? {
 						Char::Solo('%') |
 						Char::Layout(_) |
 						Char::Eof => return Ok(Token::End),
@@ -109,23 +108,23 @@ impl<'a> Lexer<'a> {
 						Char::Meta('\\') => t.push('\\'),
 						_ => return Ok(Token::Name(t))
 					}
-					self.eat_char()?;
+					eat_char(stream)?;
 
 					loop {
-						match self.peek_char()? {
+						match self.peek_char(stream)? {
 							Char::Graphic(c) => t.push(c),
 							Char::Meta('\\') => t.push('\\'),
 							_ => return Ok(Token::Name(t))
 						}
-						self.eat_char()?;
+						eat_char(stream)?;
 					}
 				},
 				Char::Graphic('/') => {
 					// bracketed comment (* 6.4.1 *)
-					c = self.peek_char()?;
+					c = self.peek_char(stream)?;
 					if let Char::Graphic('*') = c {
-						self.eat_char()?;
-						c = self.multiline_comment()?;
+						eat_char(stream)?;
+						c = self.multiline_comment(stream)?;
 					}
 					else {
 						let mut t = String::from('/');
@@ -135,25 +134,25 @@ impl<'a> Lexer<'a> {
 								Char::Meta('\\') => t.push('\\'),
 								_ => return Ok(Token::Name(t))
 							}
-							self.eat_char()?;
-							c = self.peek_char()?;
+							eat_char(stream)?;
+							c = self.peek_char(stream)?;
 						}
 					}
 				},
 				Char::Graphic(c) => {
 					let mut t = c.to_string();
 					loop {
-						match self.peek_char()? {
+						match self.peek_char(stream)? {
 							Char::Graphic(c) => t.push(c),
 							Char::Meta('\\') => t.push('\\'),
 							_ => return Ok(Token::Name(t))
 						}
-						self.eat_char()?;
+						eat_char(stream)?;
 					}
 				},
 
 				// quoted token (* 6.4.2 *)
-				Char::Meta('\'') => return Ok(Token::Name(self.quoted('\'')?)),
+				Char::Meta('\'') => return Ok(Token::Name(self.quoted(stream,'\'')?)),
 
 				// semicolon token (* 6.4.2 *)
 				Char::Solo(';') => return Ok(Token::Name(String::from(';'))),
@@ -162,40 +161,40 @@ impl<'a> Lexer<'a> {
 				Char::Solo('!') => return Ok(Token::Name(String::from('!'))),
 
 				// variable (* 6.4 *)
-				Char::Underscore => return Ok(Token::Var(self.alpha_numeric('_')?)),
-				Char::CapitalLetter(c) => return Ok(Token::Var(self.alpha_numeric(c)?)),
+				Char::Underscore => return Ok(Token::Var(self.alpha_numeric(stream,'_')?)),
+				Char::CapitalLetter(c) => return Ok(Token::Var(self.alpha_numeric(stream,c)?)),
 
 				// integer (* 6.4 *)
 				// float number (* 6.4 *)
 				Char::Digit('0') => {
-					match self.peek_char()? {
+					match self.peek_char(stream)? {
 						Char::Meta('\'') => todo!(),
 						Char::SmallLetter('b') => {
-							self.eat_char()?;
-							return self.integral('1',2);
+							eat_char(stream)?;
+							return self.integral(stream,'1',2);
 						},
 						Char::SmallLetter('o') => {
-							self.eat_char()?;
-							return self.integral('7',8);
+							eat_char(stream)?;
+							return self.integral(stream,'7',8);
 						},
 						Char::SmallLetter('x') => {
-							self.eat_char()?;
-							return self.integral('9',16);
+							eat_char(stream)?;
+							return self.integral(stream,'9',16);
 						},
 						Char::Digit(c) => {
-							self.eat_char()?;
-							return self.numeric(c);
+							eat_char(stream)?;
+							return self.numeric(stream,c);
 						},
 						_ => return Ok(Token::Int('0'.to_string(),10))
 					}
 				},
-				Char::Digit(c) => return self.numeric(c),
+				Char::Digit(c) => return self.numeric(stream,c),
 
 				// double quoted list (* 6.4 *)
-				Char::Meta('"') => return Ok(Token::DoubleQuotedList(self.quoted('"')?)),
+				Char::Meta('"') => return Ok(Token::DoubleQuotedList(self.quoted(stream,'"')?)),
 
 				// back quoted string (* 6.4.7 *)
-				Char::Meta('`') => return Ok(Token::BackQuotedString(self.quoted('`')?)),
+				Char::Meta('`') => return Ok(Token::BackQuotedString(self.quoted(stream,'`')?)),
 
 				// open (* 6.4 *)
 				Char::Solo('(') => return Ok(Token::Open),
@@ -224,18 +223,6 @@ impl<'a> Lexer<'a> {
 				Char::Solo(c) |
 				Char::Invalid(c) |
 				Char::Meta(c) => return Err(Error::Unexpected(c.to_string())),
-			}
-		}
-	}
-
-	pub fn collect_to_whitespace(&mut self, s: &mut String) -> Result<(),Error> {
-		loop {
-			match self.peek_char_raw()? {
-				None |
-				Some(' ') |
-				Some('\t') |
-				Some('\n') => break Ok(()),
-				Some(c) => { s.push(c); self.eat_char()?; }
 			}
 		}
 	}
@@ -297,37 +284,24 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	fn next_char_raw(&mut self) -> Result<Option<char>,Error> {
-		Ok(self.stream.get()?)
-	}
-
-	fn peek_char_raw(&mut self) -> Result<Option<char>,Error> {
-		Ok(self.stream.peek()?)
-	}
-
-	fn next_char(&mut self) -> Result<Char,Error> {
-		let c = self.next_char_raw()?;
+	fn next_char(&mut self, stream: &mut dyn Stream) -> Result<Char,Error> {
+		let c = next_char_raw(stream)?;
 		Ok(self.classify_char(self.convert_char(c)))
 	}
 
-	fn peek_char(&mut self) -> Result<Char,Error> {
-		let c = self.peek_char_raw()?;
+	fn peek_char(&mut self, stream: &mut dyn Stream) -> Result<Char,Error> {
+		let c = peek_char_raw(stream)?;
 		Ok(self.classify_char(self.convert_char(c)))
 	}
 
-	fn eat_char(&mut self) -> Result<(),Error> {
-		self.next_char_raw()?;
-		Ok(())
-	}
-
-	fn multiline_comment(&mut self) -> Result<Char,Error> {
+	fn multiline_comment(&mut self, stream: &mut dyn Stream) -> Result<Char,Error> {
 		loop {
-			match self.next_char()? {
+			match self.next_char(stream)? {
 				Char::Eof => return Ok(Char::Eof),
 				Char::Graphic('*') => {
-					match self.next_char()? {
+					match self.next_char(stream)? {
 						Char::Eof => return Ok(Char::Eof),
-						Char::Graphic('/') => return self.next_char(),
+						Char::Graphic('/') => return self.next_char(stream),
 						_ => {}
 						}
 				},
@@ -336,15 +310,15 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	fn integral(&mut self, max: char, radix: u32) -> Result<Token,Error> {
+	fn integral(&mut self, stream: &mut dyn Stream, max: char, radix: u32) -> Result<Token,Error> {
 		let mut t = String::new();
 		loop {
-			match self.peek_char()? {
+			match self.peek_char(stream)? {
 				Char::Digit(c) if c <= max => t.push(c),
 				Char::SmallLetter(c) if radix == 16 && ('a'..='f').contains(&c) => t.push(c),
 				_ => break
 			}
-			self.eat_char()?;
+			eat_char(stream)?;
 		}
 
 		if t.is_empty() {
@@ -358,22 +332,22 @@ impl<'a> Lexer<'a> {
 		}
 	}
 
-	fn numeric(&mut self, c: char) -> Result<Token,Error> {
+	fn numeric(&mut self, stream: &mut dyn Stream, c: char) -> Result<Token,Error> {
 		let mut t = c.to_string();
 		loop {
-			match self.peek_char()? {
+			match self.peek_char(stream)? {
 				Char::Digit(c) => t.push(c),
 				Char::Graphic('.') => {
-					match self.peek_char()? {
+					match self.peek_char(stream)? {
 						Char::Solo('%') |
 						Char::Layout(_) |
 						Char::Eof => return Ok(Token::Int(t,10)),
 						_ => {}
 					}
-					self.eat_char()?;
+					eat_char(stream)?;
 					t.push('.');
 
-					match self.next_char()? {
+					match self.next_char(stream)? {
 						Char::Digit(c) => t.push(c),
 						Char::Underscore => { t.push('_'); return Err(Error::BadFloat(t)) },
 						Char::Meta(c) |
@@ -385,24 +359,24 @@ impl<'a> Lexer<'a> {
 					}
 
 					loop {
-						match self.peek_char()? {
+						match self.peek_char(stream)? {
 							Char::Digit(c) => t.push(c),
 							Char::CapitalLetter('E') => {
-								self.eat_char()?;
+								eat_char(stream)?;
 								t.push('E');
 								break;
 							},
 							Char::SmallLetter('e') => {
-								self.eat_char()?;
+								eat_char(stream)?;
 								t.push('e');
 								break;
 							}
 							_ => return Ok(Token::Float(t))
 						}
-						self.eat_char()?;
+						eat_char(stream)?;
 					}
 
-					match self.next_char()? {
+					match self.next_char(stream)? {
 						Char::Graphic('+') => t.push('+'),
 						Char::Graphic('-') => t.push('-'),
 						Char::Underscore => { t.push('_'); return Err(Error::BadFloat(t)) },
@@ -417,40 +391,40 @@ impl<'a> Lexer<'a> {
 					}
 
 					loop {
-						match self.peek_char()? {
+						match self.peek_char(stream)? {
 							Char::Digit(c) => t.push(c),
 							_ => return Ok(Token::Float(t))
 						}
-						self.eat_char()?;
+						eat_char(stream)?;
 					}
 				},
 				_ => return Ok(Token::Int(t,10))
 			}
-			self.eat_char()?;
+			eat_char(stream)?;
 		}
 	}
 
-	fn alpha_numeric(&mut self, c: char) -> Result<String,Error> {
+	fn alpha_numeric(&mut self, stream: &mut dyn Stream, c: char) -> Result<String,Error> {
 		let mut t = c.to_string();
 		loop {
-			match self.peek_char()? {
+			match self.peek_char(stream)? {
 				Char::Underscore => t.push('_'),
 				Char::SmallLetter(c) |
 				Char::CapitalLetter(c) |
 				Char::Digit(c) => t.push(c),
 				_ => return Ok(t)
 			}
-			self.eat_char()?;
+			eat_char(stream)?;
 		}
 	}
 
-	fn quoted(&mut self, quote: char) -> Result<String,Error> {
+	fn quoted(&mut self, stream: &mut dyn Stream, quote: char) -> Result<String,Error> {
 		let mut t = String::new();
 		loop {
-			match self.next_char_raw()? {
+			match next_char_raw(stream)? {
 				None => return Err(Error::Missing(quote)),
 				Some('\\') => {
-					match self.next_char_raw()? {
+					match next_char_raw(stream)? {
 						Some('\n') => {},
 						Some('\\') => t.push('\\'),
 						Some('\'') => t.push('\''),
@@ -469,10 +443,10 @@ impl<'a> Lexer<'a> {
 					}
 				},
 				Some(c) if c == quote => {
-					match self.peek_char_raw()? {
+					match peek_char_raw(stream)? {
 						Some(c) if c == quote => {
 							t.push(c);
-							self.eat_char()?;
+							eat_char(stream)?;
 						},
     					_ => return Ok(t)
 					}
@@ -483,4 +457,17 @@ impl<'a> Lexer<'a> {
 	}
 
 
+}
+
+fn next_char_raw(stream: &mut dyn Stream) -> Result<Option<char>,Error> {
+	Ok(stream.get()?)
+}
+
+fn peek_char_raw(stream: &mut dyn Stream) -> Result<Option<char>,Error> {
+	Ok(stream.peek()?)
+}
+
+fn eat_char(stream: &mut dyn Stream) -> Result<(),Error> {
+	next_char_raw(stream)?;
+	Ok(())
 }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::default::Default;
 
+#[derive(Debug,Clone)]
 pub struct Context {
     pub flags: super::prolog_flags::Flags,
     pub operators: super::operators::OperatorTable,

@@ -1,16 +1,19 @@
 
+#[derive(Debug,Clone)]
 pub enum QuoteFlags {
     Chars,
     Codes,
     Atom
 }
 
+#[derive(Debug,Clone)]
 pub enum UnknownFlags {
     Error,
     Fail,
     Warning
 }
 
+#[derive(Debug,Clone)]
 pub struct Flags {
     pub char_conversion: bool,
     pub double_quotes: QuoteFlags,

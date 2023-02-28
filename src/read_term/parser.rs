@@ -28,6 +28,7 @@ impl Term {
 }
 
 #[allow(clippy::enum_variant_names)]
+#[derive(Debug)]
 pub enum Error {
 	TokenError(lexer::Error),
     ExpectedToken(Token),
@@ -92,18 +93,24 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-	pub fn new(context: &'a Context, stream: &'a mut dyn Stream) -> Self {
+	pub fn new(context: &'a Context) -> Self {
 		Self {
 			context,
-            lexer: Lexer::new(context,stream)
+            lexer: Lexer::new(context)
 		}
 	}
 
-    pub fn collect_to_whitespace(&mut self, s: &mut String) -> Result<(),Error> {
-        Ok(self.lexer.collect_to_whitespace(s)?)
+    pub fn skip_to_end(&mut self, stream: &mut dyn Stream) -> Result<(),Error> {
+        loop {
+            match self.lexer.next(stream)? {
+                Token::Eof |
+                Token::End => break Ok(()),
+                _ => {}
+            }
+        }
     }
 
-    fn arg(&mut self, token: Token) -> Result<(Term,Token),Error> {
+    fn arg(&mut self, stream: &mut dyn Stream, token: Token) -> Result<(Term,Token),Error> {
         if let Token::Name(s) = &token {
             match lookup_op(&self.context.operators,s) {
                 Some(&Operator::fx(p)) |
@@ -113,32 +120,32 @@ impl<'a> Parser<'a> {
                 Some(&Operator::yfx(p)) |
                 Some(&Operator::xf(p)) |
                 Some(&Operator::yf(p)) if p > 999 => {
-                    let next = self.lexer.next()?;
+                    let next = self.lexer.next(stream)?;
                     match next {
-                        Token::OpenCt => Ok((self.compound(s)?,self.lexer.next()?)),
-                        Token::Int(t,r) if s == "-" => Ok((parse_integer(&format!("{}{}",s,t),r)?,self.lexer.next()?)),
-                        Token::CharCode(c) if s == "-" => Ok((Term::Integer(-(c as i64)),self.lexer.next()?)),
-                        Token::Float(t) if s == "-" => Ok((parse_float(&format!("{}{}",s,t))?,self.lexer.next()?)),
+                        Token::OpenCt => Ok((self.compound(stream,s)?,self.lexer.next(stream)?)),
+                        Token::Int(t,r) if s == "-" => Ok((parse_integer(&format!("{}{}",s,t),r)?,self.lexer.next(stream)?)),
+                        Token::CharCode(c) if s == "-" => Ok((Term::Integer(-(c as i64)),self.lexer.next(stream)?)),
+                        Token::Float(t) if s == "-" => Ok((parse_float(&format!("{}{}",s,t))?,self.lexer.next(stream)?)),
                         _ => Ok((Term::Atom(s.clone()),next))
                     }
                 },
-                _ => self.term(token,999)
+                _ => self.term(stream,token,999)
             }
         } else {
-            self.term(token,999)
+            self.term(stream,token,999)
         }
     }
 
-    fn compound(&mut self, s: &str) -> Result<Term,Error> {
+    fn compound(&mut self, stream: &mut dyn Stream, s: &str) -> Result<Term,Error> {
         let mut c = Compound{
             functor: s.to_string(),
             args: Vec::new()
         };
 
-        let mut next = self.lexer.next()?;
+        let mut next = self.lexer.next(stream)?;
         loop {
             next = {
-                let (term,next) = self.arg(next)?;
+                let (term,next) = self.arg(stream,next)?;
                 c.args.push(term);
                 next
             };
@@ -151,23 +158,23 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn name(&mut self, s: &str, max_precedence: u16) -> Result<(Term,Token,u16),Error> {
-        let next = self.lexer.next()?;
+    fn name(&mut self, stream: &mut dyn Stream, s: &str, max_precedence: u16) -> Result<(Term,Token,u16),Error> {
+        let next = self.lexer.next(stream)?;
         match next {
-            Token::OpenCt => Ok((self.compound(s)?,self.lexer.next()?,0)),
-            Token::Int(t,r) if s == "-" => Ok((parse_integer(&format!("{}{}",s,t),r)?,self.lexer.next()?,0)),
-            Token::CharCode(c) if s == "-" => Ok((Term::Integer(-(c as i64)),self.lexer.next()?,0)),
-            Token::Float(t) if s == "-" => Ok((parse_float(&format!("{}{}",s,t))?,self.lexer.next()?,0)),
+            Token::OpenCt => Ok((self.compound(stream,s)?,self.lexer.next(stream)?,0)),
+            Token::Int(t,r) if s == "-" => Ok((parse_integer(&format!("{}{}",s,t),r)?,self.lexer.next(stream)?,0)),
+            Token::CharCode(c) if s == "-" => Ok((Term::Integer(-(c as i64)),self.lexer.next(stream)?,0)),
+            Token::Float(t) if s == "-" => Ok((parse_float(&format!("{}{}",s,t))?,self.lexer.next(stream)?,0)),
             Token::Comma |
             Token::Close => Ok((Term::Atom(s.to_string()),next,0)),
             _ => {
                 match lookup_prefix_op(&self.context.operators,s) {
                     Some(&Operator::fx(p)) if p <= max_precedence => {
-                        let (term,next) = self.term(next,p-1)?;
+                        let (term,next) = self.term(stream,next,p-1)?;
                         Ok((Term::new_compound(s,vec![term]),next,p))
                     },
                     Some(&Operator::fy(p)) if p <= max_precedence => {
-                        let (term,next) = self.term(next,p)?;
+                        let (term,next) = self.term(stream,next,p)?;
                         Ok((Term::new_compound(s,vec![term]),next,p))
                     },
                     _ => Ok((Term::Atom(s.to_string()),next,0))
@@ -177,17 +184,17 @@ impl<'a> Parser<'a> {
 
     }
 
-    fn list(&mut self) -> Result<Term,Error> {
+    fn list(&mut self, stream: &mut dyn Stream) -> Result<Term,Error> {
         let mut terms = Vec::new();
-        let mut token = self.lexer.next()?;
+        let mut token = self.lexer.next(stream)?;
         if ! matches!(token,Token::CloseL) {
             loop {
-                let (term,next) = self.arg(token)?;
+                let (term,next) = self.arg(stream,token)?;
                 terms.push(term);
                 token = next;
 
                 match token {
-                    Token::Comma => token = self.lexer.next()?,
+                    Token::Comma => token = self.lexer.next(stream)?,
                     _ => break
                 }
             }
@@ -195,7 +202,7 @@ impl<'a> Parser<'a> {
 
         let mut list = match token {
             Token::Bar => {
-                let (term,next) = self.arg(token)?;
+                let (term,next) = self.arg(stream,token)?;
                 token = next;
                 term
             },
@@ -212,22 +219,22 @@ impl<'a> Parser<'a> {
         Ok(list)
     }
 
-    fn quoted(&mut self, flags: &QuoteFlags, s: String, max_precedence: u16) -> Result<(Term,Token,u16),Error> {
+    fn quoted(&mut self, stream: &mut dyn Stream, flags: &QuoteFlags, s: String, max_precedence: u16) -> Result<(Term,Token,u16),Error> {
         match flags {
-            QuoteFlags::Atom => self.name(&s,max_precedence),
+            QuoteFlags::Atom => self.name(stream,&s,max_precedence),
             QuoteFlags::Chars => {
                 let mut list = Term::Atom("[]".to_string());
                 for c in s.chars().rev() {
                     list = Term::new_compound(".",vec![Term::Atom(c.to_string()),list]);
                 }
-                Ok((list,self.lexer.next()?,0))
+                Ok((list,self.lexer.next(stream)?,0))
             },
             QuoteFlags::Codes => {
                 let mut list = Term::Atom("[]".to_string());
                 for c in s.chars().rev() {
                     list = Term::new_compound(".",vec![Term::Integer(c as i64),list]);
                 }
-                Ok((list,self.lexer.next()?,0))
+                Ok((list,self.lexer.next(stream)?,0))
             }
         }
     }
@@ -245,33 +252,33 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn term(&mut self, token: Token, max_precedence: u16) -> Result<(Term,Token),Error> {
+    fn term(&mut self, stream: &mut dyn Stream, token: Token, max_precedence: u16) -> Result<(Term,Token),Error> {
         let (mut term, mut next,precedence) = match token {
-            Token::Name(s) => self.name(&s,max_precedence)?,
-            Token::Var(s) => (Term::Var(s),self.lexer.next()?,0),
-            Token::Int(s,r) => (parse_integer(&s,r)?,self.lexer.next()?,0),
-            Token::CharCode(c) => (Term::Integer(c as i64),self.lexer.next()?,0),
-            Token::Float(s) => (parse_float(&s)?,self.lexer.next()?,0),
-            Token::DoubleQuotedList(s) => self.quoted(&self.context.flags.double_quotes,s,max_precedence)?, /* ISO/IEC 13211-1:1995/Cor.1:2007 */
-            Token::BackQuotedString(s) => self.quoted(&self.context.flags.back_quotes,s,max_precedence)?,
+            Token::Name(s) => self.name(stream,&s,max_precedence)?,
+            Token::Var(s) => (Term::Var(s),self.lexer.next(stream)?,0),
+            Token::Int(s,r) => (parse_integer(&s,r)?,self.lexer.next(stream)?,0),
+            Token::CharCode(c) => (Term::Integer(c as i64),self.lexer.next(stream)?,0),
+            Token::Float(s) => (parse_float(&s)?,self.lexer.next(stream)?,0),
+            Token::DoubleQuotedList(s) => self.quoted(stream,&self.context.flags.double_quotes,s,max_precedence)?, /* ISO/IEC 13211-1:1995/Cor.1:2007 */
+            Token::BackQuotedString(s) => self.quoted(stream,&self.context.flags.back_quotes,s,max_precedence)?,
             Token::Open |
             Token::OpenCt => {
-                let next = self.lexer.next()?;
-                let (term,next) = self.term(next,1201)?;
+                let next = self.lexer.next(stream)?;
+                let (term,next) = self.term(stream,next,1201)?;
                 match next {
                     Token::Close => (term,next,0),
                     _ => return Err(Error::ExpectedToken(Token::Close))
                 }
             },
             Token::OpenC => {
-                let next = self.lexer.next()?;
-                let (term,next) = self.term(next,1201)?;
+                let next = self.lexer.next(stream)?;
+                let (term,next) = self.term(stream,next,1201)?;
                 match next {
                     Token::CloseC => (Term::new_compound("{}",vec![term]),next,0),
                     _ => return Err(Error::ExpectedToken(Token::CloseC))
                 }
             },
-            Token::OpenL => (self.list()?,self.lexer.next()?,0),
+            Token::OpenL => (self.list(stream)?,self.lexer.next(stream)?,0),
             _ => return Err(Error::UnexpectedToken(token))
         };
 
@@ -305,7 +312,7 @@ impl<'a> Parser<'a> {
             };
 
             next = if arity == 2 {
-                let (term,next) = self.term(next,r)?;
+                let (term,next) = self.term(stream,next,r)?;
                 c.args.push(term);
                 next
             } else {
@@ -316,13 +323,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn next(&mut self) -> Result<Option<Term>,Error> {
-        let t = self.lexer.next()?;
+    pub fn next(&mut self, stream: &mut dyn Stream) -> Result<Option<Term>,Error> {
+        let t = self.lexer.next(stream)?;
         if let Token::Eof = t {
             return Ok(None);
         }
 
-        let (term,next) = self.term(t,1201)?;
+        let (term,next) = self.term(stream,t,1201)?;
         match next {
             Token::End => Ok(Some(term)),
             _ => Err(Error::ExpectedToken(Token::End))

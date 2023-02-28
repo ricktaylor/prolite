@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::vec::Vec;
 
 #[allow(non_camel_case_types)]
+#[derive(Debug,Clone)]
 pub enum Operator {
     fx(u16),
     fy(u16),
