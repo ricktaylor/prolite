@@ -1,26 +1,47 @@
 use super::*;
 
-pub struct MultiStream<'a> {
-    streams: Vec<&'a mut dyn Stream>,
+#[derive(Debug)]
+pub enum StreamResolverError {
+    IOError(std::io::Error)
 }
 
-impl<'a> MultiStream<'a> {
+pub trait StreamResolver {
+	fn open(&mut self, name: &str) -> Result<(String,Box<dyn Stream>),StreamResolverError>;
+	fn full_path(&mut self, name: &str) -> Result<String,StreamResolverError>;
+}
 
-    pub fn new(stream: &'a mut dyn Stream) -> Self {
+struct StreamItem {
+	name: String,
+	stream: Box<dyn Stream>
+}
+
+pub struct MultiStream {
+    streams: Vec<StreamItem>,
+}
+
+impl MultiStream {
+
+    pub fn new(name: &str, stream: Box<dyn Stream>) -> Self {
 		Self {
-			streams: vec![stream]
+			streams: vec![StreamItem{name: name.to_string(),stream}]
 		}
 	}
 
-    pub fn include(&mut self, stream: &'a mut dyn Stream) {
-		self.streams.push(stream);
+    pub fn include(&mut self, name: &str, stream: Box<dyn Stream>) -> Result<(),consult::Error> {
+		for s in self.streams.iter() {
+			if s.name == name {
+				return Err(consult::Error::new(consult::ErrorKind::IncludeLoop(name.to_string())));
+			}
+		}
+		self.streams.push(StreamItem{name: name.to_string(),stream});
+		Ok(())
 	}
 }
 
-impl Stream for MultiStream<'_> {
+impl Stream for MultiStream {
     fn get(&mut self) -> Result<Option<char>,StreamError> {
         while let Some(s)= self.streams.last_mut() {
-			if let Some(c) = s.get()? {
+			if let Some(c) = s.stream.get()? {
 				return Ok(Some(c));
 			}
 			self.streams.pop();
@@ -30,7 +51,7 @@ impl Stream for MultiStream<'_> {
 
 	fn peek(&mut self) -> Result<Option<char>,StreamError> {
         for s in self.streams.iter_mut().rev() {
-			if let Some(c) = s.peek()? {
+			if let Some(c) = s.stream.peek()? {
 				return Ok(Some(c));
 			}
 		}

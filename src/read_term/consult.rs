@@ -10,6 +10,9 @@ pub enum ErrorKind {
     NotCallableTerm(Term),
     Instantiation(Term),
     UnknownDirective(Term),
+    BadStreamName(Term),
+    IncludeLoop(String),
+    StreamResolverError(multistream::StreamResolverError)
 }
 
 #[derive(Debug)]
@@ -18,7 +21,7 @@ pub struct Error {
 }
 
 impl Error {
-    fn new(kind: ErrorKind) -> Self {
+    pub fn new(kind: ErrorKind) -> Self {
         Self {
             kind
         }
@@ -43,6 +46,12 @@ impl From<StreamError> for Error {
     }
 }
 
+impl From<multistream::StreamResolverError> for Error {
+    fn from(e: multistream::StreamResolverError) -> Self {
+        Error::new(ErrorKind::StreamResolverError(e))
+    }
+}
+
 pub struct Program {
 
 }
@@ -54,14 +63,13 @@ impl Program {
         }
     }
 
-    fn assert_clause(&mut self, head: Term, tail: Term) -> Result<(),Error> {
+    fn assert_clause(&mut self, head: &Term, tail: &Term) -> Result<(),Error> {
         todo!()
     }
 
-    fn assert_fact(&mut self, term: Term) -> Result<(),Error> {
+    fn assert_fact(&mut self, term: &Term) -> Result<(),Error> {
         todo!()
     }
-
 }
 
 fn collect_to_whitespace(s: &mut String, stream: &mut dyn Stream) -> Result<(),StreamError> {
@@ -78,25 +86,29 @@ fn collect_to_whitespace(s: &mut String, stream: &mut dyn Stream) -> Result<(),S
 
 struct ConsultContext<'a> {
     context: Context,
-    stream: MultiStream<'a>,
+    stream: MultiStream,
     parser: Parser<'a>,
     program: Program,
-    sink: ErrorSinkFn
+    sink: ErrorSinkFn,
+    resolver: &'a mut dyn StreamResolver,
+    loaded_set: Vec<String>
 }
 
 impl<'a> ConsultContext<'a> {
     fn null_sink(_: &Error) -> bool { false }
 
-    fn new(context: &'a Context, source: &'a mut dyn Stream, error_sink: Option<ErrorSinkFn>) -> Self {
+    fn new(context: &'a Context, resolver: &'a mut dyn StreamResolver, name: String, source: Box<dyn Stream>, error_sink: Option<ErrorSinkFn>) -> Self {
         Self {
             context: context.clone(),
-            stream: MultiStream::new(source),
+            stream: MultiStream::new(&name,source),
             parser: Parser::new(context),
             program: Program::new(),
             sink: match error_sink {
                 None => Self::null_sink,
                 Some(s) => s
-            }
+            },
+            resolver,
+            loaded_set: Vec::new()
         }
     }
 
@@ -144,83 +156,123 @@ impl<'a> ConsultContext<'a> {
 
     fn consult_term(&mut self, term: Term) -> Result<(),Error> {
         match term {
-            Term::Compound(mut c) if c.functor == ":-" => {
+            Term::Compound(c) if c.functor == ":-" => {
                 match c.args.len() {
-                    1 => { let head = c.args.pop().unwrap(); self.directive(head) },
-                    2 => { let tail = c.args.pop().unwrap(); let head = c.args.pop().unwrap();  self.program.assert_clause(head,tail) },
-                    _ => self.program.assert_fact(Term::Compound(c))
+                    1 => self.directive(&c.args[0]),
+                    2 => self.program.assert_clause(&c.args[0],&c.args[1]),
+                    _ => self.program.assert_fact(&Term::Compound(c))
                 }
             }
             Term::Compound(_) |
-            Term::Atom(_) => self.program.assert_fact(term),
+            Term::Atom(_) => self.program.assert_fact(&term),
             Term::Var(_) => Err(Error::new(ErrorKind::Instantiation(term))),
             _ => Err(Error::new(ErrorKind::NotCallableTerm(term))),
         }
     }
 
-    fn directive(&mut self, term: Term) -> Result<(),Error> {
+    fn directive_expand(&mut self, c: &Compound, d: fn(&mut Self, &Term) -> Result<(),Error>) -> Result<(),Error> {
+        if c.args.len() == 1 {
+            if let Some(list) = c.args[0].list_iter() {
+                for arg in list {
+                    (d)(self,arg)?;
+                }
+            } else {
+                (d)(self,&c.args[0])?;
+            }
+        } else {
+            for arg in c.args.iter() {
+                (d)(self,arg)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn directive(&mut self, term: &Term) -> Result<(),Error> {
         match term {
-            Term::Compound(mut c) if c.functor == "include" && c.args.len() == 1 => self.include(c.args.pop().unwrap()),
-            Term::Compound(mut c) if c.functor == "op" && c.args.len() == 3 => {
-                let operator = c.args.pop().unwrap();
-                let specifier = c.args.pop().unwrap();
-                let priority = c.args.pop().unwrap();
-                self.op(priority,specifier,operator)
-            },
-            Term::Compound(mut c) if c.functor == "ensure_loaded" && c.args.len() == 1 => self.ensure_loaded(c.args.pop().unwrap()),
-            Term::Compound(mut c) if c.functor == "initialization" && c.args.len() == 1 => self.initialization(c.args.pop().unwrap()),
-            Term::Compound(mut c) if c.functor == "set_prolog_flag" && c.args.len() == 2 => {
-                let value = c.args.pop().unwrap();
-                let flag = c.args.pop().unwrap();
-                self.prolog_flag(flag,value)
-            },
-            Term::Compound(mut c) if c.functor == "char_conversion" && c.args.len() == 2 => {
-                let out_char = c.args.pop().unwrap();
-                let in_char = c.args.pop().unwrap();
-                self.char_conversion(in_char,out_char)
-            },
-            Term::Compound(mut c) if c.functor == "public" => { todo!() },
-            Term::Compound(mut c) if c.functor == "dynamic" => { todo!() },
-            Term::Compound(mut c) if c.functor == "multifile" => { todo!() },
-            Term::Compound(mut c) if c.functor == "discontiguous" => { todo!() },
-            Term::Var(_) => Err(Error::new(ErrorKind::Instantiation(term))),
-            _ => Err(Error::new(ErrorKind::UnknownDirective(term)))
+            Term::Compound(c) if c.functor == "op" && c.args.len() == 3 => self.op(&c.args[0],&c.args[1],&c.args[2]),
+            Term::Compound(c) if c.functor == "initialization" && c.args.len() == 1 => self.initialization(&c.args[0]),
+            Term::Compound(c) if c.functor == "set_prolog_flag" && c.args.len() == 2 => self.prolog_flag(&c.args[0],&c.args[1]),
+            Term::Compound(c) if c.functor == "char_conversion" && c.args.len() == 2 => self.char_conversion(&c.args[0],&c.args[1]),
+            Term::Compound(c) if c.functor == "include" => self.directive_expand(c,Self::include),
+            Term::Compound(c) if c.functor == "ensure_loaded" => self.directive_expand(c,Self::ensure_loaded),
+            Term::Compound(c) if c.functor == "public" => self.directive_expand(c,Self::public),
+            Term::Compound(c) if c.functor == "dynamic" => self.directive_expand(c,Self::dynamic),
+            Term::Compound(c) if c.functor == "multifile" => self.directive_expand(c,Self::multifile),
+            Term::Compound(c) if c.functor == "discontiguous" => self.directive_expand(c,Self::discontiguous),
+            Term::Var(_) => Err(Error::new(ErrorKind::Instantiation(term.clone()))),
+            _ => Err(Error::new(ErrorKind::UnknownDirective(term.clone())))
         }
     }
 
-    fn include(&mut self, term: Term) -> Result<(),Error> {
+    fn include(&mut self, term: &Term) -> Result<(),Error> {
         match term {
-            Term::Atom(s) => { todo!() },
-            _ => todo!()
+            Term::Atom(s) => {
+                let (name,stream) = self.resolver.open(s)?;
+                self.stream.include(&name,stream)
+            },
+            Term::Var(_) => Err(Error::new(ErrorKind::Instantiation(term.clone()))),
+            _ => Err(Error::new(ErrorKind::BadStreamName(term.clone())))
         }
     }
 
-    fn ensure_loaded(&mut self, term: Term) -> Result<(),Error> {
+    fn ensure_loaded(&mut self, term: &Term) -> Result<(),Error> {
         match term {
-            Term::Atom(s) => { todo!() },
-            _ => todo!()
+            Term::Atom(s) => {
+                let full_path = self.resolver.full_path(s)?;
+                for s in self.loaded_set.iter() {
+                    if *s == full_path {
+                        return Ok(());
+                    }
+                }
+                self.loaded_set.push(full_path.clone());
+
+                let (_,stream) = self.resolver.open(&full_path)?;
+                let old_stream = std::mem::replace(&mut self.stream,MultiStream::new(&full_path,stream));
+                self.consult()?;
+                self.stream = old_stream;
+                Ok(())
+            },
+            Term::Var(_) => Err(Error::new(ErrorKind::Instantiation(term.clone()))),
+            _ => Err(Error::new(ErrorKind::BadStreamName(term.clone())))
         }
     }
 
-    fn op(&mut self, priority: Term, specifier: Term, operator: Term) -> Result<(),Error> {
+    fn op(&mut self, priority: &Term, specifier: &Term, operator: &Term) -> Result<(),Error> {
         todo!()
     }
 
-    fn prolog_flag(&mut self, flag: Term, value: Term) -> Result<(),Error> {
+    fn prolog_flag(&mut self, flag: &Term, value: &Term) -> Result<(),Error> {
         todo!()
     }
 
-    fn char_conversion(&mut self, in_char: Term, out_char: Term) -> Result<(),Error> {
+    fn char_conversion(&mut self, in_char: &Term, out_char: &Term) -> Result<(),Error> {
         todo!()
     }
 
-    fn initialization(&mut self, term: Term) -> Result<(),Error> {
+    fn initialization(&mut self, term: &Term) -> Result<(),Error> {
+        todo!()
+    }
+
+    fn public(&mut self, term: &Term) -> Result<(),Error> {
+        todo!()
+    }
+
+    fn dynamic(&mut self, term: &Term) -> Result<(),Error> {
+        todo!()
+    }
+
+    fn multifile(&mut self, term: &Term) -> Result<(),Error> {
+        todo!()
+    }
+
+    fn discontiguous(&mut self, term: &Term) -> Result<(),Error> {
         todo!()
     }
 }
 
 pub type ErrorSinkFn = fn(e: &Error) -> bool;
 
-pub fn consult(context: &Context, source: &mut dyn Stream, sink: Option<ErrorSinkFn>) -> Result<Program,Error> {
-    ConsultContext::new(context,source,sink).consult()
+pub fn consult(context: &Context, resolver: &mut dyn StreamResolver, source: &str, sink: Option<ErrorSinkFn>) -> Result<Program,Error> {
+    let (name,s) = resolver.open(source)?;
+    ConsultContext::new(context,resolver,name,s,sink).consult()
 }

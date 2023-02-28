@@ -4,7 +4,7 @@ mod lexer;
 mod multistream;
 
 #[derive(Debug)]
-enum StreamError {
+pub enum StreamError {
     IOError(std::io::Error)
 }
 
@@ -14,7 +14,7 @@ impl From<std::io::Error> for StreamError {
     }
 }
 
-trait Stream {
+pub trait Stream {
 	fn get(&mut self) -> Result<Option<char>,StreamError>;
 	fn peek(&mut self) -> Result<Option<char>,StreamError>;
 }
