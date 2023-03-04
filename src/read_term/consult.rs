@@ -1,56 +1,8 @@
-use crate::context::Context;
 use super::*;
 use multistream::*;
+use term::*;
 use parser::*;
-
-
-#[derive(Debug)]
-pub enum ErrorKind {
-    ParserError(parser::Error),
-    NotCallableTerm(Term),
-    Instantiation(Term),
-    UnknownDirective(Term),
-    BadStreamName(Term),
-    IncludeLoop(String),
-    StreamResolverError(multistream::StreamResolverError)
-}
-
-#[derive(Debug)]
-pub struct Error {
-    pub kind: ErrorKind
-}
-
-impl Error {
-    pub fn new(kind: ErrorKind) -> Self {
-        Self {
-            kind
-        }
-    }
-}
-
-impl From<parser::Error> for Error {
-    fn from(e: parser::Error) -> Self {
-        Error::new(ErrorKind::ParserError(e))
-    }
-}
-
-impl From<lexer::Error> for Error {
-    fn from(e: lexer::Error) -> Self {
-        Error::from(parser::Error::from(e))
-    }
-}
-
-impl From<StreamError> for Error {
-    fn from(e: StreamError) -> Self {
-        Error::from(lexer::Error::from(e))
-    }
-}
-
-impl From<multistream::StreamResolverError> for Error {
-    fn from(e: multistream::StreamResolverError) -> Self {
-        Error::new(ErrorKind::StreamResolverError(e))
-    }
-}
+use error::*;
 
 pub struct Program {
 
@@ -87,28 +39,25 @@ fn collect_to_whitespace(s: &mut String, stream: &mut dyn Stream) -> Result<(),S
 struct ConsultContext<'a> {
     context: Context,
     stream: MultiStream,
-    parser: Parser<'a>,
-    program: Program,
     sink: ErrorSinkFn,
     resolver: &'a mut dyn StreamResolver,
-    loaded_set: Vec<String>
+    loaded_set: &'a mut Vec<String>
 }
 
 impl<'a> ConsultContext<'a> {
     fn null_sink(_: &Error) -> bool { false }
 
-    fn new(context: &'a Context, resolver: &'a mut dyn StreamResolver, name: String, source: Box<dyn Stream>, error_sink: Option<ErrorSinkFn>) -> Self {
+    fn new(resolver: &'a mut dyn StreamResolver, name: String, source: Box<dyn Stream>, error_sink: Option<ErrorSinkFn>, loaded_set: &'a mut Vec<String>) -> Self {
+        let context: Context = Default::default();
         Self {
-            context: context.clone(),
+            context,
             stream: MultiStream::new(&name,source),
-            parser: Parser::new(context),
-            program: Program::new(),
             sink: match error_sink {
                 None => Self::null_sink,
                 Some(s) => s
             },
             resolver,
-            loaded_set: Vec::new()
+            loaded_set
         }
     }
 
@@ -128,26 +77,33 @@ impl<'a> ConsultContext<'a> {
 
     pub fn consult(&mut self) -> Result<Program,Error> {
         loop {
-            match self.parser.next(&mut self.stream) {
+            match parser::next(&self.context,&mut self.stream) {
                 Ok(None) => break,
                 Ok(Some(t)) => { let r = self.consult_term(t); self.error(r)? },
-                Err(parser::Error::TokenError(mut e)) => {
-                    // Collect up to next whitespace
-                    let r = match e {
-                        lexer::Error::BadEscape(ref mut s) |
-                        lexer::Error::BadInteger(ref mut s) |
-                        lexer::Error::BadFloat(ref mut s) |
-                        lexer::Error::Unexpected(ref mut s) => collect_to_whitespace(s,&mut self.stream),
-                        _ => Ok(())
-                    };
-                    self.error(Err(e))?;
-                    self.error(r)?;
-                    self.parser.skip_to_end(&mut self.stream)?;
-                },
                 Err(e) => {
-                    self.error(Err(e))?;
-                    self.parser.skip_to_end(&mut self.stream)?;
-                },
+                    match e.kind {
+                        // Collect up to next whitespace
+                        ErrorKind::BadEscape(ref mut s) |
+                        ErrorKind::BadInteger(ref mut s) |
+                        ErrorKind::BadFloat(ref mut s) |
+                        ErrorKind::Unexpected(ref mut s) => {
+                            let r = collect_to_whitespace(s,&mut self.stream);
+                            self.error(Err(e))?;
+                            self.error(r)?;
+                            parser::skip_to_end(&self.context,&mut self.stream)?;
+                        },
+                        ErrorKind::ExpectedToken(_) |
+                        ErrorKind::UnexpectedToken(_) |
+                        ErrorKind::ParseIntError(_) |
+                        ErrorKind::ParseFloatError(_) => {
+                            self.error(Err(e))?;
+                            parser::skip_to_end(&self.context,&mut self.stream)?;
+                        },
+                        _ => {
+                            self.error(Err(e))?;
+                        }
+                    }
+                }
             }
         }
 
@@ -165,8 +121,8 @@ impl<'a> ConsultContext<'a> {
             }
             Term::Compound(_) |
             Term::Atom(_) => self.program.assert_fact(&term),
-            Term::Var(_) => Err(Error::new(ErrorKind::Instantiation(term))),
-            _ => Err(Error::new(ErrorKind::NotCallableTerm(term))),
+            Term::Var(_) => Error::new(ErrorKind::Instantiation(term)),
+            _ => Error::new(ErrorKind::NotCallableTerm(term)),
         }
     }
 
@@ -199,8 +155,8 @@ impl<'a> ConsultContext<'a> {
             Term::Compound(c) if c.functor == "dynamic" => self.directive_expand(c,Self::dynamic),
             Term::Compound(c) if c.functor == "multifile" => self.directive_expand(c,Self::multifile),
             Term::Compound(c) if c.functor == "discontiguous" => self.directive_expand(c,Self::discontiguous),
-            Term::Var(_) => Err(Error::new(ErrorKind::Instantiation(term.clone()))),
-            _ => Err(Error::new(ErrorKind::UnknownDirective(term.clone())))
+            Term::Var(_) => Error::new(ErrorKind::Instantiation(term.clone())),
+            _ => Error::new(ErrorKind::UnknownDirective(term.clone()))
         }
     }
 
@@ -210,8 +166,8 @@ impl<'a> ConsultContext<'a> {
                 let (name,stream) = self.resolver.open(s)?;
                 self.stream.include(&name,stream)
             },
-            Term::Var(_) => Err(Error::new(ErrorKind::Instantiation(term.clone()))),
-            _ => Err(Error::new(ErrorKind::BadStreamName(term.clone())))
+            Term::Var(_) => Error::new(ErrorKind::Instantiation(term.clone())),
+            _ => Error::new(ErrorKind::BadStreamName(term.clone()))
         }
     }
 
@@ -225,15 +181,13 @@ impl<'a> ConsultContext<'a> {
                     }
                 }
                 self.loaded_set.push(full_path.clone());
-
                 let (_,stream) = self.resolver.open(&full_path)?;
-                let old_stream = std::mem::replace(&mut self.stream,MultiStream::new(&full_path,stream));
-                self.consult()?;
-                self.stream = old_stream;
+
+                Self::new(self.resolver,full_path,stream,Some(self.sink),self.loaded_set).consult()?;
                 Ok(())
             },
-            Term::Var(_) => Err(Error::new(ErrorKind::Instantiation(term.clone()))),
-            _ => Err(Error::new(ErrorKind::BadStreamName(term.clone())))
+            Term::Var(_) => Error::new(ErrorKind::Instantiation(term.clone())),
+            _ => Error::new(ErrorKind::BadStreamName(term.clone()))
         }
     }
 
@@ -273,6 +227,7 @@ impl<'a> ConsultContext<'a> {
 pub type ErrorSinkFn = fn(e: &Error) -> bool;
 
 pub fn consult(context: &Context, resolver: &mut dyn StreamResolver, source: &str, sink: Option<ErrorSinkFn>) -> Result<Program,Error> {
+    let loaded_set = Vec::new();
     let (name,s) = resolver.open(source)?;
-    ConsultContext::new(context,resolver,name,s,sink).consult()
+    ConsultContext::new(resolver,name,s,sink,&mut loaded_set).consult()
 }

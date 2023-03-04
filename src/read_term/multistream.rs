@@ -1,14 +1,5 @@
 use super::*;
-
-#[derive(Debug)]
-pub enum StreamResolverError {
-    IOError(std::io::Error)
-}
-
-pub trait StreamResolver {
-	fn open(&mut self, name: &str) -> Result<(String,Box<dyn Stream>),StreamResolverError>;
-	fn full_path(&mut self, name: &str) -> Result<String,StreamResolverError>;
-}
+use error::*;
 
 struct StreamItem {
 	name: String,
@@ -27,10 +18,10 @@ impl MultiStream {
 		}
 	}
 
-    pub fn include(&mut self, name: &str, stream: Box<dyn Stream>) -> Result<(),consult::Error> {
+    pub fn include(&mut self, name: &str, stream: Box<dyn Stream>) -> Result<(),Error> {
 		for s in self.streams.iter() {
 			if s.name == name {
-				return Err(consult::Error::new(consult::ErrorKind::IncludeLoop(name.to_string())));
+				return Error::new(ErrorKind::IncludeLoop(name.to_string()));
 			}
 		}
 		self.streams.push(StreamItem{name: name.to_string(),stream});
