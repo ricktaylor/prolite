@@ -3,7 +3,7 @@ use std::vec::Vec;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug,Clone)]
-pub enum Operator {
+pub(crate) enum Operator {
     fx(u16),
     fy(u16),
     xfx(u16),
@@ -13,10 +13,10 @@ pub enum Operator {
     yf(u16)
 }
 
-pub type OperatorTable = HashMap<String,Vec<Operator>>;
+pub(crate) type OperatorTable = HashMap<String,Vec<Operator>>;
 
 impl Operator {
-    pub fn default_table() -> OperatorTable {
+    pub(crate) fn default_table() -> OperatorTable {
         OperatorTable::from([
             (":-".to_string(),vec![Operator::fx(1200),Operator::xfx(1200)]),
             ("-->".to_string(),vec![Operator::xfx(1200)]),

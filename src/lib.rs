@@ -1,3 +1,4 @@
-mod prolog_flags;
+mod flags;
 mod operators;
 mod read_term;
+mod error;

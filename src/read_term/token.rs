@@ -2,7 +2,7 @@ use super::*;
 use error::*;
 
 #[derive(Debug)]
-pub enum Token {
+pub(super) enum Token {
     Eof,
 	Name(String),
 	Var(String),
@@ -240,7 +240,7 @@ fn alpha_numeric(ctx: &Context, stream: &mut dyn Stream, c: char) -> Result<Stri
 	}
 }
 
-fn quoted(ctx: &Context, stream: &mut dyn Stream, quote: char) -> Result<String,Error> {
+fn quoted(stream: &mut dyn Stream, quote: char) -> Result<String,Error> {
 	let mut t = String::new();
 	loop {
 		match next_char_raw(stream)? {
@@ -278,7 +278,7 @@ fn quoted(ctx: &Context, stream: &mut dyn Stream, quote: char) -> Result<String,
 	}
 }
 
-pub fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Token,Error> {
+pub(super) fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Token,Error> {
 	let mut c = next_char(ctx,stream)?;
 
 	// open ct (* 6.4 *)
@@ -366,7 +366,7 @@ pub fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Token,Error> {
 			},
 
 			// quoted token (* 6.4.2 *)
-			Char::Meta('\'') => return Ok(Token::Name(quoted(ctx,stream,'\'')?)),
+			Char::Meta('\'') => return Ok(Token::Name(quoted(stream,'\'')?)),
 
 			// semicolon token (* 6.4.2 *)
 			Char::Solo(';') => return Ok(Token::Name(String::from(';'))),
@@ -405,10 +405,10 @@ pub fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Token,Error> {
 			Char::Digit(c) => return numeric(ctx,stream,c),
 
 			// double quoted list (* 6.4 *)
-			Char::Meta('"') => return Ok(Token::DoubleQuotedList(quoted(ctx,stream,'"')?)),
+			Char::Meta('"') => return Ok(Token::DoubleQuotedList(quoted(stream,'"')?)),
 
 			// back quoted string (* 6.4.7 *)
-			Char::Meta('`') => return Ok(Token::BackQuotedString(quoted(ctx,stream,'`')?)),
+			Char::Meta('`') => return Ok(Token::BackQuotedString(quoted(stream,'`')?)),
 
 			// open (* 6.4 *)
 			Char::Solo('(') => return Ok(Token::Open),

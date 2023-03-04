@@ -1,12 +1,12 @@
 
 #[derive(Debug,Clone)]
-pub struct Compound {
+pub(super) struct Compound {
     pub functor: String,
     pub args: Vec<Term>
 }
 
 #[derive(Debug,Clone)]
-pub enum Term {
+pub(super) enum Term {
     Integer(i64),
     Float(f64),
     Var(String),
@@ -15,13 +15,13 @@ pub enum Term {
 }
 
 impl Term {
-    pub fn new_compound(functor: &str, args: Vec<Term>) -> Self {
+    pub(super) fn new_compound(functor: &str, args: Vec<Term>) -> Self {
         Term::Compound(Compound { functor: functor.to_string(), args } )
     }
 }
 
 impl<'a> Term {
-    pub fn list_iter(&'a self) -> Option<ListIterator<'a>> {
+    pub(super) fn list_iter(&'a self) -> Option<ListIterator<'a>> {
         match self {
             Term::Compound(c) if c.functor == "." => {
                 Some(ListIterator {
@@ -38,7 +38,7 @@ impl<'a> Term {
     }
 }
 
-pub struct ListIterator<'a> {
+pub(super) struct ListIterator<'a> {
     next: Option<&'a Term>
 }
 

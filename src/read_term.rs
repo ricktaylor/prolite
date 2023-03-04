@@ -36,10 +36,10 @@ pub trait StreamResolver {
 }
 
 #[derive(Debug,Clone)]
-pub struct Context {
-    pub flags: prolog_flags::Flags,
-    pub operators: operators::OperatorTable,
-    pub char_conversion: HashMap<char,char>
+struct Context {
+    flags: flags::Flags,
+    operators: operators::OperatorTable,
+    char_conversion: HashMap<char,char>
 }
 
 impl Default for Context {

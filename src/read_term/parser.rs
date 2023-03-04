@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::operators::*;
-use crate::prolog_flags::QuoteFlags;
+use crate::flags::QuoteFlag;
 use super::*;
 use token::*;
 use term::*;
@@ -124,17 +124,17 @@ fn list(ctx: &Context, stream: &mut dyn Stream) -> Result<Term,Error> {
     Ok(list)
 }
 
-fn quoted(ctx: &Context, stream: &mut dyn Stream, flags: &QuoteFlags, s: String, max_precedence: u16) -> Result<(Term,Token,u16),Error> {
+fn quoted(ctx: &Context, stream: &mut dyn Stream, flags: &QuoteFlag, s: String, max_precedence: u16) -> Result<(Term,Token,u16),Error> {
     match flags {
-        QuoteFlags::Atom => name(ctx,stream,&s,max_precedence),
-        QuoteFlags::Chars => {
+        QuoteFlag::Atom => name(ctx,stream,&s,max_precedence),
+        QuoteFlag::Chars => {
             let mut list = Term::Atom("[]".to_string());
             for c in s.chars().rev() {
                 list = Term::new_compound(".",vec![Term::Atom(c.to_string()),list]);
             }
             Ok((list,token::next(ctx,stream)?,0))
         },
-        QuoteFlags::Codes => {
+        QuoteFlag::Codes => {
             let mut list = Term::Atom("[]".to_string());
             for c in s.chars().rev() {
                 list = Term::new_compound(".",vec![Term::Integer(c as i64),list]);
@@ -228,7 +228,7 @@ fn next_term(ctx: &Context, stream: &mut dyn Stream, token: Token, max_precedenc
     }
 }
 
-pub fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Option<Term>,Error> {
+pub(super) fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Option<Term>,Error> {
     let t = token::next(ctx,stream)?;
     if let Token::Eof = t {
         return Ok(None);
@@ -241,7 +241,7 @@ pub fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Option<Term>,Error
     }
 }
 
-pub fn skip_to_end(ctx: &Context, stream: &mut dyn Stream) -> Result<(),Error> {
+pub(super) fn skip_to_end(ctx: &Context, stream: &mut dyn Stream) -> Result<(),Error> {
     loop {
         match token::next(ctx,stream)? {
             Token::Eof |

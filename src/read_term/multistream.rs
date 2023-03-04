@@ -1,24 +1,24 @@
 use super::*;
-use error::*;
+use consult::*;
 
 struct StreamItem {
 	name: String,
 	stream: Box<dyn Stream>
 }
 
-pub struct MultiStream {
+pub(super) struct MultiStream {
     streams: Vec<StreamItem>,
 }
 
 impl MultiStream {
 
-    pub fn new(name: &str, stream: Box<dyn Stream>) -> Self {
+    pub(super) fn new(name: &str, stream: Box<dyn Stream>) -> Self {
 		Self {
 			streams: vec![StreamItem{name: name.to_string(),stream}]
 		}
 	}
 
-    pub fn include(&mut self, name: &str, stream: Box<dyn Stream>) -> Result<(),Error> {
+    pub(super) fn include(&mut self, name: &str, stream: Box<dyn Stream>) -> Result<(),Error> {
 		for s in self.streams.iter() {
 			if s.name == name {
 				return Error::new(ErrorKind::IncludeLoop(name.to_string()));
