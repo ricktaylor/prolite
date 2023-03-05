@@ -2,7 +2,6 @@ use crate::operators::Operator;
 
 use super::*;
 use read_term::term::Term;
-use stream::*;
 
 #[derive(Debug)]
 pub(super) enum ErrorKind {
@@ -15,7 +14,7 @@ pub(super) enum ErrorKind {
     InvalidOperator(Term),
     InvalidOpPriority(Term),
     InvalidOpSpecifier(Term),
-    InvalidOpCombo(Term,Operator),
+    InvalidOpCombo(Term,Operator,Operator),
 
 }
 

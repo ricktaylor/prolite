@@ -174,60 +174,64 @@ fn update_op(ctx: &mut ConsultContext, specifier: &Operator, operator: &Term, re
         Term::Atom(s) if remove => { ctx.context.operators.remove(s); Ok(()) },
         Term::Atom(s) => {
             if let Some(ops) = ctx.context.operators.get_mut(s) {
+                let mut found = false;
                 for o in ops.iter_mut() {
                     match o {
                         Operator::fx(p1) => {
-                            if let Operator::fx(p2) = specifier { *p1 = *p2; return Ok(()) }
+                            if let Operator::fx(p2) = specifier { *p1 = *p2; found = true; break }
                         },
                         Operator::fy(p1) => {
-                            if let Operator::fy(p2) = specifier { *p1 = *p2; return Ok(()) }
+                            if let Operator::fy(p2) = specifier { *p1 = *p2; found = true; break }
                         },
                         Operator::xfx(p1) => {
                             match specifier {
-                                Operator::xfx(p2) => { *p1 = *p2; return Ok(()) }
+                                Operator::xfx(p2) => { *p1 = *p2; found = true; break }
                                 Operator::xf(_) |
-                                Operator::yf(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),specifier.clone())),
+                                Operator::yf(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),o.clone(),specifier.clone())),
                                 _ => (),
                             }
                         },
                         Operator::xfy(p1) => {
                             match specifier {
-                                Operator::xfy(p2) => { *p1 = *p2; return Ok(()) }
+                                Operator::xfy(p2) => { *p1 = *p2; found = true; break }
                                 Operator::xf(_) |
-                                Operator::yf(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),specifier.clone())),
+                                Operator::yf(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),o.clone(),specifier.clone())),
                                 _ => (),
                             }
                         },
                         Operator::yfx(p1) => {
                             match specifier {
-                                Operator::yfx(p2) => { *p1 = *p2; return Ok(()) }
+                                Operator::yfx(p2) => { *p1 = *p2; found = true; break }
                                 Operator::xf(_) |
-                                Operator::yf(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),specifier.clone())),
+                                Operator::yf(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),o.clone(),specifier.clone())),
                                 _ => (),
                             }
                         },
                         Operator::xf(p1) => {
                             match specifier {
-                                Operator::xf(p2) => { *p1 = *p2; return Ok(()) }
+                                Operator::xf(p2) => { *p1 = *p2; found = true; break }
                                 Operator::xfx(_) |
                                 Operator::xfy(_) |
-                                Operator::yfx(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),specifier.clone())),
+                                Operator::yfx(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),o.clone(),specifier.clone())),
                                 _ => (),
                             }
                         },
                         Operator::yf(p1) => {
                             match specifier {
-                                Operator::yf(p2) => { *p1 = *p2; return Ok(()) }
+                                Operator::yf(p2) => { *p1 = *p2; found = true; break }
                                 Operator::xfx(_) |
                                 Operator::xfy(_) |
-                                Operator::yfx(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),specifier.clone())),
+                                Operator::yfx(_) => return Error::new(ErrorKind::InvalidOpCombo(operator.clone(),o.clone(),specifier.clone())),
                                 _ => (),
                             }
                         },
                         _ => {}
                     }
                 }
-                ops.push(specifier.clone());
+                if ! found {
+                    ops.push(specifier.clone());
+                }
+                ops.sort_by(|a,b| a.priority().cmp(&b.priority()));
             } else {
                 ctx.context.operators.insert(s.clone(),vec![specifier.clone()]);
             }
