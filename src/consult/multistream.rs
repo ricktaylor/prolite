@@ -1,5 +1,6 @@
 use super::*;
-use consult::*;
+use error::*;
+use stream::*;
 
 struct StreamItem {
 	name: String,

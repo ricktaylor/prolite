@@ -60,4 +60,16 @@ impl Operator {
         ])
     }
 
+    pub(crate) fn priority(&self) -> u16 {
+        match self {
+            Operator::fx(p) |
+            Operator::fy(p) |
+            Operator::xfx(p) |
+            Operator::xfy(p) |
+            Operator::yfx(p) |
+            Operator::xf(p) |
+            Operator::yf(p) => { *p }
+        }
+    }
+
 }

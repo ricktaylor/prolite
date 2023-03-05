@@ -1,45 +1,18 @@
-mod parser;
-mod consult;
-mod token;
-mod multistream;
-mod error;
-mod term;
+pub(super) mod parser;
+pub(super) mod error;
+pub(super) mod term;
+
+mod lexer;
 
 use std::collections::HashMap;
 use std::default::Default;
-use super::*;
-
-#[derive(Debug)]
-pub enum StreamError {
-    IOError(std::io::Error)
-}
-
-impl From<std::io::Error> for StreamError {
-    fn from(e: std::io::Error) -> Self {
-        StreamError::IOError(e)
-    }
-}
-
-pub trait Stream {
-	fn get(&mut self) -> Result<Option<char>,StreamError>;
-	fn peek(&mut self) -> Result<Option<char>,StreamError>;
-}
-
-#[derive(Debug)]
-pub enum StreamResolverError {
-    IOError(std::io::Error)
-}
-
-pub trait StreamResolver {
-	fn open(&mut self, name: &str) -> Result<(String,Box<dyn Stream>),StreamResolverError>;
-	fn full_path(&mut self, name: &str) -> Result<String,StreamResolverError>;
-}
+use super::{operators,flags,stream};
 
 #[derive(Debug,Clone)]
-struct Context {
-    flags: flags::Flags,
-    operators: operators::OperatorTable,
-    char_conversion: HashMap<char,char>
+pub(super) struct Context {
+    pub flags: flags::Flags,
+    pub operators: operators::OperatorTable,
+    pub char_conversion: HashMap<char,char>
 }
 
 impl Default for Context {

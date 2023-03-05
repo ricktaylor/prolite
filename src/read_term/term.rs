@@ -1,12 +1,18 @@
 
 #[derive(Debug,Clone)]
-pub(super) struct Compound {
+pub(crate) struct Compound {
     pub functor: String,
     pub args: Vec<Term>
 }
 
+impl Compound {
+    pub(crate) fn predicate_indicator(&self) -> String {
+        format!("{}/{}",self.functor,self.args.len())
+    }
+}
+
 #[derive(Debug,Clone)]
-pub(super) enum Term {
+pub(crate) enum Term {
     Integer(i64),
     Float(f64),
     Var(String),
@@ -21,7 +27,7 @@ impl Term {
 }
 
 impl<'a> Term {
-    pub(super) fn list_iter(&'a self) -> Option<ListIterator<'a>> {
+    pub(crate) fn list_iter(&'a self) -> Option<ListIterator<'a>> {
         match self {
             Term::Compound(c) if c.functor == "." => {
                 Some(ListIterator {
@@ -38,7 +44,7 @@ impl<'a> Term {
     }
 }
 
-pub(super) struct ListIterator<'a> {
+pub(crate) struct ListIterator<'a> {
     next: Option<&'a Term>
 }
 

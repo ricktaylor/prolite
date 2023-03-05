@@ -1,8 +1,9 @@
 use super::*;
 use error::*;
+use stream::*;
 
 #[derive(Debug)]
-pub(super) enum Token {
+pub(crate) enum Token {
     Eof,
 	Name(String),
 	Var(String),
@@ -240,7 +241,7 @@ fn alpha_numeric(ctx: &Context, stream: &mut dyn Stream, c: char) -> Result<Stri
 	}
 }
 
-fn quoted(stream: &mut dyn Stream, quote: char) -> Result<String,Error> {
+fn quoted(stream: &mut dyn Stream, quote: char, greedy: bool) -> Result<String,Error> {
 	let mut t = String::new();
 	loop {
 		match next_char_raw(stream)? {
@@ -259,7 +260,12 @@ fn quoted(stream: &mut dyn Stream, quote: char) -> Result<String,Error> {
 					Some('n') => t.push('\n'),
 					Some('v') => t.push('\x0B'),
 					Some('x') => todo!(),
-					Some(c) if ('0'..='7').contains(&c) => todo!(),
+					Some(c) if ('0'..='7').contains(&c) => {
+						if greedy {
+
+						}
+						todo!()
+					},
 					Some(c) => return Error::new(ErrorKind::BadEscape(String::from_iter(vec!['\\',c]))),
 					None => return Error::new(ErrorKind::BadEscape("\\".to_string()))
 				}
@@ -278,7 +284,7 @@ fn quoted(stream: &mut dyn Stream, quote: char) -> Result<String,Error> {
 	}
 }
 
-pub(super) fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Token,Error> {
+pub(super) fn next(ctx: &Context, stream: &mut dyn Stream, greedy: bool) -> Result<Token,Error> {
 	let mut c = next_char(ctx,stream)?;
 
 	// open ct (* 6.4 *)
@@ -366,7 +372,7 @@ pub(super) fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Token,Error
 			},
 
 			// quoted token (* 6.4.2 *)
-			Char::Meta('\'') => return Ok(Token::Name(quoted(stream,'\'')?)),
+			Char::Meta('\'') => return Ok(Token::Name(quoted(stream,'\'',greedy)?)),
 
 			// semicolon token (* 6.4.2 *)
 			Char::Solo(';') => return Ok(Token::Name(String::from(';'))),
@@ -405,10 +411,10 @@ pub(super) fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Token,Error
 			Char::Digit(c) => return numeric(ctx,stream,c),
 
 			// double quoted list (* 6.4 *)
-			Char::Meta('"') => return Ok(Token::DoubleQuotedList(quoted(stream,'"')?)),
+			Char::Meta('"') => return Ok(Token::DoubleQuotedList(quoted(stream,'"',greedy)?)),
 
 			// back quoted string (* 6.4.7 *)
-			Char::Meta('`') => return Ok(Token::BackQuotedString(quoted(stream,'`')?)),
+			Char::Meta('`') => return Ok(Token::BackQuotedString(quoted(stream,'`',greedy)?)),
 
 			// open (* 6.4 *)
 			Char::Solo('(') => return Ok(Token::Open),
@@ -435,8 +441,17 @@ pub(super) fn next(ctx: &Context, stream: &mut dyn Stream) -> Result<Token,Error
 			Char::Solo(',') => return Ok(Token::Comma),
 
 			Char::Solo(c) |
-			Char::Invalid(c) |
-			Char::Meta(c) => return Error::new(ErrorKind::Unexpected(c.to_string())),
+			Char::Meta(c) |
+			Char::Invalid(c) => {
+				let mut s = c.to_string();
+				if greedy {
+					while let Char::Invalid(c) = peek_char(ctx,stream)? {
+						s.push(c);
+						eat_char(stream)?;
+					}
+				}
+				return Error::new(ErrorKind::Unexpected(s))
+			}
 		}
 	}
 }

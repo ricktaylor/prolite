@@ -1,9 +1,11 @@
-use super::*;
-use token::*;
 use crate::error::ErrorInfo;
+use crate::stream::StreamError;
+
+use super::*;
+use lexer::*;
 
 #[derive(Debug)]
-pub(super) enum ErrorKind {
+pub(crate) enum ErrorKind {
 	Missing(char),
 	BadEscape(String),
 	BadFloat(String),
@@ -17,7 +19,7 @@ pub(super) enum ErrorKind {
 }
 
 #[derive(Debug)]
-pub(super) struct Error {
+pub(crate) struct Error {
     pub kind: ErrorKind,
     pub info: Option<ErrorInfo>
 }
