@@ -50,14 +50,12 @@ fn compound(ctx: &Context, stream: &mut dyn Stream, s: &str, greedy: bool) -> Re
 
     let mut next = lexer::next(ctx,stream,greedy)?;
     loop {
-        next = {
-            let (term,next) = arg(ctx,stream,next,greedy)?;
-            c.args.push(term);
-            next
-        };
-
+        let term;
+        (term,next) = arg(ctx,stream,next,greedy)?;
+        c.args.push(term);
+        
         match next {
-            Token::Comma => {},
+            Token::Comma => { next = lexer::next(ctx,stream,greedy)?; },
             Token::Close => return Ok(Term::Compound(c)),
             _ => return Error::new(ErrorKind::ExpectedToken(Token::Close))
         }

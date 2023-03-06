@@ -3,12 +3,15 @@ pub(super) mod error;
 
 mod multistream;
 
+use std::ffi::OsString;
+
 use crate::{stream,read_term};
 use stream::*;
 
 #[derive(Debug)]
-pub enum StreamResolverError {
-    IOError(std::io::Error)
+pub struct StreamResolverError {
+    pub error: std::io::Error,
+    pub path: String,
 }
 
 pub trait StreamResolver {
