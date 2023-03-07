@@ -1,18 +1,18 @@
-pub(super) mod parser;
 pub(super) mod error;
+pub(super) mod parser;
 pub(super) mod term;
 
 mod lexer;
 
+use super::{flags, operators, stream};
 use std::collections::HashMap;
 use std::default::Default;
-use super::{operators,flags,stream};
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct Context {
     pub flags: flags::Flags,
     pub operators: operators::OperatorTable,
-    pub char_conversion: HashMap<char,char>
+    pub char_conversion: HashMap<char, char>,
 }
 
 impl Default for Context {
@@ -20,7 +20,7 @@ impl Default for Context {
         Self {
             flags: Default::default(),
             operators: operators::Operator::default_table(),
-            char_conversion: HashMap::new()
+            char_conversion: HashMap::new(),
         }
     }
 }
@@ -30,9 +30,9 @@ impl Context {
         let r = self.operators.get(name)?;
         for o in r.iter() {
             if let operators::Operator::fx(_) | operators::Operator::fy(_) = o {
-                continue
+                continue;
             } else {
-                return Some(o)
+                return Some(o);
             }
         }
         r.first()
@@ -42,9 +42,9 @@ impl Context {
         let r = self.operators.get(name)?;
         for o in r.iter() {
             if let operators::Operator::fx(_) | operators::Operator::fy(_) = o {
-                return Some(o)
+                return Some(o);
             } else {
-                continue
+                continue;
             }
         }
         r.first()

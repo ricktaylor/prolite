@@ -1,7 +1,6 @@
-
 #[derive(Debug)]
 pub enum StreamError {
-    IOError(std::io::Error)
+    IOError(std::io::Error),
 }
 
 impl From<std::io::Error> for StreamError {
@@ -11,6 +10,6 @@ impl From<std::io::Error> for StreamError {
 }
 
 pub trait Stream {
-	fn get(&mut self) -> Result<Option<char>,StreamError>;
-	fn peek(&mut self) -> Result<Option<char>,StreamError>;
+    fn get(&mut self) -> Result<Option<char>, StreamError>;
+    fn peek(&mut self) -> Result<Option<char>, StreamError>;
 }

@@ -1,26 +1,25 @@
-
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum QuoteFlag {
     Chars,
     Codes,
-    Atom
+    Atom,
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum UnknownFlag {
     Error,
     Fail,
-    Warning
+    Warning,
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct Flags {
     pub char_conversion: bool,
     pub double_quotes: QuoteFlag,
     pub back_quotes: QuoteFlag,
     pub unknown: UnknownFlag,
     pub debug: bool,
-    pub colon_sets_calling_context: bool
+    pub colon_sets_calling_context: bool,
 }
 
 impl Default for Flags {
@@ -31,7 +30,7 @@ impl Default for Flags {
             back_quotes: QuoteFlag::Codes,
             unknown: UnknownFlag::Error,
             debug: false,
-            colon_sets_calling_context: false
+            colon_sets_calling_context: false,
         }
     }
 }
