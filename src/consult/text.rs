@@ -1,3 +1,4 @@
+use crate::flags::{UnknownFlag, QuoteFlag};
 use crate::operators::Operator;
 
 use super::*;
@@ -144,14 +145,13 @@ fn include(ctx: &mut ConsultContext, term: &Term) -> Result<(),Error> {
 fn ensure_loaded(ctx: &mut ConsultContext, term: &Term) -> Result<(),Error> {
     match term {
         Term::Atom(s) => {
-            let full_path = ctx.resolver.full_path(s)?;
+            let (full_path,stream) = ctx.resolver.open(s)?;
             for s in ctx.loaded_set.iter() {
                 if *s == full_path {
                     return Ok(());
                 }
             }
             ctx.loaded_set.push(full_path.clone());
-            let (_,stream) = ctx.resolver.open(&full_path)?;
 
             // New context and stream
             let prev_ctx = std::mem::take(&mut ctx.context);
@@ -283,7 +283,69 @@ fn op(ctx: &mut ConsultContext, priority: &Term, specifier: &Term, operator: &Te
 }
 
 fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<(),Error> {
-    todo!()
+    match flag {
+        Term::Atom(s) => {
+            match s.as_str() {
+                "char_conversion" => {
+                    match value {
+                        Term::Atom(s) => {
+                            match s.as_str() {
+                                "on" => { ctx.context.flags.char_conversion = true; Ok(()) },
+                                "off" => { ctx.context.flags.char_conversion = false; Ok(()) },
+                                _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone())),
+                            }
+                        },
+                        _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone()))
+                    }
+                },
+                "debug" => match value {
+                    Term::Atom(s) => {
+                        match s.as_str() {
+                            "on" => { ctx.context.flags.debug = true; Ok(()) },
+                            "off" => { ctx.context.flags.debug = false; Ok(()) },
+                            _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone())),
+                        }
+                    },
+                    _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone()))
+                },
+                "unknown" => match value {
+                    Term::Atom(s) => {
+                        match s.as_str() {
+                            "error" => { ctx.context.flags.unknown = UnknownFlag::Error; Ok(()) },
+                            "fail" => { ctx.context.flags.unknown = UnknownFlag::Fail; Ok(()) },
+                            "warning" => { ctx.context.flags.unknown = UnknownFlag::Warning; Ok(()) },
+                            _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone())),
+                        }
+                    },
+                    _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone()))
+                },
+                "double_quotes" => match value {
+                    Term::Atom(s) => {
+                        match s.as_str() {
+                            "chars" => { ctx.context.flags.double_quotes = QuoteFlag::Chars; Ok(()) },
+                            "codes" => { ctx.context.flags.double_quotes = QuoteFlag::Codes; Ok(()) },
+                            "atom" => { ctx.context.flags.double_quotes = QuoteFlag::Atom; Ok(()) },
+                            _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone())),
+                        }
+                    },
+                    _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone()))
+                },
+                "back_quotes" => match value {
+                    Term::Atom(s) => {
+                        match s.as_str() {
+                            "chars" => { ctx.context.flags.back_quotes = QuoteFlag::Chars; Ok(()) },
+                            "codes" => { ctx.context.flags.back_quotes = QuoteFlag::Codes; Ok(()) },
+                            "atom" => { ctx.context.flags.back_quotes = QuoteFlag::Atom; Ok(()) },
+                            _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone())),
+                        }
+                    },
+                    _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(),value.clone()))
+                },
+                _ => Error::new(ErrorKind::InvalidFlag(flag.clone())),
+            }
+        },
+        _ => Error::new(ErrorKind::InvalidFlag(flag.clone()))
+    }
 }
 
 fn char_conversion(ctx: &mut ConsultContext, in_char: &Term, out_char: &Term) -> Result<(),Error> {
@@ -393,10 +455,6 @@ mod tests {
                     Err(StreamResolverError { error: e, path: fp.into_os_string().into_string().unwrap() })
                 }
             }
-        }
-
-        fn full_path(&mut self, name: &str) -> Result<String,StreamResolverError> {
-            Ok(self.root.join(name).into_os_string().into_string().unwrap())            
         }
     }
 

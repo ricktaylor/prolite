@@ -16,7 +16,6 @@ pub struct StreamResolverError {
 
 pub trait StreamResolver {
 	fn open(&mut self, name: &str) -> Result<(String,Box<dyn Stream>),StreamResolverError>;
-	fn full_path(&mut self, name: &str) -> Result<String,StreamResolverError>;
 }
 
 type ErrorSinkFn = fn(e: &error::Error) -> bool;

@@ -53,11 +53,11 @@ fn compound(ctx: &Context, stream: &mut dyn Stream, s: &str, greedy: bool) -> Re
         let term;
         (term,next) = arg(ctx,stream,next,greedy)?;
         c.args.push(term);
-        
+
         match next {
             Token::Comma => { next = lexer::next(ctx,stream,greedy)?; },
             Token::Close => return Ok(Term::Compound(c)),
-            _ => return Error::new(ErrorKind::ExpectedToken(Token::Close))
+            _ => return Error::new(ErrorKind::ExpectedToken(Token::Close,next))
         }
     }
 }
@@ -90,31 +90,30 @@ fn name(ctx: &Context, stream: &mut dyn Stream, s: &str, max_precedence: u16, gr
 
 fn list(ctx: &Context, stream: &mut dyn Stream, greedy: bool) -> Result<Term,Error> {
     let mut terms = Vec::new();
-    let mut token = lexer::next(ctx,stream,greedy)?;
-    if ! matches!(token,Token::CloseL) {
+    let mut next = lexer::next(ctx,stream,greedy)?;
+    if ! matches!(next,Token::CloseL) {
         loop {
-            let (term,next) = arg(ctx,stream,token,greedy)?;
+            let term: Term;
+            (term,next) = arg(ctx,stream,next,greedy)?;
             terms.push(term);
-            token = next;
 
-            match token {
-                Token::Comma => token = lexer::next(ctx,stream,greedy)?,
+            match next {
+                Token::Comma => next = lexer::next(ctx,stream,greedy)?,
                 _ => break
             }
         }
     }
 
-    let mut list = match token {
+    let mut list: Term;
+    match next {
         Token::Bar => {
-            let (term,next) = arg(ctx,stream,token,greedy)?;
-            token = next;
-            term
+            (list,next) = arg(ctx,stream,next,greedy)?;
         },
-        _ => Term::Atom("[]".to_string())
+        _ => list = Term::Atom("[]".to_string())
     };
 
-    if ! matches!(token,Token::CloseL) {
-        return Error::new(ErrorKind::ExpectedToken(Token::CloseL));
+    if ! matches!(next,Token::CloseL) {
+        return Error::new(ErrorKind::ExpectedToken(Token::CloseL,next));
     }
 
     while let Some(t) = terms.pop() {
@@ -157,34 +156,63 @@ fn lookup_op(ctx: &Context, s: &str, max_precedence: u16) -> (u16,u16,usize,bool
 }
 
 fn next_term(ctx: &Context, stream: &mut dyn Stream, token: Token, max_precedence: u16, greedy: bool) -> Result<(Term,Token),Error> {
-    let (mut term, mut next,precedence) = match token {
-        Token::Name(s) => name(ctx,stream,&s,max_precedence,greedy)?,
-        Token::Var(s) => (Term::Var(s),lexer::next(ctx,stream,greedy)?,0),
-        Token::Int(s,r) => (parse_integer(&s,r)?,lexer::next(ctx,stream,greedy)?,0),
-        Token::CharCode(c) => (Term::Integer(c as i64),lexer::next(ctx,stream,greedy)?,0),
-        Token::Float(s) => (parse_float(&s)?,lexer::next(ctx,stream,greedy)?,0),
-        Token::DoubleQuotedList(s) => quoted(ctx,stream,&ctx.flags.double_quotes,s,max_precedence,greedy)?, /* ISO/IEC 13211-1:1995/Cor.1:2007 */
-        Token::BackQuotedString(s) => quoted(ctx,stream,&ctx.flags.back_quotes,s,max_precedence,greedy)?,
+    let mut term;
+    let mut next;
+    let mut precedence = 0u16;
+
+    match token {
+        Token::Name(s) => {
+            (term,next,precedence) = name(ctx,stream,&s,max_precedence,greedy)?
+        },
+        Token::Var(s) => {
+            term = Term::Var(s);
+            next = lexer::next(ctx,stream,greedy)?
+        },
+        Token::Int(s,r) => {
+            term = parse_integer(&s,r)?;
+            next = lexer::next(ctx,stream,greedy)?
+        },
+        Token::CharCode(c) => {
+            term = Term::Integer(c as i64);
+            next = lexer::next(ctx,stream,greedy)?
+        },
+        Token::Float(s) => {
+            term = parse_float(&s)?;
+            next = lexer::next(ctx,stream,greedy)?
+        },
+        Token::DoubleQuotedList(s) => {
+            /* ISO/IEC 13211-1:1995/Cor.1:2007 */
+            (term,next,precedence) = quoted(ctx,stream,&ctx.flags.double_quotes,s,max_precedence,greedy)?
+        },
+        Token::BackQuotedString(s) => {
+            (term,next,precedence) = quoted(ctx,stream,&ctx.flags.back_quotes,s,max_precedence,greedy)?
+        }
         Token::Open |
         Token::OpenCt => {
-            let next = lexer::next(ctx,stream,greedy)?;
-            let (term,next) = next_term(ctx,stream,next,1201,greedy)?;
+            next = lexer::next(ctx,stream,greedy)?;
+            (term,next) = next_term(ctx,stream,next,1201,greedy)?;
             match next {
-                Token::Close => (term,next,0),
-                _ => return Error::new(ErrorKind::ExpectedToken(Token::Close))
+                Token::Close => next = lexer::next(ctx,stream,greedy)?,
+                _ => return Error::new(ErrorKind::ExpectedToken(Token::Close,next))
             }
         },
         Token::OpenC => {
-            let next = lexer::next(ctx,stream,greedy)?;
-            let (term,next) = next_term(ctx,stream,next,1201,greedy)?;
+            next = lexer::next(ctx,stream,greedy)?;
+            (term,next) = next_term(ctx,stream,next,1201,greedy)?;
             match next {
-                Token::CloseC => (Term::new_compound("{}",vec![term]),next,0),
-                _ => return Error::new(ErrorKind::ExpectedToken(Token::CloseC))
+                Token::CloseC => {
+                    term = Term::new_compound("{}",vec![term]);
+                    next = lexer::next(ctx,stream,greedy)?;
+                },
+                _ => return Error::new(ErrorKind::ExpectedToken(Token::CloseC,next)),
             }
         },
-        Token::OpenL => (list(ctx,stream,greedy)?,lexer::next(ctx,stream,greedy)?,0),
+        Token::OpenL => {
+            term = list(ctx,stream,greedy)?;
+            next = lexer::next(ctx,stream,greedy)?
+        },
         _ => return Error::new(ErrorKind::UnexpectedToken(token))
-    };
+    }
 
     /* This is precedence climbing, if you're interested */
     loop {
@@ -215,13 +243,10 @@ fn next_term(ctx: &Context, stream: &mut dyn Stream, token: Token, max_precedenc
             args: vec![term]
         };
 
-        next = if arity == 2 {
-            let (term,next) = next_term(ctx,stream,next,r,greedy)?;
+        if arity == 2 {
+            (term,next) = next_term(ctx,stream,next,r,greedy)?;
             c.args.push(term);
-            next
-        } else {
-            next
-        };
+        }
 
         term = Term::Compound(c);
     }
@@ -236,7 +261,7 @@ pub(crate) fn next(ctx: &Context, stream: &mut dyn Stream, greedy: bool) -> Resu
     let (term,next) = next_term(ctx,stream,t,1201,greedy)?;
     match next {
         Token::End => Ok(Some(term)),
-        _ => Error::new(ErrorKind::ExpectedToken(Token::End))
+        _ => Error::new(ErrorKind::ExpectedToken(Token::End,next))
     }
 }
 

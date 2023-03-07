@@ -12,7 +12,7 @@ pub(crate) enum ErrorKind {
 	BadInteger(String),
 	Unexpected(String),
     StreamError(StreamError),
-    ExpectedToken(Token),
+    ExpectedToken(Token,Token),
     UnexpectedToken(Token),
     ParseIntError(std::num::ParseIntError),
     ParseFloatError(std::num::ParseFloatError)
