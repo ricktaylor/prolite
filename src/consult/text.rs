@@ -17,11 +17,11 @@ impl Program {
     }
 
     fn assert_clause(&mut self, head: &Term, tail: &Term) -> Result<(), Error> {
-        todo!()
+        Ok(())
     }
 
     fn assert_fact(&mut self, term: &Term) -> Result<(), Error> {
-        todo!()
+        Ok(())
     }
 }
 
@@ -294,7 +294,6 @@ fn update_op(
                             }
                             _ => (),
                         },
-                        _ => {}
                     }
                 }
                 if !found {
@@ -475,7 +474,7 @@ pub(super) fn consult(
     source: &str,
     sink: Option<ErrorSinkFn>,
 ) -> Result<Program, Error> {
-    let mut program = Program {};
+    let mut program = Program::new();
     let mut loaded_set = Vec::new();
     let mut ctx = ConsultContext::new(resolver, source, &mut program, sink, &mut loaded_set)?;
     load_text(&mut ctx)?;
@@ -486,13 +485,13 @@ pub(super) fn consult(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stream::Stream;
     use std::{
         env,
         fs::{File, OpenOptions},
         io::{self},
         path::{Path, PathBuf},
     };
+    use stream::Stream;
 
     struct FSStream {
         reader: utf8_read::Reader<File>,
@@ -509,13 +508,13 @@ mod tests {
     }
 
     impl Stream for FSStream {
-        fn get(&mut self) -> Result<Option<char>, crate::stream::StreamError> {
+        fn get(&mut self) -> Result<Option<char>, stream::Error> {
             let r = self.peek()?;
             self.next = None;
             Ok(r)
         }
 
-        fn peek(&mut self) -> Result<Option<char>, crate::stream::StreamError> {
+        fn peek(&mut self) -> Result<Option<char>, stream::Error> {
             if let None = self.next {
                 self.next = Some(self.reader.next_char().unwrap());
             }

@@ -1,6 +1,6 @@
 use super::*;
 use error::*;
-use stream::*;
+use stream::Stream;
 
 struct StreamItem {
     name: String,
@@ -36,7 +36,7 @@ impl MultiStream {
 }
 
 impl Stream for MultiStream {
-    fn get(&mut self) -> Result<Option<char>, StreamError> {
+    fn get(&mut self) -> Result<Option<char>, stream::Error> {
         while let Some(s) = self.streams.last_mut() {
             if let Some(c) = s.stream.get()? {
                 return Ok(Some(c));
@@ -46,7 +46,7 @@ impl Stream for MultiStream {
         Ok(None)
     }
 
-    fn peek(&mut self) -> Result<Option<char>, StreamError> {
+    fn peek(&mut self) -> Result<Option<char>, stream::Error> {
         for s in self.streams.iter_mut().rev() {
             if let Some(c) = s.stream.peek()? {
                 return Ok(Some(c));

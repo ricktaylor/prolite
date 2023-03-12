@@ -1,6 +1,5 @@
-use crate::operators::Operator;
-
 use super::*;
+use operators::Operator;
 use read_term::term::Term;
 
 #[derive(Debug)]
@@ -38,8 +37,8 @@ impl From<StreamResolverError> for Error {
     }
 }
 
-impl From<StreamError> for Error {
-    fn from(e: StreamError) -> Self {
+impl From<stream::Error> for Error {
+    fn from(e: stream::Error) -> Self {
         Error {
             kind: ErrorKind::ReadTerm(read_term::error::ErrorKind::StreamError(e)),
         }

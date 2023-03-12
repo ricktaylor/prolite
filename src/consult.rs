@@ -3,10 +3,7 @@ pub(super) mod text;
 
 mod multistream;
 
-use std::ffi::OsString;
-
-use crate::{read_term, stream};
-use stream::*;
+use super::{flags, operators, read_term, stream};
 
 #[derive(Debug)]
 pub struct StreamResolverError {
@@ -15,7 +12,10 @@ pub struct StreamResolverError {
 }
 
 pub trait StreamResolver {
-    fn open(&mut self, name: &str) -> Result<(String, Box<dyn Stream>), StreamResolverError>;
+    fn open(
+        &mut self,
+        name: &str,
+    ) -> Result<(String, Box<dyn stream::Stream>), StreamResolverError>;
 }
 
 type ErrorSinkFn = fn(e: &error::Error) -> bool;

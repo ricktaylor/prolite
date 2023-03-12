@@ -1,5 +1,4 @@
 use crate::error::ErrorInfo;
-use crate::stream::StreamError;
 
 use super::*;
 use lexer::*;
@@ -11,7 +10,7 @@ pub(crate) enum ErrorKind {
     BadFloat(String),
     BadInteger(String),
     Unexpected(String),
-    StreamError(StreamError),
+    StreamError(stream::Error),
     ExpectedToken(Token, Token),
     UnexpectedToken(Token),
     ParseIntError(std::num::ParseIntError),
@@ -33,8 +32,8 @@ impl Error {
     }
 }
 
-impl From<StreamError> for Error {
-    fn from(e: StreamError) -> Self {
+impl From<stream::Error> for Error {
+    fn from(e: stream::Error) -> Self {
         Error {
             kind: ErrorKind::StreamError(e),
             info: Option::<ErrorInfo>::None,

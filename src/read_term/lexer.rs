@@ -1,6 +1,6 @@
 use super::*;
 use error::*;
-use stream::*;
+use stream::Stream;
 
 #[derive(Debug)]
 pub(crate) enum Token {
@@ -37,6 +37,23 @@ enum Char {
     Eof,
 }
 
+impl From<char> for Char {
+    fn from(c: char) -> Self {
+        match c {
+            ' ' | '\t' | '\n' => Char::Layout(c),
+            '!' | '(' | ')' | ',' | ';' | '[' | ']' | '{' | '}' | '|' | '%' => Char::Solo(c),
+            '\\' | '\'' | '"' | '`' => Char::Meta(c),
+            '0'..='9' => Char::Digit(c),
+            '_' => Char::Underscore,
+            'A'..='Z' => Char::CapitalLetter(c),
+            'a'..='z' => Char::SmallLetter(c),
+            '#' | '$' | '&' | '*' | '+' | '-' | '.' | '/' | ':' | '<' | '=' | '>' | '?' | '@'
+            | '^' | '~' => Char::Graphic(c),
+            _ => Char::Invalid(c),
+        }
+    }
+}
+
 fn next_char_raw(stream: &mut dyn Stream) -> Result<Option<char>, Error> {
     Ok(stream.get()?)
 }
@@ -50,42 +67,23 @@ fn eat_char(stream: &mut dyn Stream) -> Result<(), Error> {
     Ok(())
 }
 
-fn convert_char(ctx: &Context, c: Option<char>) -> Option<char> {
+fn convert_char(ctx: &Context, c: Option<char>) -> Char {
     if let Some(c) = c {
         match ctx.char_conversion.get(&c) {
-            Some(c) => return Some(*c),
-            None => return Some(c),
-        };
-    }
-    c
-}
-
-fn classify_char(c: Option<char>) -> Char {
-    match c {
-        None => Char::Eof,
-        Some(c) => match c {
-            ' ' | '\t' | '\n' => Char::Layout(c),
-            '!' | '(' | ')' | ',' | ';' | '[' | ']' | '{' | '}' | '|' | '%' => Char::Solo(c),
-            '\\' | '\'' | '"' | '`' => Char::Meta(c),
-            '0'..='9' => Char::Digit(c),
-            '_' => Char::Underscore,
-            'A'..='Z' => Char::CapitalLetter(c),
-            'a'..='z' => Char::SmallLetter(c),
-            '#' | '$' | '&' | '*' | '+' | '-' | '.' | '/' | ':' | '<' | '=' | '>' | '?' | '@'
-            | '^' | '~' => Char::Graphic(c),
-            _ => Char::Invalid(c),
-        },
+            Some(c) => Char::from(*c),
+            None => Char::from(c),
+        }
+    } else {
+        Char::Eof
     }
 }
 
 fn next_char(ctx: &Context, stream: &mut dyn Stream) -> Result<Char, Error> {
-    let c = next_char_raw(stream)?;
-    Ok(classify_char(convert_char(ctx, c)))
+    Ok(convert_char(ctx, next_char_raw(stream)?))
 }
 
 fn peek_char(ctx: &Context, stream: &mut dyn Stream) -> Result<Char, Error> {
-    let c = peek_char_raw(stream)?;
-    Ok(classify_char(convert_char(ctx, c)))
+    Ok(convert_char(ctx, peek_char_raw(stream)?))
 }
 
 fn multiline_comment(ctx: &Context, stream: &mut dyn Stream) -> Result<Char, Error> {

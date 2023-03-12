@@ -25,28 +25,7 @@ impl Default for Context {
     }
 }
 
-impl Context {
-    fn lookup_op(&self, name: &str) -> Option<&operators::Operator> {
-        let r = self.operators.get(name)?;
-        for o in r.iter() {
-            if let operators::Operator::fx(_) | operators::Operator::fy(_) = o {
-                continue;
-            } else {
-                return Some(o);
-            }
-        }
-        r.first()
-    }
-
-    fn lookup_prefix_op(&self, name: &str) -> Option<&operators::Operator> {
-        let r = self.operators.get(name)?;
-        for o in r.iter() {
-            if let operators::Operator::fx(_) | operators::Operator::fy(_) = o {
-                return Some(o);
-            } else {
-                continue;
-            }
-        }
-        r.first()
-    }
+struct Span {
+    start: stream::Position,
+    end: stream::Position,
 }
