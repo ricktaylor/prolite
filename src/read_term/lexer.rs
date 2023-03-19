@@ -1,27 +1,52 @@
 use super::*;
 use error::*;
-use stream::Stream;
+use stream::{Position, ReadStream, Span};
 
 #[derive(Debug)]
 pub(crate) enum Token {
-    Eof,
-    Name(String),
-    Var(String),
-    Int(String, u32),
-    CharCode(char),
-    Float(String),
-    DoubleQuotedList(String),
-    BackQuotedString(String),
-    Open,
-    OpenCt,
-    Close,
-    OpenL,
-    CloseL,
-    OpenC,
-    CloseC,
-    Bar,
-    Comma,
-    End,
+    Eof(Position),
+    Name(String, Span),
+    Var(String, Span),
+    Int(String, u32, Span),
+    CharCode(char, Position),
+    Float(String, Span),
+    DoubleQuotedList(String, Span),
+    BackQuotedString(String, Span),
+    Open(Position),
+    OpenCt(Position),
+    Close(Position),
+    OpenL(Position),
+    CloseL(Position),
+    OpenC(Position),
+    CloseC(Position),
+    Bar(Position),
+    Comma(Position),
+    End(Position),
+}
+
+impl Token {
+    pub fn span(&self) -> Span {
+        match self {
+            Token::Eof(p) |
+            Token::Open(p) |
+            Token::OpenCt(p) |
+            Token::Close(p) |
+            Token::OpenL(p) |
+            Token::CloseL(p) |
+            Token::OpenC(p) |
+            Token::CloseC(p) |
+            Token::Bar(p) |
+            Token::Comma(p) |
+            Token::CharCode(_, p) |
+            Token::End(p) => Span::from(p),
+            Token::Name(_, s) |
+            Token::Var(_, s) |
+            Token::Int(_, _, s) |
+            Token::Float(_, s) |
+            Token::DoubleQuotedList(_, s) |
+            Token::BackQuotedString(_, s) => s.clone()
+        }
+    }
 }
 
 enum Char {
@@ -54,17 +79,20 @@ impl From<char> for Char {
     }
 }
 
-fn next_char_raw(stream: &mut dyn Stream) -> Result<Option<char>, Error> {
-    Ok(stream.get()?)
+fn next_char_raw(stream: &mut dyn ReadStream) -> Result<(Option<char>, &Position), Error> {
+    let p = stream.position();
+    let c = stream.get()?;
+    Ok((c, p))
 }
 
-fn peek_char_raw(stream: &mut dyn Stream) -> Result<Option<char>, Error> {
+fn peek_char_raw(stream: &mut dyn ReadStream) -> Result<Option<char>, Error> {
     Ok(stream.peek()?)
 }
 
-fn eat_char(stream: &mut dyn Stream) -> Result<(), Error> {
+fn eat_char(stream: &mut dyn ReadStream) -> Result<&Position, Error> {
+    let p = stream.position();
     next_char_raw(stream)?;
-    Ok(())
+    Ok(p)
 }
 
 fn convert_char(ctx: &Context, c: Option<char>) -> Char {
@@ -78,21 +106,29 @@ fn convert_char(ctx: &Context, c: Option<char>) -> Char {
     }
 }
 
-fn next_char(ctx: &Context, stream: &mut dyn Stream) -> Result<Char, Error> {
-    Ok(convert_char(ctx, next_char_raw(stream)?))
+fn next_char<'a>(
+    ctx: &Context,
+    stream: &'a mut dyn ReadStream,
+) -> Result<(Char, &'a Position), Error> {
+    let (c, p) = next_char_raw(stream)?;
+    let c = convert_char(ctx, c);
+    Ok((c, p))
 }
 
-fn peek_char(ctx: &Context, stream: &mut dyn Stream) -> Result<Char, Error> {
+fn peek_char(ctx: &Context, stream: &mut dyn ReadStream) -> Result<Char, Error> {
     Ok(convert_char(ctx, peek_char_raw(stream)?))
 }
 
-fn multiline_comment(ctx: &Context, stream: &mut dyn Stream) -> Result<Char, Error> {
+fn multiline_comment<'a>(
+    ctx: &Context,
+    stream: &'a mut dyn ReadStream,
+) -> Result<(Char, &'a Position), Error> {
     loop {
         match next_char(ctx, stream)? {
-            Char::Eof => return Ok(Char::Eof),
-            Char::Graphic('*') => match next_char(ctx, stream)? {
-                Char::Eof => return Ok(Char::Eof),
-                Char::Graphic('/') => return next_char(ctx, stream),
+            (Char::Eof, p) => return Ok((Char::Eof, p)),
+            (Char::Graphic('*'), _) => match next_char(ctx, stream)? {
+                (Char::Eof, p) => return Ok((Char::Eof, p)),
+                (Char::Graphic('/'), _) => return next_char(ctx, stream),
                 _ => {}
             },
             _ => {}
@@ -100,313 +136,364 @@ fn multiline_comment(ctx: &Context, stream: &mut dyn Stream) -> Result<Char, Err
     }
 }
 
-fn integral(ctx: &Context, stream: &mut dyn Stream, max: char, radix: u32) -> Result<Token, Error> {
+fn integral(
+    ctx: &Context,
+    stream: &mut dyn ReadStream,
+    max: char,
+    radix: u32,
+    start: &Position,
+) -> Result<Token, Error> {
     let mut t = String::new();
+    let mut p = start;
     loop {
         match peek_char(ctx, stream)? {
             Char::Digit(c) if c <= max => t.push(c),
             Char::SmallLetter(c) if radix == 16 && ('a'..='f').contains(&c) => t.push(c),
             _ => break,
         }
-        eat_char(stream)?;
+        p = eat_char(stream)?;
     }
 
+    let s = Span::new(start, p);
     if t.is_empty() {
         match radix {
-            2 => Error::new(ErrorKind::BadInteger("0b".to_string())),
-            8 => Error::new(ErrorKind::BadInteger("0o".to_string())),
-            _ => Error::new(ErrorKind::BadInteger("0x".to_string())),
+            2 => Error::new(ErrorKind::BadInteger("0b".to_string()), s),
+            8 => Error::new(ErrorKind::BadInteger("0o".to_string()), s),
+            _ => Error::new(ErrorKind::BadInteger("0x".to_string()), s),
         }
     } else {
-        Ok(Token::Int(t, radix))
+        Ok(Token::Int(t, radix, s))
     }
 }
 
-fn numeric(ctx: &Context, stream: &mut dyn Stream, c: char) -> Result<Token, Error> {
+fn numeric(
+    ctx: &Context,
+    stream: &mut dyn ReadStream,
+    c: char,
+    start: &Position,
+) -> Result<Token, Error> {
     let mut t = c.to_string();
+    let mut p = start;
     loop {
         match peek_char(ctx, stream)? {
             Char::Digit(c) => t.push(c),
             Char::Graphic('.') => {
                 match peek_char(ctx, stream)? {
-                    Char::Solo('%') | Char::Layout(_) | Char::Eof => return Ok(Token::Int(t, 10)),
+                    Char::Solo('%') | Char::Layout(_) | Char::Eof => {
+                        return Ok(Token::Int(t, 10, Span::new(start, p)))
+                    }
                     _ => {}
                 }
-                eat_char(stream)?;
+                p = eat_char(stream)?;
                 t.push('.');
 
                 match next_char(ctx, stream)? {
-                    Char::Digit(c) => t.push(c),
-                    Char::Underscore => {
+                    (Char::Digit(c), _) => t.push(c),
+                    (Char::Underscore, p) => {
                         t.push('_');
-                        return Error::new(ErrorKind::BadFloat(t));
+                        return Error::new(ErrorKind::BadFloat(t), Span::new(start, p));
                     }
-                    Char::Meta(c)
-                    | Char::CapitalLetter(c)
-                    | Char::SmallLetter(c)
-                    | Char::Graphic(c)
-                    | Char::Solo(c) => {
+                    (Char::Meta(c), p)
+                    | (Char::CapitalLetter(c), p)
+                    | (Char::SmallLetter(c), p)
+                    | (Char::Graphic(c), p)
+                    | (Char::Solo(c), p) => {
                         t.push(c);
-                        return Error::new(ErrorKind::BadFloat(t));
+                        return Error::new(ErrorKind::BadFloat(t), Span::new(start, p));
                     }
-                    _ => return Error::new(ErrorKind::BadFloat(t)),
+                    (_, p) => return Error::new(ErrorKind::BadFloat(t), Span::new(start, p)),
                 }
 
                 loop {
                     match peek_char(ctx, stream)? {
                         Char::Digit(c) => t.push(c),
                         Char::CapitalLetter('E') => {
-                            eat_char(stream)?;
+                            p = eat_char(stream)?;
                             t.push('E');
                             break;
                         }
                         Char::SmallLetter('e') => {
-                            eat_char(stream)?;
+                            p = eat_char(stream)?;
                             t.push('e');
                             break;
                         }
-                        _ => return Ok(Token::Float(t)),
+                        _ => return Ok(Token::Float(t, Span::new(start, p))),
                     }
-                    eat_char(stream)?;
+                    p = eat_char(stream)?;
                 }
 
                 match next_char(ctx, stream)? {
-                    Char::Graphic('+') => t.push('+'),
-                    Char::Graphic('-') => t.push('-'),
-                    Char::Underscore => {
+                    (Char::Graphic('+'), _) => t.push('+'),
+                    (Char::Graphic('-'), _) => t.push('-'),
+                    (Char::Underscore, p) => {
                         t.push('_');
-                        return Error::new(ErrorKind::BadFloat(t));
+                        return Error::new(ErrorKind::BadFloat(t), Span::new(start, p));
                     }
-                    Char::Digit(c)
-                    | Char::Meta(c)
-                    | Char::CapitalLetter(c)
-                    | Char::SmallLetter(c)
-                    | Char::Graphic(c)
-                    | Char::Solo(c)
-                    | Char::Layout(c) => {
+                    (Char::Digit(c), p)
+                    | (Char::Meta(c), p)
+                    | (Char::CapitalLetter(c), p)
+                    | (Char::SmallLetter(c), p)
+                    | (Char::Graphic(c), p)
+                    | (Char::Solo(c), p)
+                    | (Char::Layout(c), p) => {
                         t.push(c);
-                        return Error::new(ErrorKind::BadFloat(t));
+                        return Error::new(ErrorKind::BadFloat(t), Span::new(start, p));
                     }
-                    _ => return Error::new(ErrorKind::BadFloat(t)),
+                    (_, p) => return Error::new(ErrorKind::BadFloat(t), Span::new(start, p)),
                 }
 
                 loop {
                     match peek_char(ctx, stream)? {
                         Char::Digit(c) => t.push(c),
-                        _ => return Ok(Token::Float(t)),
+                        _ => return Ok(Token::Float(t, Span::new(start, p))),
                     }
-                    eat_char(stream)?;
+                    p = eat_char(stream)?;
                 }
             }
-            _ => return Ok(Token::Int(t, 10)),
+            _ => return Ok(Token::Int(t, 10, Span::new(start, p))),
         }
-        eat_char(stream)?;
+        p = eat_char(stream)?;
     }
 }
 
-fn alpha_numeric(ctx: &Context, stream: &mut dyn Stream, c: char) -> Result<String, Error> {
+fn alpha_numeric(
+    ctx: &Context,
+    stream: &mut dyn ReadStream,
+    c: char,
+    start: &Position,
+) -> Result<(String, Span), Error> {
     let mut t = c.to_string();
+    let mut p = start;
     loop {
         match peek_char(ctx, stream)? {
             Char::Underscore => t.push('_'),
             Char::SmallLetter(c) | Char::CapitalLetter(c) | Char::Digit(c) => t.push(c),
-            _ => return Ok(t),
+            _ => return Ok((t, Span::new(start, p))),
         }
-        eat_char(stream)?;
+        p = eat_char(stream)?;
     }
 }
 
-fn quoted(stream: &mut dyn Stream, quote: char, greedy: bool) -> Result<String, Error> {
+fn quoted(
+    stream: &mut dyn ReadStream,
+    quote: char,
+    start: &Position,
+    greedy: bool,
+) -> Result<(String, Span), Error> {
     let mut t = String::new();
     loop {
         match next_char_raw(stream)? {
-            None => return Error::new(ErrorKind::Missing(quote)),
-            Some('\\') => match next_char_raw(stream)? {
-                Some('\n') => {}
-                Some('\\') => t.push('\\'),
-                Some('\'') => t.push('\''),
-                Some('"') => t.push('"'),
-                Some('`') => t.push('`'),
-                Some('a') => t.push('\x07'),
-                Some('b') => t.push('\x08'),
-                Some('r') => t.push('\r'),
-                Some('f') => t.push('\x0C'),
-                Some('n') => t.push('\n'),
-                Some('v') => t.push('\x0B'),
-                Some('x') => todo!(),
-                Some(c) if ('0'..='7').contains(&c) => {
+            (None, p) => return Error::new(ErrorKind::Missing(quote), p.into()),
+            (Some('\\'), p) => match next_char_raw(stream)? {
+                (Some('\n'), _) => {}
+                (Some('\\'), _) => t.push('\\'),
+                (Some('\''), _) => t.push('\''),
+                (Some('"'), _) => t.push('"'),
+                (Some('`'), _) => t.push('`'),
+                (Some('a'), _) => t.push('\x07'),
+                (Some('b'), _) => t.push('\x08'),
+                (Some('r'), _) => t.push('\r'),
+                (Some('f'), _) => t.push('\x0C'),
+                (Some('n'), _) => t.push('\n'),
+                (Some('v'), _) => t.push('\x0B'),
+                (Some('x'), _) => todo!(),
+                (Some(c), _) if ('0'..='7').contains(&c) => {
                     if greedy {}
                     todo!()
                 }
-                Some(c) => {
-                    return Error::new(ErrorKind::BadEscape(String::from_iter(vec!['\\', c])))
+                (Some(c), q) => {
+                    return Error::new(
+                        ErrorKind::BadEscape(String::from_iter(vec!['\\', c])),
+                        Span::new(p, q),
+                    )
                 }
-                None => return Error::new(ErrorKind::BadEscape("\\".to_string())),
+                (None, q) => return Error::new(ErrorKind::BadEscape('\\'.to_string()), p.into()),
             },
-            Some(c) if c == quote => match peek_char_raw(stream)? {
+            (Some(c), p) if c == quote => match peek_char_raw(stream)? {
                 Some(c) if c == quote => {
                     t.push(c);
                     eat_char(stream)?;
                 }
-                _ => return Ok(t),
+                _ => return Ok((t, Span::new(start, p))),
             },
-            Some(c) => t.push(c),
+            (Some(c), _) => t.push(c),
         }
     }
 }
 
-pub(super) fn next(ctx: &Context, stream: &mut dyn Stream, greedy: bool) -> Result<Token, Error> {
+pub(super) fn next(
+    ctx: &Context,
+    stream: &mut dyn ReadStream,
+    greedy: bool,
+) -> Result<Token, Error> {
     let mut c = next_char(ctx, stream)?;
 
     // open ct (* 6.4 *)
-    if let Char::Solo('(') = c {
-        return Ok(Token::OpenCt);
+    if let (Char::Solo('('), p) = c {
+        return Ok(Token::OpenCt(p.clone()));
     }
 
     loop {
-        match c {
-            Char::Eof => return Ok(Token::Eof),
+        c = match c {
+            (Char::Eof, p) => return Ok(Token::Eof(p.clone())),
 
             // layout text sequence (* 6.4.1 *)
-            Char::Layout(_) => {
-                c = next_char(ctx, stream)?;
-            }
+            (Char::Layout(_), _) => next_char(ctx, stream)?,
 
             // single line comment (* 6.4.1 *)
-            Char::Solo('%') => loop {
+            (Char::Solo('%'), _) => loop {
                 match next_char(ctx, stream)? {
-                    Char::Eof => return Ok(Token::Eof),
-                    Char::Layout('\n') => {
-                        c = next_char(ctx, stream)?;
-                        break;
-                    }
+                    (Char::Eof, p) => return Ok(Token::Eof(p.clone())),
+                    (Char::Layout('\n'), _) => break next_char(ctx, stream)?,
                     _ => {}
                 }
             },
 
             // name (* 6.4 *)
             // letter digit token (* 6.4.2 *)
-            Char::SmallLetter(c) => return Ok(Token::Name(alpha_numeric(ctx, stream, c)?)),
+            (Char::SmallLetter(c), p) => {
+                let (s, span) = alpha_numeric(ctx, stream, c, p)?;
+                return Ok(Token::Name(s, span));
+            }
 
             // graphic token (* 6.4.2 *)
-            Char::Graphic('.') => {
+            (Char::Graphic('.'), p) => {
                 let mut t = String::from('.');
                 match peek_char(ctx, stream)? {
-                    Char::Solo('%') | Char::Layout(_) | Char::Eof => return Ok(Token::End),
+                    Char::Solo('%') | Char::Layout(_) | Char::Eof => {
+                        return Ok(Token::End(p.clone()))
+                    }
                     Char::Graphic(c) => t.push(c),
                     Char::Meta('\\') => t.push('\\'),
-                    _ => return Ok(Token::Name(t)),
+                    _ => return Ok(Token::Name(t, p.into())),
                 }
-                eat_char(stream)?;
+                let mut q = eat_char(stream)?;
 
                 loop {
                     match peek_char(ctx, stream)? {
                         Char::Graphic(c) => t.push(c),
                         Char::Meta('\\') => t.push('\\'),
-                        _ => return Ok(Token::Name(t)),
+                        _ => return Ok(Token::Name(t, Span::new(p, q))),
                     }
-                    eat_char(stream)?;
+                    q = eat_char(stream)?;
                 }
             }
-            Char::Graphic('/') => {
+            (Char::Graphic('/'), p) => {
                 // bracketed comment (* 6.4.1 *)
-                c = peek_char(ctx, stream)?;
+                let mut c = peek_char(ctx, stream)?;
                 if let Char::Graphic('*') = c {
                     eat_char(stream)?;
-                    c = multiline_comment(ctx, stream)?;
+                    multiline_comment(ctx, stream)?
                 } else {
                     let mut t = String::from('/');
+                    let mut q = p;
                     loop {
                         match c {
                             Char::Graphic(c) => t.push(c),
                             Char::Meta('\\') => t.push('\\'),
-                            _ => return Ok(Token::Name(t)),
+                            _ => return Ok(Token::Name(t, Span::new(p, q))),
                         }
-                        eat_char(stream)?;
+                        q = eat_char(stream)?;
                         c = peek_char(ctx, stream)?;
                     }
                 }
             }
-            Char::Graphic(c) => {
+            (Char::Graphic(c), p) => {
                 let mut t = c.to_string();
+                let mut q = p;
                 loop {
                     match peek_char(ctx, stream)? {
                         Char::Graphic(c) => t.push(c),
                         Char::Meta('\\') => t.push('\\'),
-                        _ => return Ok(Token::Name(t)),
+                        _ => return Ok(Token::Name(t, Span::new(p, q))),
                     }
-                    eat_char(stream)?;
+                    q = eat_char(stream)?;
                 }
             }
 
             // quoted token (* 6.4.2 *)
-            Char::Meta('\'') => return Ok(Token::Name(quoted(stream, '\'', greedy)?)),
+            (Char::Meta('\''), p) => {
+                let (s, span) = quoted(stream, '\'', p, greedy)?;
+                return Ok(Token::Name(s, span));
+            }
 
             // semicolon token (* 6.4.2 *)
-            Char::Solo(';') => return Ok(Token::Name(String::from(';'))),
+            (Char::Solo(';'), p) => return Ok(Token::Name(String::from(';'), p.into())),
 
             // cut token (* 6.4.2 *)
-            Char::Solo('!') => return Ok(Token::Name(String::from('!'))),
+            (Char::Solo('!'), p) => return Ok(Token::Name(String::from('!'), p.into())),
 
             // variable (* 6.4 *)
-            Char::Underscore => return Ok(Token::Var(alpha_numeric(ctx, stream, '_')?)),
-            Char::CapitalLetter(c) => return Ok(Token::Var(alpha_numeric(ctx, stream, c)?)),
+            (Char::Underscore, p) => {
+                let (s, span) = alpha_numeric(ctx, stream, '_', p)?;
+                return Ok(Token::Var(s, span));
+            }
+            (Char::CapitalLetter(c), p) => {
+                let (s, span) = alpha_numeric(ctx, stream, c, p)?;
+                return Ok(Token::Var(s, span));
+            }
 
             // integer (* 6.4 *)
             // float number (* 6.4 *)
-            Char::Digit('0') => match peek_char(ctx, stream)? {
+            (Char::Digit('0'), p) => match peek_char(ctx, stream)? {
                 Char::Meta('\'') => todo!(),
                 Char::SmallLetter('b') => {
                     eat_char(stream)?;
-                    return integral(ctx, stream, '1', 2);
+                    return integral(ctx, stream, '1', 2, p);
                 }
                 Char::SmallLetter('o') => {
                     eat_char(stream)?;
-                    return integral(ctx, stream, '7', 8);
+                    return integral(ctx, stream, '7', 8, p);
                 }
                 Char::SmallLetter('x') => {
                     eat_char(stream)?;
-                    return integral(ctx, stream, '9', 16);
+                    return integral(ctx, stream, '9', 16, p);
                 }
                 Char::Digit(c) => {
                     eat_char(stream)?;
-                    return numeric(ctx, stream, c);
+                    return numeric(ctx, stream, c, p);
                 }
-                _ => return Ok(Token::Int('0'.to_string(), 10)),
+                _ => return Ok(Token::Int('0'.to_string(), 10, p.into())),
             },
-            Char::Digit(c) => return numeric(ctx, stream, c),
+            (Char::Digit(c), p) => return numeric(ctx, stream, c, p),
 
             // double quoted list (* 6.4 *)
-            Char::Meta('"') => return Ok(Token::DoubleQuotedList(quoted(stream, '"', greedy)?)),
+            (Char::Meta('"'), p) => {
+                let (s, span) = quoted(stream, '"', p, greedy)?;
+                return Ok(Token::DoubleQuotedList(s, span));
+            }
 
             // back quoted string (* 6.4.7 *)
-            Char::Meta('`') => return Ok(Token::BackQuotedString(quoted(stream, '`', greedy)?)),
+            (Char::Meta('`'), p) => {
+                let (s, span) = quoted(stream, '`', p, greedy)?;
+                return Ok(Token::BackQuotedString(s, span));
+            }
 
             // open (* 6.4 *)
-            Char::Solo('(') => return Ok(Token::Open),
+            (Char::Solo('('), p) => return Ok(Token::Open(p.clone())),
 
             // close (* 6.4 *)
-            Char::Solo(')') => return Ok(Token::Close),
+            (Char::Solo(')'), p) => return Ok(Token::Close(p.clone())),
 
             // open list (* 6.4 *)
-            Char::Solo('[') => return Ok(Token::OpenL),
+            (Char::Solo('['), p) => return Ok(Token::OpenL(p.clone())),
 
             // close list (* 6.4 *)
-            Char::Solo(']') => return Ok(Token::CloseL),
+            (Char::Solo(']'), p) => return Ok(Token::CloseL(p.clone())),
 
             // open curly (* 6.4 *)
-            Char::Solo('{') => return Ok(Token::OpenC),
+            (Char::Solo('{'), p) => return Ok(Token::OpenC(p.clone())),
 
             // close curly (* 6.4 *)
-            Char::Solo('}') => return Ok(Token::CloseC),
+            (Char::Solo('}'), p) => return Ok(Token::CloseC(p.clone())),
 
             // ht sep (* 6.4 *)
-            Char::Solo('|') => return Ok(Token::Bar),
+            (Char::Solo('|'), p) => return Ok(Token::Bar(p.clone())),
 
             // comma (* 6.4 *)
-            Char::Solo(',') => return Ok(Token::Comma),
+            (Char::Solo(','), p) => return Ok(Token::Comma(p.clone())),
 
-            Char::Solo(c) | Char::Meta(c) | Char::Invalid(c) => {
+            (Char::Solo(c), p) | (Char::Meta(c), p) | (Char::Invalid(c), p) => {
                 let mut s = c.to_string();
                 if greedy {
                     while let Char::Invalid(c) = peek_char(ctx, stream)? {
@@ -414,7 +501,7 @@ pub(super) fn next(ctx: &Context, stream: &mut dyn Stream, greedy: bool) -> Resu
                         eat_char(stream)?;
                     }
                 }
-                return Error::new(ErrorKind::Unexpected(s));
+                return Error::new(ErrorKind::Unexpected(s), p.into());
             }
         }
     }

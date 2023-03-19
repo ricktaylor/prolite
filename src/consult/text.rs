@@ -1,9 +1,9 @@
-use crate::flags::{QuoteFlag, UnknownFlag};
-use crate::operators::Operator;
-
 use super::*;
 use error::*;
-use multistream::*;
+use multireader::*;
+
+use flags::{QuoteFlag, UnknownFlag};
+use operators::Operator;
 
 use read_term::parser;
 use read_term::term::{Compound, Term};
@@ -27,7 +27,7 @@ impl Program {
 
 struct ConsultContext<'a> {
     context: Context,
-    stream: MultiStream,
+    stream: MultiReader,
     sink: ErrorSinkFn,
     program: &'a mut Program,
     resolver: &'a mut dyn StreamResolver,
@@ -49,7 +49,7 @@ impl<'a> ConsultContext<'a> {
         let (full_name, stream) = resolver.open(source)?;
         Ok(Self {
             context: Default::default(),
-            stream: MultiStream::new(&full_name, stream),
+            stream: MultiReader::new(stream),
             sink: match error_sink {
                 None => Self::null_sink,
                 Some(s) => s,
@@ -154,8 +154,8 @@ fn directive(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
 fn include(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
     match term {
         Term::Atom(s) => {
-            let (name, stream) = ctx.resolver.open(s)?;
-            ctx.stream.include(&name, stream)
+            let (_, stream) = ctx.resolver.open(s)?;
+            ctx.stream.include(stream)
         }
         _ => Error::new(ErrorKind::BadStreamName(term.clone())),
     }
@@ -170,12 +170,11 @@ fn ensure_loaded(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
                     return Ok(());
                 }
             }
-            ctx.loaded_set.push(full_path.clone());
+            ctx.loaded_set.push(full_path);
 
             // New context and stream
             let prev_ctx = std::mem::take(&mut ctx.context);
-            let prev_stream =
-                std::mem::replace(&mut ctx.stream, MultiStream::new(&full_path, stream));
+            let prev_stream = std::mem::replace(&mut ctx.stream, MultiReader::new(stream));
 
             load_text(ctx)?;
 
@@ -480,104 +479,4 @@ pub(super) fn consult(
     load_text(&mut ctx)?;
 
     todo!()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::{
-        env,
-        fs::{File, OpenOptions},
-        io::{self},
-        path::{Path, PathBuf},
-    };
-    use stream::Stream;
-
-    struct FSStream {
-        reader: utf8_read::Reader<File>,
-        next: Option<utf8_read::Char>,
-    }
-
-    impl FSStream {
-        fn new(fp: &Path) -> io::Result<FSStream> {
-            Ok(Self {
-                reader: utf8_read::Reader::new(OpenOptions::new().read(true).open(fp)?),
-                next: None,
-            })
-        }
-    }
-
-    impl Stream for FSStream {
-        fn get(&mut self) -> Result<Option<char>, stream::Error> {
-            let r = self.peek()?;
-            self.next = None;
-            Ok(r)
-        }
-
-        fn peek(&mut self) -> Result<Option<char>, stream::Error> {
-            if let None = self.next {
-                self.next = Some(self.reader.next_char().unwrap());
-            }
-            match self.next {
-                Some(utf8_read::Char::Char(c)) => Ok(Some(c)),
-                _ => Ok(None),
-            }
-        }
-    }
-
-    struct FSResolver {
-        root: PathBuf,
-    }
-
-    impl FSResolver {
-        fn new(root: &str) -> io::Result<FSResolver> {
-            Ok(Self {
-                root: env::current_dir()?.join(root).canonicalize()?,
-            })
-        }
-    }
-
-    impl StreamResolver for FSResolver {
-        fn open(&mut self, name: &str) -> Result<(String, Box<dyn Stream>), StreamResolverError> {
-            let mut fp = self.root.join(name);
-            let mut s = FSStream::new(&fp);
-            if let Err(e) = &s {
-                match &e.kind() {
-                    std::io::ErrorKind::NotFound if matches!(fp.extension(), None) => {
-                        fp.set_extension("pl");
-                        s = FSStream::new(&fp);
-                    }
-                    _ => {}
-                }
-            }
-
-            match s {
-                Ok(s) => {
-                    let n = fp
-                        .canonicalize()
-                        .unwrap()
-                        .into_os_string()
-                        .into_string()
-                        .unwrap();
-                    println!("Opened {}", n);
-                    Ok((n, Box::new(s)))
-                }
-                Err(e) => Err(StreamResolverError {
-                    error: e,
-                    path: fp.into_os_string().into_string().unwrap(),
-                }),
-            }
-        }
-    }
-
-    fn error(e: &Error) -> bool {
-        println!("{:?}", e);
-        true
-    }
-
-    #[test]
-    fn test_consult() {
-        let mut res = FSResolver::new("./test/vanilla/").unwrap();
-        consult(&mut res, "vanilla.pl", Some(error)).unwrap();
-    }
 }

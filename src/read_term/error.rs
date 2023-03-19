@@ -1,7 +1,6 @@
-use crate::error::ErrorInfo;
-
 use super::*;
 use lexer::*;
+use stream::Span;
 
 #[derive(Debug)]
 pub(crate) enum ErrorKind {
@@ -11,7 +10,7 @@ pub(crate) enum ErrorKind {
     BadInteger(String),
     Unexpected(String),
     StreamError(stream::Error),
-    ExpectedToken(Token, Token),
+    ExpectedChar(char),
     UnexpectedToken(Token),
     ParseIntError(std::num::ParseIntError),
     ParseFloatError(std::num::ParseFloatError),
@@ -20,15 +19,12 @@ pub(crate) enum ErrorKind {
 #[derive(Debug)]
 pub(crate) struct Error {
     pub kind: ErrorKind,
-    pub info: Option<ErrorInfo>,
+    pub location: Span,
 }
 
 impl Error {
-    pub(super) fn new<T>(kind: ErrorKind) -> Result<T, Error> {
-        Err(Self {
-            kind,
-            info: Option::<ErrorInfo>::None,
-        })
+    pub(super) fn new<T>(kind: ErrorKind, location: Span) -> Result<T, Error> {
+        Err(Self { kind, location })
     }
 }
 
@@ -36,25 +32,7 @@ impl From<stream::Error> for Error {
     fn from(e: stream::Error) -> Self {
         Error {
             kind: ErrorKind::StreamError(e),
-            info: Option::<ErrorInfo>::None,
-        }
-    }
-}
-
-impl From<std::num::ParseIntError> for Error {
-    fn from(e: std::num::ParseIntError) -> Self {
-        Error {
-            kind: ErrorKind::ParseIntError(e),
-            info: Option::<ErrorInfo>::None,
-        }
-    }
-}
-
-impl From<std::num::ParseFloatError> for Error {
-    fn from(e: std::num::ParseFloatError) -> Self {
-        Error {
-            kind: ErrorKind::ParseFloatError(e),
-            info: Option::<ErrorInfo>::None,
+            location: e.location.into(),
         }
     }
 }

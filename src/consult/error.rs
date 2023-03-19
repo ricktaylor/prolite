@@ -44,6 +44,7 @@ impl From<stream::Error> for Error {
         }
     }
 }
+
 impl From<read_term::error::Error> for Error {
     fn from(e: read_term::error::Error) -> Self {
         Error {

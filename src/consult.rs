@@ -1,9 +1,13 @@
 pub(super) mod error;
 pub(super) mod text;
 
-mod multistream;
+mod multireader;
 
-use super::{flags, operators, read_term, stream};
+#[cfg(test)]
+mod test;
+
+use super::{flags, operators, read_term};
+use read_term::stream;
 
 #[derive(Debug)]
 pub struct StreamResolverError {
@@ -15,7 +19,7 @@ pub trait StreamResolver {
     fn open(
         &mut self,
         name: &str,
-    ) -> Result<(String, Box<dyn stream::Stream>), StreamResolverError>;
+    ) -> Result<(String, Box<dyn stream::ReadStream>), StreamResolverError>;
 }
 
 type ErrorSinkFn = fn(e: &error::Error) -> bool;

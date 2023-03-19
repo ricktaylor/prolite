@@ -1,10 +1,12 @@
 pub(super) mod error;
 pub(super) mod parser;
+pub(super) mod stream;
 pub(super) mod term;
+pub(super) mod utf8reader;
 
 mod lexer;
 
-use super::{flags, operators, stream};
+use super::{flags, operators};
 use std::collections::HashMap;
 use std::default::Default;
 
@@ -23,9 +25,4 @@ impl Default for Context {
             char_conversion: HashMap::new(),
         }
     }
-}
-
-struct Span {
-    start: stream::Position,
-    end: stream::Position,
 }
