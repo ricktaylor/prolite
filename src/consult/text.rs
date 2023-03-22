@@ -16,11 +16,11 @@ impl Program {
         Program {}
     }
 
-    fn assert_clause(&mut self, head: &Term, tail: &Term) -> Result<(), Error> {
+    fn assert_clause(&mut self, head: &Term, tail: &Term) -> Result<(), Box<Error>> {
         Ok(())
     }
 
-    fn assert_fact(&mut self, term: &Term) -> Result<(), Error> {
+    fn assert_fact(&mut self, term: &Term) -> Result<(), Box<Error>> {
         Ok(())
     }
 }
@@ -45,7 +45,7 @@ impl<'a> ConsultContext<'a> {
         program: &'a mut Program,
         error_sink: Option<ErrorSinkFn>,
         loaded_set: &'a mut Vec<String>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, Box<Error>> {
         let (full_name, stream) = resolver.open(source)?;
         Ok(Self {
             context: Default::default(),
@@ -60,16 +60,16 @@ impl<'a> ConsultContext<'a> {
         })
     }
 
-    fn error<E>(&mut self, r: Result<(), E>) -> Result<(), Error>
+    fn error<E>(&mut self, r: Result<(), Box<E>>) -> Result<(), Box<Error>>
     where
         text::Error: From<E>,
     {
         if let Err(e) = r {
-            let e2 = Error::from(e);
+            let e2 = Error::from(*e);
             if (self.sink)(&e2) {
                 Ok(())
             } else {
-                Err(e2)
+                Err(Box::new(e2))
             }
         } else {
             Ok(())
@@ -77,7 +77,7 @@ impl<'a> ConsultContext<'a> {
     }
 }
 
-fn load_text(ctx: &mut ConsultContext) -> Result<(), Error> {
+fn load_text(ctx: &mut ConsultContext) -> Result<(), Box<Error>> {
     loop {
         match parser::next(&ctx.context, &mut ctx.stream, true) {
             Ok(None) => break,
@@ -88,7 +88,7 @@ fn load_text(ctx: &mut ConsultContext) -> Result<(), Error> {
                         2 => ctx.program.assert_clause(&c.args[0], &c.args[1]),
                         _ => ctx.program.assert_fact(&Term::Compound(c)),
                     },
-                    Term::Compound(_) | Term::Atom(_) => ctx.program.assert_fact(&t),
+                    Term::Compound(_) | Term::Atom(..) => ctx.program.assert_fact(&t),
                     _ => Error::new(ErrorKind::NotCallableTerm(t)),
                 };
                 ctx.error(r)?;
@@ -105,8 +105,8 @@ fn load_text(ctx: &mut ConsultContext) -> Result<(), Error> {
 fn directive_expand(
     ctx: &mut ConsultContext,
     c: &Compound,
-    d: fn(&mut ConsultContext, &Term) -> Result<(), Error>,
-) -> Result<(), Error> {
+    d: fn(&mut ConsultContext, &Term) -> Result<(), Box<Error>>,
+) -> Result<(), Box<Error>> {
     if c.args.len() == 1 {
         if let Some(list) = c.args[0].list_iter() {
             for arg in list {
@@ -123,7 +123,7 @@ fn directive_expand(
     Ok(())
 }
 
-fn directive(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
+fn directive(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
     match term {
         Term::Compound(c) if c.functor == "op" && c.args.len() == 3 => {
             op(ctx, &c.args[0], &c.args[1], &c.args[2])
@@ -151,9 +151,9 @@ fn directive(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
     }
 }
 
-fn include(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
+fn include(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
     match term {
-        Term::Atom(s) => {
+        Term::Atom(s,_) => {
             let (_, stream) = ctx.resolver.open(s)?;
             ctx.stream.include(stream)
         }
@@ -161,9 +161,9 @@ fn include(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
     }
 }
 
-fn ensure_loaded(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
+fn ensure_loaded(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
     match term {
-        Term::Atom(s) => {
+        Term::Atom(s,_) => {
             let (full_path, stream) = ctx.resolver.open(s)?;
             for s in ctx.loaded_set.iter() {
                 if *s == full_path {
@@ -192,14 +192,14 @@ fn update_op(
     specifier: &Operator,
     operator: &Term,
     remove: bool,
-) -> Result<(), Error> {
+) -> Result<(), Box<Error>> {
     match operator {
-        Term::Atom(s) if s == "," => Error::new(ErrorKind::InvalidOperator(operator.clone())),
-        Term::Atom(s) if remove => {
+        Term::Atom(s,_) if s == "," => Error::new(ErrorKind::InvalidOperator(operator.clone())),
+        Term::Atom(s,_) if remove => {
             ctx.context.operators.remove(s);
             Ok(())
         }
-        Term::Atom(s) => {
+        Term::Atom(s,_) => {
             if let Some(ops) = ctx.context.operators.get_mut(s) {
                 let mut found = false;
                 for o in ops.iter_mut() {
@@ -315,13 +315,13 @@ fn op(
     priority: &Term,
     specifier: &Term,
     operator: &Term,
-) -> Result<(), Error> {
+) -> Result<(), Box<Error>> {
     // Unpack specifier
     let (op_spec, remove) = match specifier {
-        Term::Atom(s) => {
+        Term::Atom(s,_) => {
             // Unpack priority
             let p = match priority {
-                Term::Integer(n) => match n {
+                Term::Integer(n,_) => match n {
                     0..=1200 => *n as u16,
                     _ => return Error::new(ErrorKind::InvalidOpPriority(priority.clone())),
                 },
@@ -353,11 +353,11 @@ fn op(
     Ok(())
 }
 
-fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<(), Error> {
+fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<(), Box<Error>> {
     match flag {
-        Term::Atom(s) => match s.as_str() {
+        Term::Atom(s,_) => match s.as_str() {
             "char_conversion" => match value {
-                Term::Atom(s) => match s.as_str() {
+                Term::Atom(s,_) => match s.as_str() {
                     "on" => {
                         ctx.context.flags.char_conversion = true;
                         Ok(())
@@ -371,7 +371,7 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<()
                 _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
             },
             "debug" => match value {
-                Term::Atom(s) => match s.as_str() {
+                Term::Atom(s,_) => match s.as_str() {
                     "on" => {
                         ctx.context.flags.debug = true;
                         Ok(())
@@ -385,7 +385,7 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<()
                 _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
             },
             "unknown" => match value {
-                Term::Atom(s) => match s.as_str() {
+                Term::Atom(s,_) => match s.as_str() {
                     "error" => {
                         ctx.context.flags.unknown = UnknownFlag::Error;
                         Ok(())
@@ -403,7 +403,7 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<()
                 _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
             },
             "double_quotes" => match value {
-                Term::Atom(s) => match s.as_str() {
+                Term::Atom(s,_) => match s.as_str() {
                     "chars" => {
                         ctx.context.flags.double_quotes = QuoteFlag::Chars;
                         Ok(())
@@ -421,7 +421,7 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<()
                 _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
             },
             "back_quotes" => match value {
-                Term::Atom(s) => match s.as_str() {
+                Term::Atom(s,_) => match s.as_str() {
                     "chars" => {
                         ctx.context.flags.back_quotes = QuoteFlag::Chars;
                         Ok(())
@@ -444,27 +444,27 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<()
     }
 }
 
-fn char_conversion(ctx: &mut ConsultContext, in_char: &Term, out_char: &Term) -> Result<(), Error> {
+fn char_conversion(ctx: &mut ConsultContext, in_char: &Term, out_char: &Term) -> Result<(), Box<Error>> {
     todo!()
 }
 
-fn initialization(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
+fn initialization(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
     todo!()
 }
 
-fn public(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
+fn public(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
     todo!()
 }
 
-fn dynamic(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
+fn dynamic(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
     todo!()
 }
 
-fn multifile(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
+fn multifile(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
     todo!()
 }
 
-fn discontiguous(ctx: &mut ConsultContext, term: &Term) -> Result<(), Error> {
+fn discontiguous(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
     todo!()
 }
 
@@ -472,7 +472,7 @@ pub(super) fn consult(
     resolver: &mut dyn StreamResolver,
     source: &str,
     sink: Option<ErrorSinkFn>,
-) -> Result<Program, Error> {
+) -> Result<Program, Box<Error>> {
     let mut program = Program::new();
     let mut loaded_set = Vec::new();
     let mut ctx = ConsultContext::new(resolver, source, &mut program, sink, &mut loaded_set)?;

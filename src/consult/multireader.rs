@@ -3,22 +3,20 @@ use error::*;
 use stream::ReadStream;
 
 pub(super) struct MultiReader {
-    streams: Vec<Box<dyn ReadStream>>,
-    position: stream::Position,
+    streams: Vec<Box<dyn ReadStream>>
 }
 
 impl MultiReader {
     pub(super) fn new(stream: Box<dyn ReadStream>) -> Self {
         Self {
-            streams: vec![stream],
-            position: stream::Position::default(),
+            streams: vec![stream]
         }
     }
 
-    pub(super) fn include(&mut self, stream: Box<dyn ReadStream>) -> Result<(), Error> {
+    pub(super) fn include(&mut self, stream: Box<dyn ReadStream>) -> Result<(), Box<Error>> {
         for s in self.streams.iter() {
             if s.position().source == stream.position().source {
-                return Error::new(ErrorKind::IncludeLoop(stream.position().source.clone()));
+                return Error::new(ErrorKind::IncludeLoop(stream.position().source));
             }
         }
         self.streams.push(stream);
@@ -46,11 +44,11 @@ impl ReadStream for MultiReader {
         Ok(None)
     }
 
-    fn position(&self) -> &stream::Position {
+    fn position(&self) -> stream::Position {
         if let Some(s) = self.streams.first() {
             s.position()
         } else {
-            &self.position
+            stream::Position::default()
         }
     }
 }

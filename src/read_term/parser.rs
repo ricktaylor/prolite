@@ -8,21 +8,27 @@ use term::*;
 use operators::Operator;
 use stream::ReadStream;
 
-fn parse_integer(s: &str, radix: u32, span: Span) -> Result<Term, Error> {
-    Ok(Term::Integer(i64::from_str_radix(s, radix)?))
+fn parse_integer(s: &str, radix: u32, span: Span) -> Result<Term, Box<Error>> {
+    match i64::from_str_radix(s, radix) {
+        Ok(i) => Ok(Term::Integer(i,span)),
+        Err(e) => Error::new(ErrorKind::ParseIntError(e),span)
+    }
 }
 
-fn parse_float(s: &str, span: Span) -> Result<Term, Error> {
-    Ok(Term::Float(f64::from_str(s)?))
+fn parse_float(s: &str, span: Span) -> Result<Term, Box<Error>> {
+    match f64::from_str(s) {
+        Ok(f) => Ok(Term::Float(f,span)),
+        Err(e) => Error::new(ErrorKind::ParseFloatError(e),span)
+    }
 }
 
 fn parse_compound(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     s: &str,
-    start: &Position,
+    start: Position,
     greedy: bool,
-) -> Result<(Term, Token, u16), Error> {
+) -> Result<(Term, Token, u16), Box<Error>> {
     let mut c = Compound {
         functor: s.to_string(),
         args: Vec::new(),
@@ -47,7 +53,7 @@ fn parse_list(
     stream: &mut dyn ReadStream,
     token: Token,
     greedy: bool,
-) -> Result<Term, Error> {
+) -> Result<Term, Box<Error>> {
     let mut terms = Vec::new();
     let mut next = token;
     loop {
@@ -80,20 +86,20 @@ fn parse_list(
     Ok(list)
 }
 
-fn parse_quoted(flags: &flags::QuoteFlag, s: String, span: Span) -> Result<Term, Error> {
+fn parse_quoted(flags: &flags::QuoteFlag, s: String, span: Span) -> Result<Term, Box<Error>> {
     match flags {
         flags::QuoteFlag::Atom => Ok(Term::Atom(s,span)),
         flags::QuoteFlag::Chars => {
-            let mut list = Term::Atom("[]".to_string());
+            let mut list = Term::Atom("[]".to_string(),span.clone());
             for c in s.chars().rev() {
-                list = Term::new_compound(".", vec![Term::Atom(c.to_string()), list]);
+                list = Term::new_compound(".", vec![Term::Atom(c.to_string(),span.clone()), list]);
             }
             Ok(list)
         }
         flags::QuoteFlag::Codes => {
-            let mut list = Term::Atom("[]".to_string());
+            let mut list = Term::Atom("[]".to_string(),span.clone());
             for c in s.chars().rev() {
-                list = Term::new_compound(".", vec![Term::Integer(c as i64), list]);
+                list = Term::new_compound(".", vec![Term::Integer(c as i64,span.clone()), list]);
             }
             Ok(list)
         }
@@ -106,25 +112,25 @@ fn next_term(
     token: Token,
     max_precedence: u16,
     greedy: bool,
-) -> Result<(Term, Token, u16), Error> {
+) -> Result<(Term, Token, u16), Box<Error>> {
     match token {
         /* 6.3.1.1 */
         Token::Int(s, r,span) => Ok((parse_integer(&s, r,span)?, lexer::next(ctx, stream, greedy)?, 0)),
         Token::Float(s,span) => Ok((parse_float(&s,span)?, lexer::next(ctx, stream, greedy)?, 0)),
         Token::CharCode(c,p) => Ok((
-            Term::Integer(c as i64),
+            Term::Integer(c as i64,p.into()),
             lexer::next(ctx, stream, greedy)?,
             0,
         )),
 
         /* 6.3.2 */
-        Token::Var(s,span) => Ok((Term::Var(s), lexer::next(ctx, stream, greedy)?, 0)),
+        Token::Var(s,span) => Ok((Term::Var(s,span), lexer::next(ctx, stream, greedy)?, 0)),
 
         /* ISO/IEC 13211-1:1995/Cor.2:2012 */
         Token::Bar(p) => {
             let next = lexer::next(ctx, stream, greedy)?;
             if let Token::OpenCt(_) = next {
-                parse_compound(ctx, stream, "|",&p, greedy)
+                parse_compound(ctx, stream, "|",p, greedy)
             } else {
                 Ok((Term::Atom("|".to_string(),p.into()), next, 0))
             }
@@ -145,13 +151,13 @@ fn next_term(
                     0,
                 )),
                 Token::CharCode(c,p) if s == "-" => Ok((
-                    Term::Integer(-(c as i64)),
+                    Term::Integer(-(c as i64),p.into()),
                     lexer::next(ctx, stream, greedy)?,
                     0,
                 )),
 
                 /* 6.3.3 */
-                Token::OpenCt(_) => parse_compound(ctx, stream, &s,&span.start, greedy),
+                Token::OpenCt(_) => parse_compound(ctx, stream, &s,span.start, greedy),
 
                 /* 6.3.1.3 */
                 Token::End(_) => Ok((Term::Atom(s.to_string(),span), next, 0)),
@@ -204,9 +210,9 @@ fn next_term(
             if let Token::CloseL(q) = next {
                 next = lexer::next(ctx, stream, greedy)?;
                 if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "[]", &p,greedy)
+                    parse_compound(ctx, stream, "[]", p,greedy)
                 } else {
-                    Ok((Term::Atom("[]".to_string(),Span::new(&p,&q)), next, 0))
+                    Ok((Term::Atom("[]".to_string(),Span::new(p,q)), next, 0))
                 }
             } else {
                 Ok((
@@ -222,9 +228,9 @@ fn next_term(
             if let Token::CloseC(q) = next {
                 next = lexer::next(ctx, stream, greedy)?;
                 if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "{}", &p,greedy)
+                    parse_compound(ctx, stream, "{}", p,greedy)
                 } else {
-                    Ok((Term::Atom("{}".to_string(),Span::new(&p,&q)), next, 0))
+                    Ok((Term::Atom("{}".to_string(),Span::new(p,q)), next, 0))
                 }
             } else {
                 let (term, next, _) = parse_term(ctx, stream, next, 1201, greedy)?;
@@ -253,7 +259,10 @@ fn next_term(
             lexer::next(ctx, stream, greedy)?,
             0,
         )),
-        _ => Error::new(ErrorKind::UnexpectedToken(token),token.span()),
+        _ => {
+            let s = token.span();
+            Error::new(ErrorKind::UnexpectedToken(token),s)
+        }
     }
 }
 
@@ -279,7 +288,7 @@ fn parse_term(
     token: Token,
     max_precedence: u16,
     greedy: bool,
-) -> Result<(Term, Token, u16), Error> {
+) -> Result<(Term, Token, u16), Box<Error>> {
     // This is precedence climbing, if you're interested
     let (mut term, mut next, mut precedence) =
         next_term(ctx, stream, token, max_precedence, greedy)?;
@@ -323,7 +332,7 @@ pub(crate) fn next(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     greedy: bool,
-) -> Result<Option<Term>, Error> {
+) -> Result<Option<Term>, Box<Error>> {
     let t = lexer::next(ctx, stream, greedy)?;
     if let Token::Eof(_) = t {
         return Ok(None);
@@ -336,7 +345,7 @@ pub(crate) fn next(
     }
 }
 
-pub(crate) fn skip_to_end(ctx: &Context, stream: &mut dyn ReadStream) -> Result<(), Error> {
+pub(crate) fn skip_to_end(ctx: &Context, stream: &mut dyn ReadStream) -> Result<(), Box<Error>> {
     loop {
         match lexer::next(ctx, stream, true)? {
             Token::Eof(_) | Token::End(_) => break Ok(()),

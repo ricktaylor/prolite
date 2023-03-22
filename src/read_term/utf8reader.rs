@@ -33,7 +33,7 @@ impl<R: std::io::Read> Utf8Reader<R> {
                 Err(e) => {
                     return Err(stream::Error {
                         error: e,
-                        location: self.position,
+                        location: self.position.clone(),
                     })
                 }
                 Ok(1) => Some(buf[0]),
@@ -115,7 +115,7 @@ impl<R: std::io::Read> stream::ReadStream for Utf8Reader<R> {
         Ok(self.next_char)
     }
 
-    fn position(&self) -> &stream::Position {
-        &self.position
+    fn position(&self) -> stream::Position {
+        self.position.clone()
     }
 }

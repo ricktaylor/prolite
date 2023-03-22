@@ -23,16 +23,16 @@ pub(crate) struct Error {
 }
 
 impl Error {
-    pub(super) fn new<T>(kind: ErrorKind, location: Span) -> Result<T, Error> {
-        Err(Self { kind, location })
+    pub(super) fn new<T>(kind: ErrorKind, location: Span) -> Result<T, Box<Error>> {
+        Err(Box::new(Self { kind, location }))
     }
 }
 
-impl From<stream::Error> for Error {
+impl From<stream::Error> for Box<Error> {
     fn from(e: stream::Error) -> Self {
-        Error {
-            kind: ErrorKind::StreamError(e),
-            location: e.location.into(),
-        }
+        Box::new(Error {
+            location: Span::from(&e.location),
+            kind: ErrorKind::StreamError(e)
+        })
     }
 }

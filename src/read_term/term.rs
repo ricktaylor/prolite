@@ -14,9 +14,9 @@ impl Compound {
 
 #[derive(Debug, Clone)]
 pub(crate) enum Term {
-    Integer(i64),
-    Float(f64),
-    Var(String),
+    Integer(i64,Span),
+    Float(f64,Span),
+    Var(String,Span),
     Atom(String,Span),
     Compound(Compound),
 }

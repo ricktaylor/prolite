@@ -33,15 +33,33 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn new(start: &Position, end: &Position) -> Self {
+    pub fn new(start: Position, end: Position) -> Self {
         Self {
-            start: start.clone(),
             end: if end == start {
                 None
             } else {
-                Some(end.clone())
+                Some(end)
             },
+            start,
         }
+    }
+
+    pub fn inc(&mut self, b: Position) -> &mut Self {
+        match self.end {
+            None if self.start == b => self.end = None,
+            None => self.end = Some(b),
+            Some(ref mut e) => *e = b,
+        };
+        self
+    }
+
+    pub fn add(mut self, b: Position) -> Self {
+        match self.end {
+            None if self.start == b => self.end = None,
+            None => self.end = Some(b),
+            Some(ref mut e) => *e = b,
+        };
+        self
     }
 
     pub fn concat(a: &Span, b: &Span) -> Span {
@@ -49,10 +67,10 @@ impl Span {
             a.clone()
         } else {
             Span {
-                start: a.start,
-                end: match b.end {
-                    Some(e) => Some(e),
-                    None => Some(b.start)
+                start: a.start.clone(),
+                end: match &b.end {
+                    None => Some(b.start.clone()),
+                    Some(e) => Some(e.clone())
                 }
             }
         }
@@ -86,5 +104,5 @@ pub struct Error {
 pub trait ReadStream {
     fn get(&mut self) -> Result<Option<char>, Error>;
     fn peek(&mut self) -> Result<Option<char>, Error>;
-    fn position(&self) -> &Position;
+    fn position(&self) -> Position;
 }
