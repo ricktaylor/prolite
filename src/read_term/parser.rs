@@ -1,6 +1,9 @@
 use std::str::FromStr;
 
-use super::{*, stream::{Position, Span}};
+use super::{
+    stream::{Position, Span},
+    *,
+};
 use error::*;
 use lexer::*;
 use term::*;
@@ -10,15 +13,15 @@ use stream::ReadStream;
 
 fn parse_integer(s: &str, radix: u32, span: Span) -> Result<Term, Box<Error>> {
     match i64::from_str_radix(s, radix) {
-        Ok(i) => Ok(Term::Integer(i,span)),
-        Err(e) => Error::new(ErrorKind::ParseIntError(e),span)
+        Ok(i) => Ok(Term::Integer(i, span)),
+        Err(e) => Error::new(ErrorKind::ParseIntError(e), span),
     }
 }
 
 fn parse_float(s: &str, span: Span) -> Result<Term, Box<Error>> {
     match f64::from_str(s) {
-        Ok(f) => Ok(Term::Float(f,span)),
-        Err(e) => Error::new(ErrorKind::ParseFloatError(e),span)
+        Ok(f) => Ok(Term::Float(f, span)),
+        Err(e) => Error::new(ErrorKind::ParseFloatError(e), span),
     }
 }
 
@@ -42,8 +45,10 @@ fn parse_compound(
 
         next = match next {
             Token::Comma(_) => lexer::next(ctx, stream, greedy)?,
-            Token::Close(_) => return Ok((Term::Compound(c), lexer::next(ctx, stream, greedy)?, 0)),
-            _ => return Error::new(ErrorKind::ExpectedChar(')'),next.span()),
+            Token::Close(_) => {
+                return Ok((Term::Compound(c), lexer::next(ctx, stream, greedy)?, 0))
+            }
+            _ => return Error::new(ErrorKind::ExpectedChar(')'), next.span()),
         }
     }
 }
@@ -73,11 +78,11 @@ fn parse_list(
             next = lexer::next(ctx, stream, greedy)?;
             (list, next, _) = parse_term(ctx, stream, next, 999, greedy)?;
         }
-        _ => list = Term::Atom("[]".to_string(),next.span()),
+        _ => list = Term::Atom("[]".to_string(), next.span()),
     };
 
     if !matches!(next, Token::CloseL(_)) {
-        return Error::new(ErrorKind::ExpectedChar(']'),next.span());
+        return Error::new(ErrorKind::ExpectedChar(']'), next.span());
     }
 
     while let Some(t) = terms.pop() {
@@ -88,18 +93,18 @@ fn parse_list(
 
 fn parse_quoted(flags: &flags::QuoteFlag, s: String, span: Span) -> Result<Term, Box<Error>> {
     match flags {
-        flags::QuoteFlag::Atom => Ok(Term::Atom(s,span)),
+        flags::QuoteFlag::Atom => Ok(Term::Atom(s, span)),
         flags::QuoteFlag::Chars => {
-            let mut list = Term::Atom("[]".to_string(),span.clone());
+            let mut list = Term::Atom("[]".to_string(), span.clone());
             for c in s.chars().rev() {
-                list = Term::new_compound(".", vec![Term::Atom(c.to_string(),span.clone()), list]);
+                list = Term::new_compound(".", vec![Term::Atom(c.to_string(), span.clone()), list]);
             }
             Ok(list)
         }
         flags::QuoteFlag::Codes => {
-            let mut list = Term::Atom("[]".to_string(),span.clone());
+            let mut list = Term::Atom("[]".to_string(), span.clone());
             for c in s.chars().rev() {
-                list = Term::new_compound(".", vec![Term::Integer(c as i64,span.clone()), list]);
+                list = Term::new_compound(".", vec![Term::Integer(c as i64, span.clone()), list]);
             }
             Ok(list)
         }
@@ -115,52 +120,56 @@ fn next_term(
 ) -> Result<(Term, Token, u16), Box<Error>> {
     match token {
         /* 6.3.1.1 */
-        Token::Int(s, r,span) => Ok((parse_integer(&s, r,span)?, lexer::next(ctx, stream, greedy)?, 0)),
-        Token::Float(s,span) => Ok((parse_float(&s,span)?, lexer::next(ctx, stream, greedy)?, 0)),
-        Token::CharCode(c,p) => Ok((
-            Term::Integer(c as i64,p.into()),
+        Token::Int(s, r, span) => Ok((
+            parse_integer(&s, r, span)?,
+            lexer::next(ctx, stream, greedy)?,
+            0,
+        )),
+        Token::Float(s, span) => Ok((parse_float(&s, span)?, lexer::next(ctx, stream, greedy)?, 0)),
+        Token::CharCode(c, p) => Ok((
+            Term::Integer(c as i64, p.into()),
             lexer::next(ctx, stream, greedy)?,
             0,
         )),
 
         /* 6.3.2 */
-        Token::Var(s,span) => Ok((Term::Var(s,span), lexer::next(ctx, stream, greedy)?, 0)),
+        Token::Var(s, span) => Ok((Term::Var(s, span), lexer::next(ctx, stream, greedy)?, 0)),
 
         /* ISO/IEC 13211-1:1995/Cor.2:2012 */
         Token::Bar(p) => {
             let next = lexer::next(ctx, stream, greedy)?;
             if let Token::OpenCt(_) = next {
-                parse_compound(ctx, stream, "|",p, greedy)
+                parse_compound(ctx, stream, "|", p, greedy)
             } else {
-                Ok((Term::Atom("|".to_string(),p.into()), next, 0))
+                Ok((Term::Atom("|".to_string(), p.into()), next, 0))
             }
         }
 
-        Token::Name(s,span) => {
+        Token::Name(s, span) => {
             let next = lexer::next(ctx, stream, greedy)?;
             match next {
                 /* 6.3.1.2  */
-                Token::Int(t, r,span2) if s == "-" => Ok((
-                    parse_integer(&format!("{}{}", s, t), r, Span::concat(&span,&span2))?,
+                Token::Int(t, r, span2) if s == "-" => Ok((
+                    parse_integer(&format!("{}{}", s, t), r, Span::concat(&span, &span2))?,
                     lexer::next(ctx, stream, greedy)?,
                     0,
                 )),
-                Token::Float(t,span2) if s == "-" => Ok((
-                    parse_float(&format!("{}{}", s, t), Span::concat(&span,&span2))?,
+                Token::Float(t, span2) if s == "-" => Ok((
+                    parse_float(&format!("{}{}", s, t), Span::concat(&span, &span2))?,
                     lexer::next(ctx, stream, greedy)?,
                     0,
                 )),
-                Token::CharCode(c,p) if s == "-" => Ok((
-                    Term::Integer(-(c as i64),p.into()),
+                Token::CharCode(c, p) if s == "-" => Ok((
+                    Term::Integer(-(c as i64), p.into()),
                     lexer::next(ctx, stream, greedy)?,
                     0,
                 )),
 
                 /* 6.3.3 */
-                Token::OpenCt(_) => parse_compound(ctx, stream, &s,span.start, greedy),
+                Token::OpenCt(_) => parse_compound(ctx, stream, &s, span.start, greedy),
 
                 /* 6.3.1.3 */
-                Token::End(_) => Ok((Term::Atom(s.to_string(),span), next, 0)),
+                Token::End(_) => Ok((Term::Atom(s.to_string(), span), next, 0)),
 
                 /* 6.3.4.2 */
                 _ => {
@@ -186,9 +195,9 @@ fn next_term(
                                 _ => {}
                             }
                         }
-                        Ok((Term::Atom(s.to_string(),span), next, 1201))
+                        Ok((Term::Atom(s.to_string(), span), next, 1201))
                     } else {
-                        Ok((Term::Atom(s.to_string(),span), next, 0))
+                        Ok((Term::Atom(s.to_string(), span), next, 0))
                     }
                 }
             }
@@ -201,7 +210,7 @@ fn next_term(
             if let Token::Close(_) = next {
                 Ok((term, lexer::next(ctx, stream, greedy)?, 0))
             } else {
-                Error::new(ErrorKind::ExpectedChar(')'),next.span())
+                Error::new(ErrorKind::ExpectedChar(')'), next.span())
             }
         }
         /* 6.3.5 */
@@ -210,9 +219,9 @@ fn next_term(
             if let Token::CloseL(q) = next {
                 next = lexer::next(ctx, stream, greedy)?;
                 if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "[]", p,greedy)
+                    parse_compound(ctx, stream, "[]", p, greedy)
                 } else {
-                    Ok((Term::Atom("[]".to_string(),Span::new(p,q)), next, 0))
+                    Ok((Term::Atom("[]".to_string(), Span::new(p, q)), next, 0))
                 }
             } else {
                 Ok((
@@ -228,9 +237,9 @@ fn next_term(
             if let Token::CloseC(q) = next {
                 next = lexer::next(ctx, stream, greedy)?;
                 if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "{}", p,greedy)
+                    parse_compound(ctx, stream, "{}", p, greedy)
                 } else {
-                    Ok((Term::Atom("{}".to_string(),Span::new(p,q)), next, 0))
+                    Ok((Term::Atom("{}".to_string(), Span::new(p, q)), next, 0))
                 }
             } else {
                 let (term, next, _) = parse_term(ctx, stream, next, 1201, greedy)?;
@@ -241,27 +250,27 @@ fn next_term(
                         0,
                     ))
                 } else {
-                    Error::new(ErrorKind::ExpectedChar('}'),next.span())
+                    Error::new(ErrorKind::ExpectedChar('}'), next.span())
                 }
             }
         }
         /* 6.3.7 */
-        Token::DoubleQuotedList(s,span) => {
+        Token::DoubleQuotedList(s, span) => {
             /* ISO/IEC 13211-1:1995/Cor.1:2007 */
             Ok((
-                parse_quoted(&ctx.flags.double_quotes, s,span)?,
+                parse_quoted(&ctx.flags.double_quotes, s, span)?,
                 lexer::next(ctx, stream, greedy)?,
                 0,
             ))
         }
-        Token::BackQuotedString(s,span) => Ok((
-            parse_quoted(&ctx.flags.back_quotes, s,span)?,
+        Token::BackQuotedString(s, span) => Ok((
+            parse_quoted(&ctx.flags.back_quotes, s, span)?,
             lexer::next(ctx, stream, greedy)?,
             0,
         )),
         _ => {
             let s = token.span();
-            Error::new(ErrorKind::UnexpectedToken(token),s)
+            Error::new(ErrorKind::UnexpectedToken(token), s)
         }
     }
 }
@@ -294,7 +303,7 @@ fn parse_term(
         next_term(ctx, stream, token, max_precedence, greedy)?;
     loop {
         let (l, op_precedence, r, bin_op) = match next {
-            Token::Name(ref s,_) => lookup_op(ctx, s),
+            Token::Name(ref s, _) => lookup_op(ctx, s),
             Token::Comma(_) => (999, 1000, 999, true),
 
             /* ISO/IEC 13211-1:1995/Cor.2:2012 */
@@ -309,7 +318,7 @@ fn parse_term(
 
         let mut c = Compound {
             functor: match next {
-                Token::Name(ref s,_) => s.clone(),
+                Token::Name(ref s, _) => s.clone(),
                 Token::Bar(_) => "|".to_string(),
                 Token::Comma(_) => ",".to_string(),
                 _ => panic!(),
@@ -341,7 +350,7 @@ pub(crate) fn next(
     let (term, next, _) = parse_term(ctx, stream, t, 1201, greedy)?;
     match next {
         Token::End(_) => Ok(Some(term)),
-        _ => Error::new(ErrorKind::ExpectedChar('.'),next.span()),
+        _ => Error::new(ErrorKind::ExpectedChar('.'), next.span()),
     }
 }
 

@@ -27,24 +27,24 @@ pub(crate) enum Token {
 impl Token {
     pub fn span(&self) -> Span {
         match self {
-            Token::Eof(p) |
-            Token::Open(p) |
-            Token::OpenCt(p) |
-            Token::Close(p) |
-            Token::OpenL(p) |
-            Token::CloseL(p) |
-            Token::OpenC(p) |
-            Token::CloseC(p) |
-            Token::Bar(p) |
-            Token::Comma(p) |
-            Token::CharCode(_, p) |
-            Token::End(p) => Span::from(p),
-            Token::Name(_, s) |
-            Token::Var(_, s) |
-            Token::Int(_, _, s) |
-            Token::Float(_, s) |
-            Token::DoubleQuotedList(_, s) |
-            Token::BackQuotedString(_, s) => s.clone()
+            Token::Eof(p)
+            | Token::Open(p)
+            | Token::OpenCt(p)
+            | Token::Close(p)
+            | Token::OpenL(p)
+            | Token::CloseL(p)
+            | Token::OpenC(p)
+            | Token::CloseC(p)
+            | Token::Bar(p)
+            | Token::Comma(p)
+            | Token::CharCode(_, p)
+            | Token::End(p) => Span::from(p),
+            Token::Name(_, s)
+            | Token::Var(_, s)
+            | Token::Int(_, _, s)
+            | Token::Float(_, s)
+            | Token::DoubleQuotedList(_, s)
+            | Token::BackQuotedString(_, s) => s.clone(),
         }
     }
 }
@@ -106,10 +106,7 @@ fn convert_char(ctx: &Context, c: Option<char>) -> Char {
     }
 }
 
-fn next_char(
-    ctx: &Context,
-    stream: &mut dyn ReadStream,
-) -> Result<(Char, Position), Box<Error>> {
+fn next_char(ctx: &Context, stream: &mut dyn ReadStream) -> Result<(Char, Position), Box<Error>> {
     let (c, p) = next_char_raw(stream)?;
     Ok((convert_char(ctx, c), p))
 }
@@ -306,7 +303,9 @@ fn quoted(
                         span.add(p),
                     )
                 }
-                (None, p) => return Error::new(ErrorKind::BadEscape('\\'.to_string()), span.add(p)),
+                (None, p) => {
+                    return Error::new(ErrorKind::BadEscape('\\'.to_string()), span.add(p))
+                }
             },
             (Some(c), p) if c == quote => match peek_char_raw(stream)? {
                 Some(c) if c == quote => {
@@ -359,9 +358,7 @@ pub(super) fn next(
             (Char::Graphic('.'), p) => {
                 let mut t = String::from('.');
                 match peek_char(ctx, stream)? {
-                    Char::Solo('%') | Char::Layout(_) | Char::Eof => {
-                        return Ok(Token::End(p))
-                    }
+                    Char::Solo('%') | Char::Layout(_) | Char::Eof => return Ok(Token::End(p)),
                     Char::Graphic(c) => t.push(c),
                     Char::Meta('\\') => t.push('\\'),
                     _ => return Ok(Token::Name(t, p.into())),

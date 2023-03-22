@@ -3,13 +3,13 @@ use error::*;
 use stream::ReadStream;
 
 pub(super) struct MultiReader {
-    streams: Vec<Box<dyn ReadStream>>
+    streams: Vec<Box<dyn ReadStream>>,
 }
 
 impl MultiReader {
     pub(super) fn new(stream: Box<dyn ReadStream>) -> Self {
         Self {
-            streams: vec![stream]
+            streams: vec![stream],
         }
     }
 

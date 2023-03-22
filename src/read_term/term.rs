@@ -14,10 +14,10 @@ impl Compound {
 
 #[derive(Debug, Clone)]
 pub(crate) enum Term {
-    Integer(i64,Span),
-    Float(f64,Span),
-    Var(String,Span),
-    Atom(String,Span),
+    Integer(i64, Span),
+    Float(f64, Span),
+    Var(String, Span),
+    Atom(String, Span),
     Compound(Compound),
 }
 
@@ -34,7 +34,7 @@ impl<'a> Term {
     pub(crate) fn list_iter(&'a self) -> Option<ListIterator<'a>> {
         match self {
             Term::Compound(c) if c.functor == "." => Some(ListIterator { next: Some(self) }),
-            Term::Atom(s,_) if s == "[]" => Some(ListIterator { next: None }),
+            Term::Atom(s, _) if s == "[]" => Some(ListIterator { next: None }),
             _ => None,
         }
     }
@@ -53,7 +53,7 @@ impl<'a> Iterator for ListIterator<'a> {
                 self.next = Some(&c.args[1]);
                 Some(&c.args[0])
             }
-            Some(Term::Atom(s,_)) if s == "[]" => {
+            Some(Term::Atom(s, _)) if s == "[]" => {
                 self.next = None;
                 None
             }

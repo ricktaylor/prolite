@@ -32,7 +32,7 @@ impl From<stream::Error> for Box<Error> {
     fn from(e: stream::Error) -> Self {
         Box::new(Error {
             location: Span::from(&e.location),
-            kind: ErrorKind::StreamError(e)
+            kind: ErrorKind::StreamError(e),
         })
     }
 }

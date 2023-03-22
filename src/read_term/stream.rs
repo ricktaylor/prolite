@@ -1,4 +1,4 @@
-#[derive(Debug, Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Position {
     pub source: String,
     pub line: usize,
@@ -35,11 +35,7 @@ pub struct Span {
 impl Span {
     pub fn new(start: Position, end: Position) -> Self {
         Self {
-            end: if end == start {
-                None
-            } else {
-                Some(end)
-            },
+            end: if end == start { None } else { Some(end) },
             start,
         }
     }
@@ -70,8 +66,8 @@ impl Span {
                 start: a.start.clone(),
                 end: match &b.end {
                     None => Some(b.start.clone()),
-                    Some(e) => Some(e.clone())
-                }
+                    Some(e) => Some(e.clone()),
+                },
             }
         }
     }
