@@ -304,7 +304,7 @@ fn parse_term(
     loop {
         let (l, op_precedence, r, bin_op) = match next {
             Token::Name(ref s, _) => lookup_op(ctx, s),
-            Token::Comma(_) => (999, 1000, 999, true),
+            Token::Comma(_) => (999, 1000, 1000, true),
 
             /* ISO/IEC 13211-1:1995/Cor.2:2012 */
             Token::Bar(_) => lookup_op(ctx, "|"),
