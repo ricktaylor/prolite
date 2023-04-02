@@ -144,7 +144,7 @@ fn integral(
     loop {
         match peek_char(ctx, stream)? {
             Char::Digit(c) if c <= max => t.push(c),
-            Char::SmallLetter(c) if radix == 16 && ('a'..='f').contains(&c) => t.push(c),
+            Char::SmallLetter(c @ 'a'..='f') if radix == 16 => t.push(c),
             _ => break,
         }
         span.inc(eat_char(stream)?);
@@ -414,7 +414,18 @@ pub(super) fn next(
             // integer (* 6.4 *)
             // float number (* 6.4 *)
             (Char::Digit('0'), p) => match peek_char(ctx, stream)? {
-                Char::Meta('\'') => todo!(),
+                Char::Meta('\'') => {
+                    eat_char(stream)?;
+                    return match next_char_raw(stream)? {
+                        (None,q) => Error::new(ErrorKind::BadEscape("0\'".to_string()), Span::new(p,q)),
+                        (Some('\''),_) => match next_char_raw(stream)? {
+                            (None,q) => Error::new(ErrorKind::BadEscape("0\'\'".to_string()), Span::new(p,q)),
+                            (Some('\''),q) => Ok(Token::Int("39".to_string(), 10, Span::new(p,q))),
+                            (Some(c),q) => Error::new(ErrorKind::BadEscape(String::from_iter(vec!['0','\'','\'', c])), Span::new(p,q))
+                        },
+                        (Some(c),q) => Ok(Token::Int((c as u32).to_string(), 10, Span::new(p,q))),
+                    }
+                },
                 Char::SmallLetter('b') => {
                     eat_char(stream)?;
                     return integral(ctx, stream, '1', 2, &p);
@@ -431,7 +442,7 @@ pub(super) fn next(
                     eat_char(stream)?;
                     return numeric(ctx, stream, c, &p);
                 }
-                _ => return Ok(Token::Int('0'.to_string(), 10, p.into())),
+                _ => return Ok(Token::Int("0".to_string(), 10, p.into())),
             },
             (Char::Digit(c), p) => return numeric(ctx, stream, c, &p),
 
