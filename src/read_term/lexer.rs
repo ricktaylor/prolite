@@ -531,6 +531,7 @@ pub(super) fn next(
                     eat_char(stream)?;
                     return numeric(ctx, stream, c, &p);
                 }
+                Char::Graphic('.') => return numeric(ctx, stream, '0', &p),
                 _ => return Ok(Token::Int("0".to_string(), 10, p.into())),
             },
             (Char::Digit(c), p) => return numeric(ctx, stream, c, &p),
