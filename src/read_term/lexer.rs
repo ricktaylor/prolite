@@ -319,6 +319,23 @@ fn quoted(
     }
 }
 
+fn graphic(ctx: &Context,
+    stream: &mut dyn ReadStream,
+    c: char,
+    p: Position
+) -> Result<Token, Box<Error>> {
+    let mut t = c.to_string();
+    let mut span = Span::from(p);
+    loop {
+        match peek_char(ctx, stream)? {
+            Char::Graphic(c) => t.push(c),
+            Char::Meta('\\') => t.push('\\'),
+            _ => return Ok(Token::Name(t, span)),
+        }
+        span.inc(eat_char(stream)?);
+    }
+}
+
 pub(super) fn next(
     ctx: &Context,
     stream: &mut dyn ReadStream,
@@ -355,56 +372,21 @@ pub(super) fn next(
             }
 
             // graphic token (* 6.4.2 *)
-            (Char::Graphic('.'), p) => {
-                let mut t = String::from('.');
-                match peek_char(ctx, stream)? {
-                    Char::Solo('%') | Char::Layout(_) | Char::Eof => return Ok(Token::End(p)),
-                    Char::Graphic(c) => t.push(c),
-                    Char::Meta('\\') => t.push('\\'),
-                    _ => return Ok(Token::Name(t, p.into())),
-                }
-                let mut span = Span::from(p).add(eat_char(stream)?);
-                loop {
-                    match peek_char(ctx, stream)? {
-                        Char::Graphic(c) => t.push(c),
-                        Char::Meta('\\') => t.push('\\'),
-                        _ => return Ok(Token::Name(t, span)),
-                    }
-                    span.inc(eat_char(stream)?);
-                }
+            (Char::Graphic('.'), p) => match peek_char(ctx, stream)? {
+                Char::Solo('%') | Char::Layout(_) | Char::Eof => return Ok(Token::End(p)),
+                _ => return graphic(ctx,stream,'.',p)
             }
-            (Char::Graphic('/'), p) => {
-                // bracketed comment (* 6.4.1 *)
-                let mut c = peek_char(ctx, stream)?;
-                if let Char::Graphic('*') = c {
+
+            // bracketed comment (* 6.4.1 *)
+            (Char::Graphic('/'), p) => match peek_char(ctx, stream)? {
+                Char::Graphic('*') => {
                     eat_char(stream)?;
                     multiline_comment(ctx, stream)?
-                } else {
-                    let mut t = String::from('/');
-                    let mut span = Span::from(p);
-                    loop {
-                        match c {
-                            Char::Graphic(c) => t.push(c),
-                            Char::Meta('\\') => t.push('\\'),
-                            _ => return Ok(Token::Name(t, span)),
-                        }
-                        span.inc(eat_char(stream)?);
-                        c = peek_char(ctx, stream)?;
-                    }
                 }
+                _ => return graphic(ctx,stream,'/',p)
             }
-            (Char::Graphic(c), p) => {
-                let mut t = c.to_string();
-                let mut span = Span::from(p);
-                loop {
-                    match peek_char(ctx, stream)? {
-                        Char::Graphic(c) => t.push(c),
-                        Char::Meta('\\') => t.push('\\'),
-                        _ => return Ok(Token::Name(t, span)),
-                    }
-                    span.inc(eat_char(stream)?);
-                }
-            }
+            (Char::Meta('\\'),p) => return graphic(ctx,stream,'\\',p),
+            (Char::Graphic(c), p) => return graphic(ctx,stream,c,p),
 
             // quoted token (* 6.4.2 *)
             (Char::Meta('\''), p) => {
