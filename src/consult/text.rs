@@ -449,7 +449,25 @@ fn char_conversion(
     in_char: &Term,
     out_char: &Term,
 ) -> Result<(), Box<Error>> {
-    todo!()
+    match in_char {
+        Term::Atom(s, _) if s.len() == 1 => {
+            let in_char = s.chars().next().unwrap();
+            match out_char {
+                Term::Atom(s, _) if s.len() == 1 => {
+                    let out_char = s.chars().next().unwrap();
+
+                    if in_char == out_char {
+                        ctx.context.char_conversion.remove(&in_char);
+                    } else {
+                        ctx.context.char_conversion.insert(in_char, out_char);
+                    }
+                    Ok(())
+                }
+                _ => Error::new(ErrorKind::InvalidCharacter(out_char.clone())),
+            }
+        }
+        _ => Error::new(ErrorKind::InvalidCharacter(in_char.clone())),
+    }
 }
 
 fn initialization(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {

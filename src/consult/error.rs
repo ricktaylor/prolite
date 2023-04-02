@@ -16,6 +16,7 @@ pub(super) enum ErrorKind {
     InvalidOpCombo(Term, Operator, Operator),
     InvalidFlag(Term),
     InvalidFlagValue(Term, Term),
+    InvalidCharacter(Term),
 }
 
 #[derive(Debug)]
