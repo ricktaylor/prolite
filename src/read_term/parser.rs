@@ -175,20 +175,36 @@ fn next_term(
                         for o in i {
                             match o {
                                 Operator::fx(p) => {
-                                    if *p <= max_precedence {
-                                        let (term, next, _) =
-                                            parse_term(ctx, stream, next, *p - 1, greedy)?;
-                                        return Ok((Term::new_compound(&s, vec![term]), next, *p));
+                                    if *p > max_precedence {
+                                        break;
                                     }
-                                    break;
+
+                                    return match parse_term(ctx, stream, next, *p - 1, greedy) {
+                                        Ok((term, next,_)) => Ok((Term::new_compound(&s, vec![term]), next, *p)),
+                                        Err(e) => {
+                                            if let ErrorKind::UnexpectedToken(next) = e.kind {
+                                                Ok((Term::Atom(s.to_string(), span), next, 1201))
+                                            } else {
+                                                Err(e)
+                                            }
+                                        }
+                                    }
                                 }
                                 Operator::fy(p) => {
-                                    if *p <= max_precedence {
-                                        let (term, next, _) =
-                                            parse_term(ctx, stream, next, *p, greedy)?;
-                                        return Ok((Term::new_compound(&s, vec![term]), next, *p));
+                                    if *p > max_precedence {
+                                        break;
                                     }
-                                    break;
+
+                                    return match parse_term(ctx, stream, next, *p - 1, greedy) {
+                                        Ok((term, next,_)) => Ok((Term::new_compound(&s, vec![term]), next, *p)),
+                                        Err(e) => {
+                                            if let ErrorKind::UnexpectedToken(next) = e.kind {
+                                                Ok((Term::Atom(s.to_string(), span), next, 1201))
+                                            } else {
+                                                Err(e)
+                                            }
+                                        }
+                                    }
                                 }
                                 _ => {}
                             }
@@ -202,7 +218,7 @@ fn next_term(
         }
 
         /* 6.3.4.1 */
-        Token::Open(p) | Token::OpenCt(p) => {
+        Token::Open(_) | Token::OpenCt(_) => {
             let next = lexer::next(ctx, stream, greedy)?;
             let (term, next, _) = parse_term(ctx, stream, next, 1201, greedy)?;
             if let Token::Close(_) = next {
