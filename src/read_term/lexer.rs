@@ -269,9 +269,71 @@ fn alpha_numeric(
     }
 }
 
-fn quoted(
+fn char_code(
     stream: &mut dyn ReadStream,
-    quote: char,
+    init_c: char,
+    start: &Position,
+    greedy: bool,
+) -> Result<(char, Position), Box<Error>> {
+    let mut o = String::new();
+    if init_c != 'x' {
+        o.push(init_c);
+    }
+
+    let mut span = Span::from(start);
+    loop {
+        match next_char_raw(stream)? {
+            (None, p) => return Error::new(ErrorKind::Missing('\\'), span.add(p)),
+            (Some('\\'), p) => match u32::from_str_radix(&o, if init_c == 'x' { 16 } else { 8 }) {
+                Ok(u) => match char::from_u32(u) {
+                    None => {
+                        o.push('\\');
+                        break;
+                    }
+                    Some(c) => return Ok((c, p)),
+                },
+                Err(e) => {
+                    o.push('\\');
+                    break;
+                }
+            },
+            (Some(c @ 'A'..='F'), _) | (Some(c @ 'a'..='f'), _) | (Some(c @ '8'..='9'), _)
+                if init_c == 'x' =>
+            {
+                o.push(c)
+            }
+            (Some(c @ '0'..='7'), _) => o.push(c),
+            (Some(c), p) => {
+                o.push(c);
+                span.inc(p);
+                if greedy {
+                    loop  {
+                        match next_char_raw(stream) {
+                            Err(_) | Ok((None, _)) => break,
+                            Ok((Some(c), p)) => {
+                                o.push(c);
+                                if c == '\\' {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    if init_c == 'x' {
+        o = "\\x".to_string() + &o;
+    } else {
+        o = "\\".to_string() + &o;
+    }
+    Error::new(ErrorKind::BadEscape(o), span)
+}
+
+fn quoted_inner<const Q: char>(
+    stream: &mut dyn ReadStream,
     start: &Position,
     greedy: bool,
 ) -> Result<(String, Span), Box<Error>> {
@@ -279,8 +341,8 @@ fn quoted(
     let mut span = Span::from(start);
     loop {
         match next_char_raw(stream)? {
-            (None, p) => return Error::new(ErrorKind::Missing(quote), span.add(p)),
-            (Some('\\'), _) => match next_char_raw(stream)? {
+            (None, p) => return Error::new(ErrorKind::Missing(Q), span.add(p)),
+            (Some('\\'), p) => match next_char_raw(stream)? {
                 (Some('\n'), _) => {}
                 (Some('\\'), _) => t.push('\\'),
                 (Some('\''), _) => t.push('\''),
@@ -292,10 +354,10 @@ fn quoted(
                 (Some('f'), _) => t.push('\x0C'),
                 (Some('n'), _) => t.push('\n'),
                 (Some('v'), _) => t.push('\x0B'),
-                (Some('x'), _) => todo!(),
-                (Some(c), _) if ('0'..='7').contains(&c) => {
-                    if greedy {}
-                    todo!()
+                (Some(c @ '0'..='7'), _) | (Some(c @ 'x'), _) => {
+                    let (c, p) = char_code(stream, c, &p, greedy)?;
+                    t.push(c);
+                    span.inc(p);
                 }
                 (Some(c), p) => {
                     return Error::new(
@@ -307,8 +369,8 @@ fn quoted(
                     return Error::new(ErrorKind::BadEscape('\\'.to_string()), span.add(p))
                 }
             },
-            (Some(c), p) if c == quote => match peek_char_raw(stream)? {
-                Some(c) if c == quote => {
+            (Some(c), p) if c == Q => match peek_char_raw(stream)? {
+                Some(c) if c == Q => {
                     t.push(c);
                     eat_char(stream)?;
                 }
@@ -317,6 +379,23 @@ fn quoted(
             (Some(c), _) => t.push(c),
         }
     }
+}
+
+fn quoted<const Q: char>(
+    stream: &mut dyn ReadStream,
+    start: &Position,
+    greedy: bool,
+) -> Result<(String, Span), Box<Error>> {
+    let r = quoted_inner::<Q>(stream, start, greedy);
+    if r.is_err() && greedy {
+        loop {
+            match next_char_raw(stream) {
+                Err(_) | Ok((None, _)) | Ok((Some('\\'), _)) => break,
+                _ => {}
+            }
+        }
+    }
+    r
 }
 
 fn graphic(
@@ -391,7 +470,7 @@ pub(super) fn next(
 
             // quoted token (* 6.4.2 *)
             (Char::Meta('\''), p) => {
-                let (s, span) = quoted(stream, '\'', &p, greedy)?;
+                let (s, span) = quoted::<'\''>(stream, &p, greedy)?;
                 return Ok(Token::Name(s, span));
             }
 
@@ -417,15 +496,25 @@ pub(super) fn next(
                 Char::Meta('\'') => {
                     eat_char(stream)?;
                     return match next_char_raw(stream)? {
-                        (None,q) => Error::new(ErrorKind::BadEscape("0\'".to_string()), Span::new(p,q)),
-                        (Some('\''),_) => match next_char_raw(stream)? {
-                            (None,q) => Error::new(ErrorKind::BadEscape("0\'\'".to_string()), Span::new(p,q)),
-                            (Some('\''),q) => Ok(Token::Int("39".to_string(), 10, Span::new(p,q))),
-                            (Some(c),q) => Error::new(ErrorKind::BadEscape(String::from_iter(vec!['0','\'','\'', c])), Span::new(p,q))
+                        (None, q) => {
+                            Error::new(ErrorKind::BadEscape("0\'".to_string()), Span::new(p, q))
+                        }
+                        (Some('\''), _) => match next_char_raw(stream)? {
+                            (None, q) => Error::new(
+                                ErrorKind::BadEscape("0\'\'".to_string()),
+                                Span::new(p, q),
+                            ),
+                            (Some('\''), q) => {
+                                Ok(Token::Int("39".to_string(), 10, Span::new(p, q)))
+                            }
+                            (Some(c), q) => Error::new(
+                                ErrorKind::BadEscape(String::from_iter(vec!['0', '\'', '\'', c])),
+                                Span::new(p, q),
+                            ),
                         },
-                        (Some(c),q) => Ok(Token::Int((c as u32).to_string(), 10, Span::new(p,q))),
-                    }
-                },
+                        (Some(c), q) => Ok(Token::Int((c as u32).to_string(), 10, Span::new(p, q))),
+                    };
+                }
                 Char::SmallLetter('b') => {
                     eat_char(stream)?;
                     return integral(ctx, stream, '1', 2, &p);
@@ -448,13 +537,13 @@ pub(super) fn next(
 
             // double quoted list (* 6.4 *)
             (Char::Meta('"'), p) => {
-                let (s, span) = quoted(stream, '"', &p, greedy)?;
+                let (s, span) = quoted::<'"'>(stream, &p, greedy)?;
                 return Ok(Token::DoubleQuotedList(s, span));
             }
 
             // back quoted string (* 6.4.7 *)
             (Char::Meta('`'), p) => {
-                let (s, span) = quoted(stream, '`', &p, greedy)?;
+                let (s, span) = quoted::<'`'>(stream, &p, greedy)?;
                 return Ok(Token::BackQuotedString(s, span));
             }
 
