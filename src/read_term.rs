@@ -26,3 +26,6 @@ impl Default for Context {
         }
     }
 }
+
+#[cfg(test)]
+mod test;

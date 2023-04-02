@@ -3,9 +3,6 @@ pub(super) mod text;
 
 mod multireader;
 
-#[cfg(test)]
-mod test;
-
 use super::{flags, operators, read_term};
 use read_term::stream;
 
@@ -23,3 +20,6 @@ pub trait StreamResolver {
 }
 
 type ErrorSinkFn = fn(e: &error::Error) -> bool;
+
+#[cfg(test)]
+mod test;

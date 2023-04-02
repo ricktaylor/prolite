@@ -1,11 +1,9 @@
 use std::str::FromStr;
 
-use super::{
-    stream::{Position, Span},
-    *,
-};
+use super::*;
 use error::*;
 use lexer::*;
+use stream::{Position, Span};
 use term::*;
 
 use operators::Operator;
