@@ -27,7 +27,7 @@ impl Operator {
             (";".to_string(), vec![Operator::xfy(1100)]),
             ("->".to_string(), vec![Operator::xfy(1050)]),
             (",".to_string(), vec![Operator::xfy(1000)]),
-            ("\\+".to_string(), vec![Operator::xfy(900)]),
+            ("\\+".to_string(), vec![Operator::fy(900)]),
             ("=".to_string(), vec![Operator::xfy(700)]),
             ("<".to_string(), vec![Operator::xfy(700)]),
             (">".to_string(), vec![Operator::xfy(700)]),
