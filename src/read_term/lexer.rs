@@ -319,10 +319,11 @@ fn quoted(
     }
 }
 
-fn graphic(ctx: &Context,
+fn graphic(
+    ctx: &Context,
     stream: &mut dyn ReadStream,
     c: char,
-    p: Position
+    p: Position,
 ) -> Result<Token, Box<Error>> {
     let mut t = c.to_string();
     let mut span = Span::from(p);
@@ -374,8 +375,8 @@ pub(super) fn next(
             // graphic token (* 6.4.2 *)
             (Char::Graphic('.'), p) => match peek_char(ctx, stream)? {
                 Char::Solo('%') | Char::Layout(_) | Char::Eof => return Ok(Token::End(p)),
-                _ => return graphic(ctx,stream,'.',p)
-            }
+                _ => return graphic(ctx, stream, '.', p),
+            },
 
             // bracketed comment (* 6.4.1 *)
             (Char::Graphic('/'), p) => match peek_char(ctx, stream)? {
@@ -383,10 +384,10 @@ pub(super) fn next(
                     eat_char(stream)?;
                     multiline_comment(ctx, stream)?
                 }
-                _ => return graphic(ctx,stream,'/',p)
-            }
-            (Char::Meta('\\'),p) => return graphic(ctx,stream,'\\',p),
-            (Char::Graphic(c), p) => return graphic(ctx,stream,c,p),
+                _ => return graphic(ctx, stream, '/', p),
+            },
+            (Char::Meta('\\'), p) => return graphic(ctx, stream, '\\', p),
+            (Char::Graphic(c), p) => return graphic(ctx, stream, c, p),
 
             // quoted token (* 6.4.2 *)
             (Char::Meta('\''), p) => {

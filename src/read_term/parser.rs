@@ -180,7 +180,9 @@ fn next_term(
                                     }
 
                                     return match parse_term(ctx, stream, next, *p - 1, greedy) {
-                                        Ok((term, next,_)) => Ok((Term::new_compound(&s, vec![term]), next, *p)),
+                                        Ok((term, next, _)) => {
+                                            Ok((Term::new_compound(&s, vec![term]), next, *p))
+                                        }
                                         Err(e) => {
                                             if let ErrorKind::UnexpectedToken(next) = e.kind {
                                                 Ok((Term::Atom(s.to_string(), span), next, 1201))
@@ -188,7 +190,7 @@ fn next_term(
                                                 Err(e)
                                             }
                                         }
-                                    }
+                                    };
                                 }
                                 Operator::fy(p) => {
                                     if *p > max_precedence {
@@ -196,7 +198,9 @@ fn next_term(
                                     }
 
                                     return match parse_term(ctx, stream, next, *p - 1, greedy) {
-                                        Ok((term, next,_)) => Ok((Term::new_compound(&s, vec![term]), next, *p)),
+                                        Ok((term, next, _)) => {
+                                            Ok((Term::new_compound(&s, vec![term]), next, *p))
+                                        }
                                         Err(e) => {
                                             if let ErrorKind::UnexpectedToken(next) = e.kind {
                                                 Ok((Term::Atom(s.to_string(), span), next, 1201))
@@ -204,7 +208,7 @@ fn next_term(
                                                 Err(e)
                                             }
                                         }
-                                    }
+                                    };
                                 }
                                 _ => {}
                             }
