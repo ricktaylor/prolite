@@ -35,16 +35,20 @@ fn parse_compound(
         args: Vec::new(),
     };
 
-    let mut next = lexer::next(ctx, stream, greedy)?;
+    let mut next = lexer::next(ctx, stream, false, greedy)?;
     loop {
         let term;
         (term, next, _) = parse_term(ctx, stream, next, 999, greedy)?;
         c.args.push(term);
 
         next = match next {
-            Token::Comma(_) => lexer::next(ctx, stream, greedy)?,
+            Token::Comma(_) => lexer::next(ctx, stream, false, greedy)?,
             Token::Close(_) => {
-                return Ok((Term::Compound(c), lexer::next(ctx, stream, greedy)?, 0))
+                return Ok((
+                    Term::Compound(c),
+                    lexer::next(ctx, stream, false, greedy)?,
+                    0,
+                ))
             }
             _ => return Error::new(ErrorKind::ExpectedChar(')'), next.span()),
         }
@@ -65,7 +69,7 @@ fn parse_list(
         terms.push(term);
 
         next = match next {
-            Token::Comma(_) => lexer::next(ctx, stream, greedy)?,
+            Token::Comma(_) => lexer::next(ctx, stream, false, greedy)?,
             _ => break,
         }
     }
@@ -73,7 +77,7 @@ fn parse_list(
     let mut list: Term;
     match next {
         Token::Bar(_) => {
-            next = lexer::next(ctx, stream, greedy)?;
+            next = lexer::next(ctx, stream, false, greedy)?;
             (list, next, _) = parse_term(ctx, stream, next, 999, greedy)?;
         }
         _ => list = Term::Atom("[]".to_string(), next.span()),
@@ -118,24 +122,33 @@ fn next_term(
 ) -> Result<(Term, Token, u16), Box<Error>> {
     match token {
         /* 6.3.1.1 */
-        Token::Int(s, r, span) => Ok((
-            parse_integer(&s, r, span)?,
-            lexer::next(ctx, stream, greedy)?,
-            0,
-        )),
-        Token::Float(s, span) => Ok((parse_float(&s, span)?, lexer::next(ctx, stream, greedy)?, 0)),
+        Token::Int(s, r, span) => {
+            let next = lexer::next(ctx, stream, true, greedy)?;
+            match next {
+                Token::Exponent(t, span2) => Ok((
+                    parse_float(&(s + &t), Span::concat(&span, &span2))?,
+                    lexer::next(ctx, stream, false, greedy)?,
+                    0,
+                )),
+                _ => Ok((parse_integer(&s, r, span)?, next, 0)),
+            }
+        }
         Token::CharCode(c, p) => Ok((
             Term::Integer(c as i64, p.into()),
-            lexer::next(ctx, stream, greedy)?,
+            lexer::next(ctx, stream, false, greedy)?,
             0,
         )),
 
         /* 6.3.2 */
-        Token::Var(s, span) => Ok((Term::Var(s, span), lexer::next(ctx, stream, greedy)?, 0)),
+        Token::Var(s, span) => Ok((
+            Term::Var(s, span),
+            lexer::next(ctx, stream, false, greedy)?,
+            0,
+        )),
 
         /* ISO/IEC 13211-1:1995/Cor.2:2012 */
         Token::Bar(p) => {
-            let next = lexer::next(ctx, stream, greedy)?;
+            let next = lexer::next(ctx, stream, false, greedy)?;
             if let Token::OpenCt(_) = next {
                 parse_compound(ctx, stream, "|", p, greedy)
             } else {
@@ -144,22 +157,27 @@ fn next_term(
         }
 
         Token::Name(s, span) => {
-            let next = lexer::next(ctx, stream, greedy)?;
+            let next = lexer::next(ctx, stream, false, greedy)?;
             match next {
                 /* 6.3.1.2  */
-                Token::Int(t, r, span2) if s == "-" => Ok((
-                    parse_integer(&format!("{}{}", s, t), r, Span::concat(&span, &span2))?,
-                    lexer::next(ctx, stream, greedy)?,
-                    0,
-                )),
-                Token::Float(t, span2) if s == "-" => Ok((
-                    parse_float(&format!("{}{}", s, t), Span::concat(&span, &span2))?,
-                    lexer::next(ctx, stream, greedy)?,
-                    0,
-                )),
+                Token::Int(t, r, span2) if s == "-" => {
+                    let next2 = lexer::next(ctx, stream, true, greedy)?;
+                    match next2 {
+                        Token::Exponent(u, span2) => Ok((
+                            parse_float(&(s + &t + &u), Span::concat(&span, &span2))?,
+                            lexer::next(ctx, stream, false, greedy)?,
+                            0,
+                        )),
+                        _ => Ok((
+                            parse_integer(&(s + &t), r, Span::concat(&span, &span2))?,
+                            next2,
+                            0,
+                        )),
+                    }
+                }
                 Token::CharCode(c, p) if s == "-" => Ok((
                     Term::Integer(-(c as i64), p.into()),
-                    lexer::next(ctx, stream, greedy)?,
+                    lexer::next(ctx, stream, false, greedy)?,
                     0,
                 )),
 
@@ -223,19 +241,19 @@ fn next_term(
 
         /* 6.3.4.1 */
         Token::Open(_) | Token::OpenCt(_) => {
-            let next = lexer::next(ctx, stream, greedy)?;
+            let next = lexer::next(ctx, stream, false, greedy)?;
             let (term, next, _) = parse_term(ctx, stream, next, 1201, greedy)?;
             if let Token::Close(_) = next {
-                Ok((term, lexer::next(ctx, stream, greedy)?, 0))
+                Ok((term, lexer::next(ctx, stream, false, greedy)?, 0))
             } else {
                 Error::new(ErrorKind::ExpectedChar(')'), next.span())
             }
         }
         /* 6.3.5 */
         Token::OpenL(p) => {
-            let mut next = lexer::next(ctx, stream, greedy)?;
+            let mut next = lexer::next(ctx, stream, false, greedy)?;
             if let Token::CloseL(q) = next {
-                next = lexer::next(ctx, stream, greedy)?;
+                next = lexer::next(ctx, stream, false, greedy)?;
                 if let Token::OpenCt(_) = next {
                     parse_compound(ctx, stream, "[]", p, greedy)
                 } else {
@@ -244,16 +262,16 @@ fn next_term(
             } else {
                 Ok((
                     parse_list(ctx, stream, next, greedy)?,
-                    lexer::next(ctx, stream, greedy)?,
+                    lexer::next(ctx, stream, false, greedy)?,
                     0,
                 ))
             }
         }
         /* 6.3.6 */
         Token::OpenC(p) => {
-            let mut next = lexer::next(ctx, stream, greedy)?;
+            let mut next = lexer::next(ctx, stream, false, greedy)?;
             if let Token::CloseC(q) = next {
-                next = lexer::next(ctx, stream, greedy)?;
+                next = lexer::next(ctx, stream, false, greedy)?;
                 if let Token::OpenCt(_) = next {
                     parse_compound(ctx, stream, "{}", p, greedy)
                 } else {
@@ -264,7 +282,7 @@ fn next_term(
                 if let Token::CloseC(q) = next {
                     Ok((
                         Term::new_compound("{}", vec![term]),
-                        lexer::next(ctx, stream, greedy)?,
+                        lexer::next(ctx, stream, false, greedy)?,
                         0,
                     ))
                 } else {
@@ -277,13 +295,13 @@ fn next_term(
             /* ISO/IEC 13211-1:1995/Cor.1:2007 */
             Ok((
                 parse_quoted(&ctx.flags.double_quotes, s, span)?,
-                lexer::next(ctx, stream, greedy)?,
+                lexer::next(ctx, stream, false, greedy)?,
                 0,
             ))
         }
         Token::BackQuotedString(s, span) => Ok((
             parse_quoted(&ctx.flags.back_quotes, s, span)?,
-            lexer::next(ctx, stream, greedy)?,
+            lexer::next(ctx, stream, false, greedy)?,
             0,
         )),
         _ => {
@@ -345,7 +363,7 @@ fn parse_term(
         };
 
         if bin_op {
-            next = lexer::next(ctx, stream, greedy)?;
+            next = lexer::next(ctx, stream, false, greedy)?;
             (term, next, _) = parse_term(ctx, stream, next, r, greedy)?;
             c.args.push(term);
         }
@@ -360,7 +378,7 @@ pub(crate) fn next(
     stream: &mut dyn ReadStream,
     greedy: bool,
 ) -> Result<Option<Term>, Box<Error>> {
-    let t = lexer::next(ctx, stream, greedy)?;
+    let t = lexer::next(ctx, stream, false, greedy)?;
     if let Token::Eof(_) = t {
         return Ok(None);
     }
@@ -374,7 +392,7 @@ pub(crate) fn next(
 
 pub(crate) fn skip_to_end(ctx: &Context, stream: &mut dyn ReadStream) -> Result<(), Box<Error>> {
     loop {
-        match lexer::next(ctx, stream, true)? {
+        match lexer::next(ctx, stream, false, true)? {
             Token::Eof(_) | Token::End(_) => break Ok(()),
             _ => {}
         }
