@@ -1,4 +1,4 @@
-use std::{env, fs::OpenOptions, io, path::PathBuf};
+use std::{env, fs::OpenOptions, io, path::{PathBuf, Path}};
 
 use super::*;
 use text::*;
@@ -58,8 +58,15 @@ fn error(e: &error::Error) -> bool {
     true
 }
 
+fn test_file(source: &str) {
+    let p = Path::new(source);
+    let mut res = FSResolver::new(p.parent().unwrap().to_str().unwrap()).unwrap();
+    consult(&mut res, p.file_name().unwrap().to_str().unwrap(), Some(error)).unwrap();
+}
+
 #[test]
 fn test_consult() {
-    let mut res = FSResolver::new("./test/vanilla/").unwrap();
-    consult(&mut res, "vanilla.pl", Some(error)).unwrap();
+    test_file("./test/vanilla/vanilla.pl");
+    test_file("./test/inriasuite/inriasuite.pl");
 }
+
