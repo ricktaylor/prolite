@@ -1,6 +1,7 @@
 use super::*;
 use operators::Operator;
 use read_term::term::Term;
+use stream::{Position, Span};
 
 #[derive(Debug)]
 pub(super) enum ErrorKind {
@@ -22,17 +23,19 @@ pub(super) enum ErrorKind {
 #[derive(Debug)]
 pub(super) struct Error {
     pub kind: ErrorKind,
+    pub location: Span,
 }
 
 impl Error {
-    pub(super) fn new<T>(kind: ErrorKind) -> Result<T, Box<Error>> {
-        Err(Box::new(Self { kind }))
+    pub(super) fn new<T>(kind: ErrorKind, location: Span) -> Result<T, Box<Error>> {
+        Err(Box::new(Self { kind, location }))
     }
 }
 
 impl From<read_term::error::Error> for Error {
     fn from(e: read_term::error::Error) -> Self {
         Error {
+            location: e.location.clone(),
             kind: ErrorKind::ReadTerm(e),
         }
     }
@@ -46,8 +49,13 @@ impl From<Box<read_term::error::Error>> for Box<Error> {
 
 impl From<StreamResolverError> for Box<Error> {
     fn from(e: StreamResolverError) -> Self {
+        let s = e.path.clone();
         Box::new(Error {
             kind: ErrorKind::StreamResolverError(e),
+            location: Span::from(&Position {
+                source: s,
+                ..Default::default()
+            }),
         })
     }
 }

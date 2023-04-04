@@ -43,9 +43,9 @@ fn parse_compound(
 
         next = match next {
             Token::Comma(_) => lexer::next(ctx, stream, false, greedy)?,
-            Token::Close(_) => {
+            Token::Close(p) => {
                 return Ok((
-                    Term::Compound(c),
+                    Term::Compound(c, Span::new(start, p)),
                     lexer::next(ctx, stream, false, greedy)?,
                     0,
                 ))
@@ -88,7 +88,7 @@ fn parse_list(
     }
 
     while let Some(t) = terms.pop() {
-        list = Term::new_compound(".", vec![t, list]);
+        list = Term::new_compound(".", t.span(), vec![t, list]);
     }
     Ok(list)
 }
@@ -99,14 +99,22 @@ fn parse_quoted(flags: &flags::QuoteFlag, s: String, span: Span) -> Result<Term,
         flags::QuoteFlag::Chars => {
             let mut list = Term::Atom("[]".to_string(), span.clone());
             for c in s.chars().rev() {
-                list = Term::new_compound(".", vec![Term::Atom(c.to_string(), span.clone()), list]);
+                list = Term::new_compound(
+                    ".",
+                    span.clone(),
+                    vec![Term::Atom(c.to_string(), span.clone()), list],
+                );
             }
             Ok(list)
         }
         flags::QuoteFlag::Codes => {
             let mut list = Term::Atom("[]".to_string(), span.clone());
             for c in s.chars().rev() {
-                list = Term::new_compound(".", vec![Term::Integer(c as i64, span.clone()), list]);
+                list = Term::new_compound(
+                    ".",
+                    span.clone(),
+                    vec![Term::Integer(c as i64, span.clone()), list],
+                );
             }
             Ok(list)
         }
@@ -199,7 +207,7 @@ fn next_term(
 
                                     return match parse_term(ctx, stream, next, *p - 1, greedy) {
                                         Ok((term, next, _)) => {
-                                            Ok((Term::new_compound(&s, vec![term]), next, *p))
+                                            Ok((Term::new_compound(&s, span, vec![term]), next, *p))
                                         }
                                         Err(e) => {
                                             if let ErrorKind::UnexpectedToken(next) = e.kind {
@@ -217,7 +225,7 @@ fn next_term(
 
                                     return match parse_term(ctx, stream, next, *p - 1, greedy) {
                                         Ok((term, next, _)) => {
-                                            Ok((Term::new_compound(&s, vec![term]), next, *p))
+                                            Ok((Term::new_compound(&s, span, vec![term]), next, *p))
                                         }
                                         Err(e) => {
                                             if let ErrorKind::UnexpectedToken(next) = e.kind {
@@ -281,7 +289,7 @@ fn next_term(
                 let (term, next, _) = parse_term(ctx, stream, next, 1201, greedy)?;
                 if let Token::CloseC(q) = next {
                     Ok((
-                        Term::new_compound("{}", vec![term]),
+                        Term::new_compound("{}", Span::new(p, q), vec![term]),
                         lexer::next(ctx, stream, false, greedy)?,
                         0,
                     ))
@@ -352,11 +360,21 @@ fn parse_term(
             return Ok((term, next, precedence));
         }
 
+        let mut span: Span;
         let mut c = Compound {
-            functor: match next {
-                Token::Name(ref s, _) => s.clone(),
-                Token::Bar(_) => "|".to_string(),
-                Token::Comma(_) => ",".to_string(),
+            functor: match &next {
+                Token::Name(s, sp) => {
+                    span = Span::concat(sp, &term.span());
+                    s.clone()
+                }
+                Token::Bar(p) => {
+                    span = Span::concat(&Span::from(p), &term.span());
+                    "|".to_string()
+                }
+                Token::Comma(p) => {
+                    span = Span::concat(&Span::from(p), &term.span());
+                    ",".to_string()
+                }
                 _ => panic!(),
             },
             args: vec![term],
@@ -365,10 +383,11 @@ fn parse_term(
         if bin_op {
             next = lexer::next(ctx, stream, false, greedy)?;
             (term, next, _) = parse_term(ctx, stream, next, r, greedy)?;
+            span = Span::concat(&span, &term.span());
             c.args.push(term);
         }
 
-        term = Term::Compound(c);
+        term = Term::Compound(c, span);
         precedence = op_precedence;
     }
 }

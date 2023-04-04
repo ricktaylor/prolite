@@ -1,6 +1,6 @@
 use super::*;
 use error::*;
-use stream::ReadStream;
+use stream::{ReadStream, Span};
 
 pub(super) struct MultiReader {
     streams: Vec<Box<dyn ReadStream>>,
@@ -16,7 +16,10 @@ impl MultiReader {
     pub(super) fn include(&mut self, stream: Box<dyn ReadStream>) -> Result<(), Box<Error>> {
         for s in self.streams.iter() {
             if s.position().source == stream.position().source {
-                return Error::new(ErrorKind::IncludeLoop(stream.position().source));
+                return Error::new(
+                    ErrorKind::IncludeLoop(stream.position().source),
+                    Span::from(&stream.position()),
+                );
             }
         }
         self.streams.push(stream);

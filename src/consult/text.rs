@@ -83,13 +83,16 @@ fn load_text(ctx: &mut ConsultContext) -> Result<(), Box<Error>> {
             Ok(None) => break,
             Ok(Some(t)) => {
                 let r = match t {
-                    Term::Compound(c) if c.functor == ":-" => match c.args.len() {
+                    Term::Compound(c, span) if c.functor == ":-" => match c.args.len() {
                         1 => directive(ctx, &c.args[0]),
                         2 => ctx.program.assert_clause(&c.args[0], &c.args[1]),
-                        _ => ctx.program.assert_fact(&Term::Compound(c)),
+                        _ => ctx.program.assert_fact(&Term::Compound(c, span)),
                     },
-                    Term::Compound(_) | Term::Atom(..) => ctx.program.assert_fact(&t),
-                    _ => Error::new(ErrorKind::NotCallableTerm(t)),
+                    Term::Compound(..) | Term::Atom(..) => ctx.program.assert_fact(&t),
+                    _ => {
+                        let s = t.span();
+                        Error::new(ErrorKind::NotCallableTerm(t), s)
+                    }
                 };
                 ctx.error(r)?;
             }
@@ -125,29 +128,33 @@ fn directive_expand(
 
 fn directive(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
     match term {
-        Term::Compound(c) if c.functor == "op" && c.args.len() == 3 => {
+        Term::Compound(c, _) if c.functor == "op" && c.args.len() == 3 => {
             op(ctx, &c.args[0], &c.args[1], &c.args[2])
         }
-        Term::Compound(c) if c.functor == "initialization" && c.args.len() == 1 => {
+        Term::Compound(c, _) if c.functor == "initialization" && c.args.len() == 1 => {
             initialization(ctx, &c.args[0])
         }
-        Term::Compound(c) if c.functor == "set_prolog_flag" && c.args.len() == 2 => {
+        Term::Compound(c, _) if c.functor == "set_prolog_flag" && c.args.len() == 2 => {
             prolog_flag(ctx, &c.args[0], &c.args[1])
         }
-        Term::Compound(c) if c.functor == "char_conversion" && c.args.len() == 2 => {
+        Term::Compound(c, _) if c.functor == "char_conversion" && c.args.len() == 2 => {
             char_conversion(ctx, &c.args[0], &c.args[1])
         }
-        Term::Compound(c) if c.functor == "include" => directive_expand(ctx, c, include),
-        Term::Compound(c) if c.functor == "ensure_loaded" => {
+        Term::Compound(c, _) if c.functor == "include" => directive_expand(ctx, c, include),
+        Term::Compound(c, _) if c.functor == "ensure_loaded" => {
             directive_expand(ctx, c, ensure_loaded)
         }
-        Term::Compound(c) if c.functor == "public" => directive_expand(ctx, c, public),
-        Term::Compound(c) if c.functor == "dynamic" => directive_expand(ctx, c, dynamic),
-        Term::Compound(c) if c.functor == "multifile" => directive_expand(ctx, c, multifile),
-        Term::Compound(c) if c.functor == "discontiguous" => {
+        Term::Compound(c, _) if c.functor == "public" => directive_expand(ctx, c, public),
+        Term::Compound(c, _) if c.functor == "dynamic" => directive_expand(ctx, c, dynamic),
+        Term::Compound(c, _) if c.functor == "multifile" => directive_expand(ctx, c, multifile),
+        Term::Compound(c, _) if c.functor == "discontiguous" => {
             directive_expand(ctx, c, discontiguous)
         }
-        _ => Error::new(ErrorKind::UnknownDirective(term.clone())),
+        Term::Compound(_, s)
+        | Term::Atom(_, s)
+        | Term::Integer(_, s)
+        | Term::Float(_, s)
+        | Term::Var(_, s) => Error::new(ErrorKind::UnknownDirective(term.clone()), s.clone()),
     }
 }
 
@@ -157,7 +164,9 @@ fn include(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
             let (_, stream) = ctx.resolver.open(s)?;
             ctx.stream.include(stream)
         }
-        _ => Error::new(ErrorKind::BadStreamName(term.clone())),
+        Term::Integer(_, s) | Term::Float(_, s) | Term::Var(_, s) | Term::Compound(_, s) => {
+            Error::new(ErrorKind::BadStreamName(term.clone()), s.clone())
+        }
     }
 }
 
@@ -183,7 +192,9 @@ fn ensure_loaded(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>
             ctx.stream = prev_stream;
             Ok(())
         }
-        _ => Error::new(ErrorKind::BadStreamName(term.clone())),
+        Term::Integer(_, s) | Term::Float(_, s) | Term::Var(_, s) | Term::Compound(_, s) => {
+            Error::new(ErrorKind::BadStreamName(term.clone()), s.clone())
+        }
     }
 }
 
@@ -194,12 +205,14 @@ fn update_op(
     remove: bool,
 ) -> Result<(), Box<Error>> {
     match operator {
-        Term::Atom(s, _) if s == "," => Error::new(ErrorKind::InvalidOperator(operator.clone())),
+        Term::Atom(s, sp) if s == "," => {
+            Error::new(ErrorKind::InvalidOperator(operator.clone()), sp.clone())
+        }
         Term::Atom(s, _) if remove => {
             ctx.context.operators.remove(s);
             Ok(())
         }
-        Term::Atom(s, _) => {
+        Term::Atom(s, sp) => {
             if let Some(ops) = ctx.context.operators.get_mut(s) {
                 let mut found = false;
                 for o in ops.iter_mut() {
@@ -225,11 +238,14 @@ fn update_op(
                                 break;
                             }
                             Operator::xf(_) | Operator::yf(_) => {
-                                return Error::new(ErrorKind::InvalidOpCombo(
-                                    operator.clone(),
-                                    o.clone(),
-                                    specifier.clone(),
-                                ))
+                                return Error::new(
+                                    ErrorKind::InvalidOpCombo(
+                                        operator.clone(),
+                                        o.clone(),
+                                        specifier.clone(),
+                                    ),
+                                    sp.clone(),
+                                )
                             }
                             _ => (),
                         },
@@ -240,11 +256,14 @@ fn update_op(
                                 break;
                             }
                             Operator::xf(_) | Operator::yf(_) => {
-                                return Error::new(ErrorKind::InvalidOpCombo(
-                                    operator.clone(),
-                                    o.clone(),
-                                    specifier.clone(),
-                                ))
+                                return Error::new(
+                                    ErrorKind::InvalidOpCombo(
+                                        operator.clone(),
+                                        o.clone(),
+                                        specifier.clone(),
+                                    ),
+                                    sp.clone(),
+                                )
                             }
                             _ => (),
                         },
@@ -255,11 +274,14 @@ fn update_op(
                                 break;
                             }
                             Operator::xf(_) | Operator::yf(_) => {
-                                return Error::new(ErrorKind::InvalidOpCombo(
-                                    operator.clone(),
-                                    o.clone(),
-                                    specifier.clone(),
-                                ))
+                                return Error::new(
+                                    ErrorKind::InvalidOpCombo(
+                                        operator.clone(),
+                                        o.clone(),
+                                        specifier.clone(),
+                                    ),
+                                    sp.clone(),
+                                )
                             }
                             _ => (),
                         },
@@ -270,11 +292,14 @@ fn update_op(
                                 break;
                             }
                             Operator::xfx(_) | Operator::xfy(_) | Operator::yfx(_) => {
-                                return Error::new(ErrorKind::InvalidOpCombo(
-                                    operator.clone(),
-                                    o.clone(),
-                                    specifier.clone(),
-                                ))
+                                return Error::new(
+                                    ErrorKind::InvalidOpCombo(
+                                        operator.clone(),
+                                        o.clone(),
+                                        specifier.clone(),
+                                    ),
+                                    sp.clone(),
+                                )
                             }
                             _ => (),
                         },
@@ -285,11 +310,14 @@ fn update_op(
                                 break;
                             }
                             Operator::xfx(_) | Operator::xfy(_) | Operator::yfx(_) => {
-                                return Error::new(ErrorKind::InvalidOpCombo(
-                                    operator.clone(),
-                                    o.clone(),
-                                    specifier.clone(),
-                                ))
+                                return Error::new(
+                                    ErrorKind::InvalidOpCombo(
+                                        operator.clone(),
+                                        o.clone(),
+                                        specifier.clone(),
+                                    ),
+                                    sp.clone(),
+                                )
                             }
                             _ => (),
                         },
@@ -306,7 +334,9 @@ fn update_op(
             }
             Ok(())
         }
-        _ => Error::new(ErrorKind::InvalidOperator(operator.clone())),
+        Term::Integer(_, s) | Term::Float(_, s) | Term::Var(_, s) | Term::Compound(_, s) => {
+            Error::new(ErrorKind::InvalidOperator(operator.clone()), s.clone())
+        }
     }
 }
 
@@ -318,14 +348,21 @@ fn op(
 ) -> Result<(), Box<Error>> {
     // Unpack specifier
     let (op_spec, remove) = match specifier {
-        Term::Atom(s, _) => {
+        Term::Atom(s, sp) => {
             // Unpack priority
             let p = match priority {
-                Term::Integer(n, _) => match n {
+                Term::Integer(n, s) => match n {
                     0..=1200 => *n as u16,
-                    _ => return Error::new(ErrorKind::InvalidOpPriority(priority.clone())),
+                    _ => {
+                        return Error::new(
+                            ErrorKind::InvalidOpPriority(priority.clone()),
+                            s.clone(),
+                        )
+                    }
                 },
-                _ => return Error::new(ErrorKind::InvalidOpPriority(priority.clone())),
+                Term::Float(_, s) | Term::Var(_, s) | Term::Atom(_, s) | Term::Compound(_, s) => {
+                    return Error::new(ErrorKind::InvalidOpPriority(priority.clone()), s.clone())
+                }
             };
 
             match s.as_str() {
@@ -336,10 +373,14 @@ fn op(
                 "yfx" => (Operator::yfx(p), p == 0),
                 "xf" => (Operator::xf(p), p == 0),
                 "yf" => (Operator::yf(p), p == 0),
-                _ => return Error::new(ErrorKind::InvalidOpSpecifier(specifier.clone())),
+                _ => {
+                    return Error::new(ErrorKind::InvalidOpSpecifier(specifier.clone()), sp.clone())
+                }
             }
         }
-        _ => return Error::new(ErrorKind::InvalidOpSpecifier(specifier.clone())),
+        Term::Integer(_, s) | Term::Float(_, s) | Term::Var(_, s) | Term::Compound(_, s) => {
+            return Error::new(ErrorKind::InvalidOpSpecifier(specifier.clone()), s.clone())
+        }
     };
 
     // Iterate atom_or_atom_list
@@ -353,95 +394,81 @@ fn op(
     Ok(())
 }
 
+fn bool_flag(flag: &Term, value: &Term) -> Result<bool, Box<Error>> {
+    match value {
+        Term::Atom(s, sp) => match s.as_str() {
+            "on" => Ok(true),
+            "off" => Ok(false),
+            _ => Error::new(
+                ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
+                sp.clone(),
+            ),
+        },
+        Term::Integer(_, s) | Term::Float(_, s) | Term::Var(_, s) | Term::Compound(_, s) => {
+            Error::new(
+                ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
+                s.clone(),
+            )
+        }
+    }
+}
+
+fn quote_flag(flag: &Term, value: &Term) -> Result<QuoteFlag, Box<Error>> {
+    match value {
+        Term::Atom(s, sp) => match s.as_str() {
+            "chars" => Ok(QuoteFlag::Chars),
+            "codes" => Ok(QuoteFlag::Codes),
+            "atom" => Ok(QuoteFlag::Atom),
+            _ => Error::new(
+                ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
+                sp.clone(),
+            ),
+        },
+        Term::Integer(_, s) | Term::Float(_, s) | Term::Var(_, s) | Term::Compound(_, s) => {
+            Error::new(
+                ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
+                s.clone(),
+            )
+        }
+    }
+}
+
 fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<(), Box<Error>> {
     match flag {
-        Term::Atom(s, _) => match s.as_str() {
-            "char_conversion" => match value {
-                Term::Atom(s, _) => match s.as_str() {
-                    "on" => {
-                        ctx.context.flags.char_conversion = true;
-                        Ok(())
-                    }
-                    "off" => {
-                        ctx.context.flags.char_conversion = false;
-                        Ok(())
-                    }
-                    _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
-                },
-                _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
-            },
-            "debug" => match value {
-                Term::Atom(s, _) => match s.as_str() {
-                    "on" => {
-                        ctx.context.flags.debug = true;
-                        Ok(())
-                    }
-                    "off" => {
-                        ctx.context.flags.debug = false;
-                        Ok(())
-                    }
-                    _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
-                },
-                _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
-            },
+        Term::Atom(s, sp) => match s.as_str() {
+            "char_conversion" => ctx.context.flags.char_conversion = bool_flag(flag, value)?,
+            "debug" => ctx.context.flags.debug = bool_flag(flag, value)?,
             "unknown" => match value {
-                Term::Atom(s, _) => match s.as_str() {
-                    "error" => {
-                        ctx.context.flags.unknown = UnknownFlag::Error;
-                        Ok(())
+                Term::Atom(s, sp) => match s.as_str() {
+                    "error" => ctx.context.flags.unknown = UnknownFlag::Error,
+                    "fail" => ctx.context.flags.unknown = UnknownFlag::Fail,
+                    "warning" => ctx.context.flags.unknown = UnknownFlag::Warning,
+                    _ => {
+                        return Error::new(
+                            ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
+                            sp.clone(),
+                        )
                     }
-                    "fail" => {
-                        ctx.context.flags.unknown = UnknownFlag::Fail;
-                        Ok(())
-                    }
-                    "warning" => {
-                        ctx.context.flags.unknown = UnknownFlag::Warning;
-                        Ok(())
-                    }
-                    _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
                 },
-                _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
+                Term::Integer(_, s)
+                | Term::Float(_, s)
+                | Term::Var(_, s)
+                | Term::Compound(_, s) => {
+                    return Error::new(
+                        ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
+                        s.clone(),
+                    )
+                }
             },
-            "double_quotes" => match value {
-                Term::Atom(s, _) => match s.as_str() {
-                    "chars" => {
-                        ctx.context.flags.double_quotes = QuoteFlag::Chars;
-                        Ok(())
-                    }
-                    "codes" => {
-                        ctx.context.flags.double_quotes = QuoteFlag::Codes;
-                        Ok(())
-                    }
-                    "atom" => {
-                        ctx.context.flags.double_quotes = QuoteFlag::Atom;
-                        Ok(())
-                    }
-                    _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
-                },
-                _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
-            },
-            "back_quotes" => match value {
-                Term::Atom(s, _) => match s.as_str() {
-                    "chars" => {
-                        ctx.context.flags.back_quotes = QuoteFlag::Chars;
-                        Ok(())
-                    }
-                    "codes" => {
-                        ctx.context.flags.back_quotes = QuoteFlag::Codes;
-                        Ok(())
-                    }
-                    "atom" => {
-                        ctx.context.flags.back_quotes = QuoteFlag::Atom;
-                        Ok(())
-                    }
-                    _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
-                },
-                _ => Error::new(ErrorKind::InvalidFlagValue(flag.clone(), value.clone())),
-            },
-            _ => Error::new(ErrorKind::InvalidFlag(flag.clone())),
+            "double_quotes" => ctx.context.flags.double_quotes = quote_flag(flag, value)?,
+            "back_quotes" => ctx.context.flags.back_quotes = quote_flag(flag, value)?,
+            _ => return Error::new(ErrorKind::InvalidFlag(flag.clone()), sp.clone()),
         },
-        _ => Error::new(ErrorKind::InvalidFlag(flag.clone())),
+        Term::Integer(_, s) | Term::Float(_, s) | Term::Var(_, s) | Term::Compound(_, s) => {
+            return Error::new(ErrorKind::InvalidFlag(flag.clone()), s.clone())
+        }
     }
+    Ok(())
 }
 
 fn char_conversion(
@@ -463,10 +490,22 @@ fn char_conversion(
                     }
                     Ok(())
                 }
-                _ => Error::new(ErrorKind::InvalidCharacter(out_char.clone())),
+                Term::Atom(_, s)
+                | Term::Integer(_, s)
+                | Term::Float(_, s)
+                | Term::Var(_, s)
+                | Term::Compound(_, s) => {
+                    Error::new(ErrorKind::InvalidCharacter(out_char.clone()), s.clone())
+                }
             }
         }
-        _ => Error::new(ErrorKind::InvalidCharacter(in_char.clone())),
+        Term::Atom(_, s)
+        | Term::Integer(_, s)
+        | Term::Float(_, s)
+        | Term::Var(_, s)
+        | Term::Compound(_, s) => {
+            Error::new(ErrorKind::InvalidCharacter(in_char.clone()), s.clone())
+        }
     }
 }
 
