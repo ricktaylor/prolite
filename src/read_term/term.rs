@@ -30,10 +30,10 @@ pub(crate) struct Term {
 }
 
 impl Term {
-    pub(super) fn new_atom(s: String, sp: Span) -> Self {
+    pub(super) fn new_atom(s: String, location: Span) -> Self {
         Term {
             kind: TermKind::Atom(s),
-            location: sp,
+            location,
         }
     }
 
