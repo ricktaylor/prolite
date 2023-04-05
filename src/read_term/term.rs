@@ -37,14 +37,10 @@ impl Term {
         }
     }
 
-    pub(super) fn new_compound(functor: String, s: Span, args: Vec<Term>) -> Self {
-        let mut span = s;
-        for a in &args {
-            span = Span::concat(&span, &a.location)
-        }
+    pub(super) fn new_compound(functor: String, location: Span, args: Vec<Term>) -> Self {
         Term {
             kind: TermKind::Compound(Compound { functor, args }),
-            location: span,
+            location,
         }
     }
 }

@@ -33,7 +33,7 @@ fn parse_compound(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     functor: String,
-    start: Position,
+    location: Span,
     greedy: bool,
 ) -> Result<(Term, Token, u16), Box<Error>> {
     let mut args = Vec::new();
@@ -47,7 +47,7 @@ fn parse_compound(
             Token::Comma(_) => lexer::next(ctx, stream, false, greedy)?,
             Token::Close(p) => {
                 return Ok((
-                    Term::new_compound(functor, Span::new(start, p), args),
+                    Term::new_compound(functor, location, args),
                     lexer::next(ctx, stream, false, greedy)?,
                     0,
                 ))
@@ -172,7 +172,7 @@ fn next_term(
         Token::Bar(p) => {
             let next = lexer::next(ctx, stream, false, greedy)?;
             if let Token::OpenCt(_) = next {
-                parse_compound(ctx, stream, "|".to_string(), p, greedy)
+                parse_compound(ctx, stream, "|".to_string(), p.into(), greedy)
             } else {
                 Ok((Term::new_atom("|".to_string(), p.into()), next, 0))
             }
@@ -207,7 +207,7 @@ fn next_term(
                 )),
 
                 /* 6.3.3 */
-                Token::OpenCt(_) => parse_compound(ctx, stream, s, span.start, greedy),
+                Token::OpenCt(_) => parse_compound(ctx, stream, s, span, greedy),
 
                 /* 6.3.1.3 */
                 Token::End(_) => Ok((Term::new_atom(s, span), next, 0)),
@@ -280,7 +280,7 @@ fn next_term(
             if let Token::CloseL(q) = next {
                 next = lexer::next(ctx, stream, false, greedy)?;
                 if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "[]".to_string(), p, greedy)
+                    parse_compound(ctx, stream, "[]".to_string(), Span::new(p, q), greedy)
                 } else {
                     Ok((Term::new_atom("[]".to_string(), Span::new(p, q)), next, 0))
                 }
@@ -298,7 +298,7 @@ fn next_term(
             if let Token::CloseC(q) = next {
                 next = lexer::next(ctx, stream, false, greedy)?;
                 if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "{}".to_string(), p, greedy)
+                    parse_compound(ctx, stream, "{}".to_string(), Span::new(p, q), greedy)
                 } else {
                     Ok((Term::new_atom("{}".to_string(), Span::new(p, q)), next, 0))
                 }
