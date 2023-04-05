@@ -11,14 +11,20 @@ use stream::ReadStream;
 
 fn parse_integer(s: &str, radix: u32, span: Span) -> Result<Term, Box<Error>> {
     match i64::from_str_radix(s, radix) {
-        Ok(i) => Ok(Term::Integer(i, span)),
+        Ok(i) => Ok(Term {
+            kind: TermKind::Integer(i),
+            location: span,
+        }),
         Err(e) => Error::new(ErrorKind::ParseIntError(e), span),
     }
 }
 
 fn parse_float(s: &str, span: Span) -> Result<Term, Box<Error>> {
     match f64::from_str(s) {
-        Ok(f) => Ok(Term::Float(f, span)),
+        Ok(f) => Ok(Term {
+            kind: TermKind::Float(f),
+            location: span,
+        }),
         Err(e) => Error::new(ErrorKind::ParseFloatError(e), span),
     }
 }
@@ -26,26 +32,22 @@ fn parse_float(s: &str, span: Span) -> Result<Term, Box<Error>> {
 fn parse_compound(
     ctx: &Context,
     stream: &mut dyn ReadStream,
-    s: &str,
+    functor: String,
     start: Position,
     greedy: bool,
 ) -> Result<(Term, Token, u16), Box<Error>> {
-    let mut c = Compound {
-        functor: s.to_string(),
-        args: Vec::new(),
-    };
-
+    let mut args = Vec::new();
     let mut next = lexer::next(ctx, stream, false, greedy)?;
     loop {
         let term;
         (term, next, _) = parse_term(ctx, stream, next, 999, greedy)?;
-        c.args.push(term);
+        args.push(term);
 
         next = match next {
             Token::Comma(_) => lexer::next(ctx, stream, false, greedy)?,
             Token::Close(p) => {
                 return Ok((
-                    Term::Compound(c, Span::new(start, p)),
+                    Term::new_compound(functor, Span::new(start, p), args),
                     lexer::next(ctx, stream, false, greedy)?,
                     0,
                 ))
@@ -80,7 +82,7 @@ fn parse_list(
             next = lexer::next(ctx, stream, false, greedy)?;
             (list, next, _) = parse_term(ctx, stream, next, 999, greedy)?;
         }
-        _ => list = Term::Atom("[]".to_string(), next.span()),
+        _ => list = Term::new_atom("[]".to_string(), next.span()),
     };
 
     if !matches!(next, Token::CloseL(_)) {
@@ -88,32 +90,38 @@ fn parse_list(
     }
 
     while let Some(t) = terms.pop() {
-        list = Term::new_compound(".", t.span(), vec![t, list]);
+        list = Term::new_compound(".".to_string(), t.location.clone(), vec![t, list]);
     }
     Ok(list)
 }
 
 fn parse_quoted(flags: &flags::QuoteFlag, s: String, span: Span) -> Result<Term, Box<Error>> {
     match flags {
-        flags::QuoteFlag::Atom => Ok(Term::Atom(s, span)),
+        flags::QuoteFlag::Atom => Ok(Term::new_atom(s, span)),
         flags::QuoteFlag::Chars => {
-            let mut list = Term::Atom("[]".to_string(), span.clone());
+            let mut list = Term::new_atom("[]".to_string(), span.clone());
             for c in s.chars().rev() {
                 list = Term::new_compound(
-                    ".",
+                    ".".to_string(),
                     span.clone(),
-                    vec![Term::Atom(c.to_string(), span.clone()), list],
+                    vec![Term::new_atom(c.to_string(), span.clone()), list],
                 );
             }
             Ok(list)
         }
         flags::QuoteFlag::Codes => {
-            let mut list = Term::Atom("[]".to_string(), span.clone());
+            let mut list = Term::new_atom("[]".to_string(), span.clone());
             for c in s.chars().rev() {
                 list = Term::new_compound(
-                    ".",
+                    ".".to_string(),
                     span.clone(),
-                    vec![Term::Integer(c as i64, span.clone()), list],
+                    vec![
+                        Term {
+                            kind: TermKind::Integer(c as i64),
+                            location: span.clone(),
+                        },
+                        list,
+                    ],
                 );
             }
             Ok(list)
@@ -142,14 +150,20 @@ fn next_term(
             }
         }
         Token::CharCode(c, p) => Ok((
-            Term::Integer(c as i64, p.into()),
+            Term {
+                kind: TermKind::Integer(c as i64),
+                location: p.into(),
+            },
             lexer::next(ctx, stream, false, greedy)?,
             0,
         )),
 
         /* 6.3.2 */
         Token::Var(s, span) => Ok((
-            Term::Var(s, span),
+            Term {
+                kind: TermKind::Var(s),
+                location: span,
+            },
             lexer::next(ctx, stream, false, greedy)?,
             0,
         )),
@@ -158,9 +172,9 @@ fn next_term(
         Token::Bar(p) => {
             let next = lexer::next(ctx, stream, false, greedy)?;
             if let Token::OpenCt(_) = next {
-                parse_compound(ctx, stream, "|", p, greedy)
+                parse_compound(ctx, stream, "|".to_string(), p, greedy)
             } else {
-                Ok((Term::Atom("|".to_string(), p.into()), next, 0))
+                Ok((Term::new_atom("|".to_string(), p.into()), next, 0))
             }
         }
 
@@ -184,16 +198,19 @@ fn next_term(
                     }
                 }
                 Token::CharCode(c, p) if s == "-" => Ok((
-                    Term::Integer(-(c as i64), p.into()),
+                    Term {
+                        kind: TermKind::Integer(-(c as i64)),
+                        location: p.into(),
+                    },
                     lexer::next(ctx, stream, false, greedy)?,
                     0,
                 )),
 
                 /* 6.3.3 */
-                Token::OpenCt(_) => parse_compound(ctx, stream, &s, span.start, greedy),
+                Token::OpenCt(_) => parse_compound(ctx, stream, s, span.start, greedy),
 
                 /* 6.3.1.3 */
-                Token::End(_) => Ok((Term::Atom(s.to_string(), span), next, 0)),
+                Token::End(_) => Ok((Term::new_atom(s, span), next, 0)),
 
                 /* 6.3.4.2 */
                 _ => {
@@ -207,11 +224,11 @@ fn next_term(
 
                                     return match parse_term(ctx, stream, next, *p - 1, greedy) {
                                         Ok((term, next, _)) => {
-                                            Ok((Term::new_compound(&s, span, vec![term]), next, *p))
+                                            Ok((Term::new_compound(s, span, vec![term]), next, *p))
                                         }
                                         Err(e) => {
                                             if let ErrorKind::UnexpectedToken(next) = e.kind {
-                                                Ok((Term::Atom(s.to_string(), span), next, 1201))
+                                                Ok((Term::new_atom(s, span), next, 1201))
                                             } else {
                                                 Err(e)
                                             }
@@ -225,11 +242,11 @@ fn next_term(
 
                                     return match parse_term(ctx, stream, next, *p - 1, greedy) {
                                         Ok((term, next, _)) => {
-                                            Ok((Term::new_compound(&s, span, vec![term]), next, *p))
+                                            Ok((Term::new_compound(s, span, vec![term]), next, *p))
                                         }
                                         Err(e) => {
                                             if let ErrorKind::UnexpectedToken(next) = e.kind {
-                                                Ok((Term::Atom(s.to_string(), span), next, 1201))
+                                                Ok((Term::new_atom(s, span), next, 1201))
                                             } else {
                                                 Err(e)
                                             }
@@ -239,9 +256,9 @@ fn next_term(
                                 _ => {}
                             }
                         }
-                        Ok((Term::Atom(s.to_string(), span), next, 1201))
+                        Ok((Term::new_atom(s, span), next, 1201))
                     } else {
-                        Ok((Term::Atom(s.to_string(), span), next, 0))
+                        Ok((Term::new_atom(s, span), next, 0))
                     }
                 }
             }
@@ -263,9 +280,9 @@ fn next_term(
             if let Token::CloseL(q) = next {
                 next = lexer::next(ctx, stream, false, greedy)?;
                 if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "[]", p, greedy)
+                    parse_compound(ctx, stream, "[]".to_string(), p, greedy)
                 } else {
-                    Ok((Term::Atom("[]".to_string(), Span::new(p, q)), next, 0))
+                    Ok((Term::new_atom("[]".to_string(), Span::new(p, q)), next, 0))
                 }
             } else {
                 Ok((
@@ -281,15 +298,15 @@ fn next_term(
             if let Token::CloseC(q) = next {
                 next = lexer::next(ctx, stream, false, greedy)?;
                 if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "{}", p, greedy)
+                    parse_compound(ctx, stream, "{}".to_string(), p, greedy)
                 } else {
-                    Ok((Term::Atom("{}".to_string(), Span::new(p, q)), next, 0))
+                    Ok((Term::new_atom("{}".to_string(), Span::new(p, q)), next, 0))
                 }
             } else {
                 let (term, next, _) = parse_term(ctx, stream, next, 1201, greedy)?;
                 if let Token::CloseC(q) = next {
                     Ok((
-                        Term::new_compound("{}", Span::new(p, q), vec![term]),
+                        Term::new_compound("{}".to_string(), Span::new(p, q), vec![term]),
                         lexer::next(ctx, stream, false, greedy)?,
                         0,
                     ))
@@ -346,8 +363,8 @@ fn parse_term(
     let (mut term, mut next, mut precedence) =
         next_term(ctx, stream, token, max_precedence, greedy)?;
     loop {
-        let (l, op_precedence, r, bin_op) = match next {
-            Token::Name(ref s, _) => lookup_op(ctx, s),
+        let (l, op_precedence, r, bin_op) = match &next {
+            Token::Name(s, _) => lookup_op(ctx, s),
             Token::Comma(_) => (999, 1000, 1000, true),
 
             /* ISO/IEC 13211-1:1995/Cor.2:2012 */
@@ -360,34 +377,22 @@ fn parse_term(
             return Ok((term, next, precedence));
         }
 
-        let mut span: Span;
-        let mut c = Compound {
-            functor: match &next {
-                Token::Name(s, sp) => {
-                    span = Span::concat(sp, &term.span());
-                    s.clone()
-                }
-                Token::Bar(p) => {
-                    span = Span::concat(&Span::from(p), &term.span());
-                    "|".to_string()
-                }
-                Token::Comma(p) => {
-                    span = Span::concat(&Span::from(p), &term.span());
-                    ",".to_string()
-                }
-                _ => panic!(),
-            },
-            args: vec![term],
+        let (functor, mut span) = match &next {
+            Token::Name(s, sp) => (s.clone(), sp.clone()),
+            Token::Bar(p) => ("|".to_string(), Span::from(p)),
+            Token::Comma(p) => (",".to_string(), Span::from(p)),
+            _ => panic!(),
         };
+        let mut args = vec![term];
 
         if bin_op {
             next = lexer::next(ctx, stream, false, greedy)?;
             (term, next, _) = parse_term(ctx, stream, next, r, greedy)?;
-            span = Span::concat(&span, &term.span());
-            c.args.push(term);
+            span = Span::concat(&span, &term.location);
+            args.push(term);
         }
 
-        term = Term::Compound(c, span);
+        term = Term::new_compound(functor, span, args);
         precedence = op_precedence;
     }
 }
