@@ -43,16 +43,16 @@ fn parse_compound(
         (term, next, _) = parse_term(ctx, stream, next, 999, greedy)?;
         args.push(term);
 
-        next = match next {
-            Token::Comma(_) => lexer::next(ctx, stream, false, greedy)?,
-            Token::Close(p) => {
+        next = match next.kind {
+            TokenKind::Comma => lexer::next(ctx, stream, false, greedy)?,
+            TokenKind::Close => {
                 return Ok((
                     Term::new_compound(functor, location, args),
                     lexer::next(ctx, stream, false, greedy)?,
                     0,
                 ))
             }
-            _ => return Error::new(ErrorKind::ExpectedChar(')'), next.span()),
+            _ => return Error::new(ErrorKind::ExpectedChar(')'), next.location),
         }
     }
 }
@@ -70,23 +70,23 @@ fn parse_list(
         (term, next, _) = parse_term(ctx, stream, next, 999, greedy)?;
         terms.push(term);
 
-        next = match next {
-            Token::Comma(_) => lexer::next(ctx, stream, false, greedy)?,
+        next = match next.kind {
+            TokenKind::Comma => lexer::next(ctx, stream, false, greedy)?,
             _ => break,
         }
     }
 
     let mut list: Term;
-    match next {
-        Token::Bar(_) => {
+    match next.kind {
+        TokenKind::Bar => {
             next = lexer::next(ctx, stream, false, greedy)?;
             (list, next, _) = parse_term(ctx, stream, next, 999, greedy)?;
         }
-        _ => list = Term::new_atom("[]".to_string(), next.span()),
+        _ => list = Term::new_atom("[]".to_string(), next.location.clone()),
     };
 
-    if !matches!(next, Token::CloseL(_)) {
-        return Error::new(ErrorKind::ExpectedChar(']'), next.span());
+    if !matches!(next.kind, TokenKind::CloseL) {
+        return Error::new(ErrorKind::ExpectedChar(']'), next.location);
     }
 
     while let Some(t) = terms.pop() {
@@ -136,81 +136,88 @@ fn next_term(
     max_precedence: u16,
     greedy: bool,
 ) -> Result<(Term, Token, u16), Box<Error>> {
-    match token {
+    match token.kind {
         /* 6.3.1.1 */
-        Token::Int(s, r, location) => {
+        TokenKind::Int(s, r) => {
             let next = lexer::next(ctx, stream, true, greedy)?;
-            match next {
-                Token::Exponent(t, location2) => Ok((
-                    parse_float(&(s + &t), Span::concat(&location, &location2))?,
+            match next.kind {
+                TokenKind::Exponent(t) => Ok((
+                    parse_float(&(s + &t), Span::concat(&token.location, &next.location))?,
                     lexer::next(ctx, stream, false, greedy)?,
                     0,
                 )),
-                _ => Ok((parse_integer(&s, r, location)?, next, 0)),
+                _ => Ok((parse_integer(&s, r, next.location.clone())?, next, 0)),
             }
         }
-        Token::CharCode(c, p) => Ok((
+        TokenKind::CharCode(c) => Ok((
             Term {
                 kind: TermKind::Integer(c as i64),
-                location: p.into(),
+                location: token.location,
             },
             lexer::next(ctx, stream, false, greedy)?,
             0,
         )),
 
         /* 6.3.2 */
-        Token::Var(s, location) => Ok((
+        TokenKind::Var(s) => Ok((
             Term {
                 kind: TermKind::Var(s),
-                location,
+                location: token.location,
             },
             lexer::next(ctx, stream, false, greedy)?,
             0,
         )),
 
         /* ISO/IEC 13211-1:1995/Cor.2:2012 */
-        Token::Bar(p) => {
+        TokenKind::Bar => {
             let next = lexer::next(ctx, stream, false, greedy)?;
-            if let Token::OpenCt(_) = next {
-                parse_compound(ctx, stream, "|".to_string(), p.into(), greedy)
+            if let TokenKind::OpenCt = next.kind {
+                parse_compound(ctx, stream, "|".to_string(), token.location, greedy)
             } else {
-                Ok((Term::new_atom("|".to_string(), p.into()), next, 0))
+                Ok((Term::new_atom("|".to_string(), token.location), next, 0))
             }
         }
 
-        Token::Name(s, location) => {
+        TokenKind::Name(s) => {
             let next = lexer::next(ctx, stream, false, greedy)?;
-            match next {
+            match next.kind {
                 /* 6.3.1.2  */
-                Token::Int(t, r, location2) if s == "-" => {
+                TokenKind::Int(t, r) if s == "-" => {
                     let next2 = lexer::next(ctx, stream, true, greedy)?;
-                    match next2 {
-                        Token::Exponent(u, location2) => Ok((
-                            parse_float(&(s + &t + &u), Span::concat(&location, &location2))?,
+                    match next2.kind {
+                        TokenKind::Exponent(u) => Ok((
+                            parse_float(
+                                &(s + &t + &u),
+                                Span::concat(&token.location, &next2.location),
+                            )?,
                             lexer::next(ctx, stream, false, greedy)?,
                             0,
                         )),
                         _ => Ok((
-                            parse_integer(&(s + &t), r, Span::concat(&location, &location2))?,
+                            parse_integer(
+                                &(s + &t),
+                                r,
+                                Span::concat(&token.location, &next.location),
+                            )?,
                             next2,
                             0,
                         )),
                     }
                 }
-                Token::CharCode(c, p) if s == "-" => Ok((
+                TokenKind::CharCode(c) if s == "-" => Ok((
                     Term {
                         kind: TermKind::Integer(-(c as i64)),
-                        location: p.into(),
+                        location: token.location,
                     },
                     lexer::next(ctx, stream, false, greedy)?,
                     0,
                 )),
 
                 /* 6.3.3 */
-                Token::OpenCt(_) => parse_compound(ctx, stream, s, location, greedy),
+                TokenKind::OpenCt => parse_compound(ctx, stream, s, token.location, greedy),
 
                 /* 6.3.1.3 */
-                Token::End(_) => Ok((Term::new_atom(s, location), next, 0)),
+                TokenKind::End => Ok((Term::new_atom(s, token.location), next, 0)),
 
                 /* 6.3.4.2 */
                 _ => {
@@ -224,13 +231,13 @@ fn next_term(
 
                                     return match parse_term(ctx, stream, next, *p - 1, greedy) {
                                         Ok((term, next, _)) => Ok((
-                                            Term::new_compound(s, location, vec![term]),
+                                            Term::new_compound(s, token.location, vec![term]),
                                             next,
                                             *p,
                                         )),
                                         Err(e) => {
                                             if let ErrorKind::UnexpectedToken(next) = e.kind {
-                                                Ok((Term::new_atom(s, location), next, 1201))
+                                                Ok((Term::new_atom(s, token.location), next, 1201))
                                             } else {
                                                 Err(e)
                                             }
@@ -244,13 +251,13 @@ fn next_term(
 
                                     return match parse_term(ctx, stream, next, *p - 1, greedy) {
                                         Ok((term, next, _)) => Ok((
-                                            Term::new_compound(s, location, vec![term]),
+                                            Term::new_compound(s, token.location, vec![term]),
                                             next,
                                             *p,
                                         )),
                                         Err(e) => {
                                             if let ErrorKind::UnexpectedToken(next) = e.kind {
-                                                Ok((Term::new_atom(s, location), next, 1201))
+                                                Ok((Term::new_atom(s, token.location), next, 1201))
                                             } else {
                                                 Err(e)
                                             }
@@ -260,33 +267,46 @@ fn next_term(
                                 _ => {}
                             }
                         }
-                        Ok((Term::new_atom(s, location), next, 1201))
+                        Ok((Term::new_atom(s, token.location), next, 1201))
                     } else {
-                        Ok((Term::new_atom(s, location), next, 0))
+                        Ok((Term::new_atom(s, token.location), next, 0))
                     }
                 }
             }
         }
 
         /* 6.3.4.1 */
-        Token::Open(_) | Token::OpenCt(_) => {
+        TokenKind::Open | TokenKind::OpenCt => {
             let next = lexer::next(ctx, stream, false, greedy)?;
             let (term, next, _) = parse_term(ctx, stream, next, 1201, greedy)?;
-            if let Token::Close(_) = next {
+            if let TokenKind::Close = next.kind {
                 Ok((term, lexer::next(ctx, stream, false, greedy)?, 0))
             } else {
-                Error::new(ErrorKind::ExpectedChar(')'), next.span())
+                Error::new(ErrorKind::ExpectedChar(')'), next.location)
             }
         }
         /* 6.3.5 */
-        Token::OpenL(p) => {
-            let mut next = lexer::next(ctx, stream, false, greedy)?;
-            if let Token::CloseL(q) = next {
-                next = lexer::next(ctx, stream, false, greedy)?;
-                if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "[]".to_string(), Span::new(p, q), greedy)
+        TokenKind::OpenL => {
+            let next = lexer::next(ctx, stream, false, greedy)?;
+            if let TokenKind::CloseL = next.kind {
+                let next2 = lexer::next(ctx, stream, false, greedy)?;
+                if let TokenKind::OpenCt = next2.kind {
+                    parse_compound(
+                        ctx,
+                        stream,
+                        "[]".to_string(),
+                        Span::concat(&token.location, &next2.location),
+                        greedy,
+                    )
                 } else {
-                    Ok((Term::new_atom("[]".to_string(), Span::new(p, q)), next, 0))
+                    Ok((
+                        Term::new_atom(
+                            "[]".to_string(),
+                            Span::concat(&token.location, &next.location),
+                        ),
+                        next2,
+                        0,
+                    ))
                 }
             } else {
                 Ok((
@@ -297,44 +317,61 @@ fn next_term(
             }
         }
         /* 6.3.6 */
-        Token::OpenC(p) => {
-            let mut next = lexer::next(ctx, stream, false, greedy)?;
-            if let Token::CloseC(q) = next {
-                next = lexer::next(ctx, stream, false, greedy)?;
-                if let Token::OpenCt(_) = next {
-                    parse_compound(ctx, stream, "{}".to_string(), Span::new(p, q), greedy)
+        TokenKind::OpenC => {
+            let next = lexer::next(ctx, stream, false, greedy)?;
+            if let TokenKind::CloseC = next.kind {
+                let next2 = lexer::next(ctx, stream, false, greedy)?;
+                if let TokenKind::OpenCt = next2.kind {
+                    parse_compound(
+                        ctx,
+                        stream,
+                        "{}".to_string(),
+                        Span::concat(&token.location, &next2.location),
+                        greedy,
+                    )
                 } else {
-                    Ok((Term::new_atom("{}".to_string(), Span::new(p, q)), next, 0))
+                    Ok((
+                        Term::new_atom(
+                            "{}".to_string(),
+                            Span::concat(&token.location, &next.location),
+                        ),
+                        next2,
+                        0,
+                    ))
                 }
             } else {
                 let (term, next, _) = parse_term(ctx, stream, next, 1201, greedy)?;
-                if let Token::CloseC(q) = next {
+                if let TokenKind::CloseC = next.kind {
                     Ok((
-                        Term::new_compound("{}".to_string(), Span::new(p, q), vec![term]),
+                        Term::new_compound(
+                            "{}".to_string(),
+                            Span::concat(&token.location, &next.location),
+                            vec![term],
+                        ),
                         lexer::next(ctx, stream, false, greedy)?,
                         0,
                     ))
                 } else {
-                    Error::new(ErrorKind::ExpectedChar('}'), next.span())
+                    Error::new(ErrorKind::ExpectedChar('}'), next.location)
                 }
             }
         }
         /* 6.3.7 */
-        Token::DoubleQuotedList(s, location) => {
+        TokenKind::DoubleQuotedList(s) => {
             /* ISO/IEC 13211-1:1995/Cor.1:2007 */
             Ok((
-                parse_quoted(&ctx.flags.double_quotes, s, location)?,
+                parse_quoted(&ctx.flags.double_quotes, s, token.location)?,
                 lexer::next(ctx, stream, false, greedy)?,
                 0,
             ))
         }
-        Token::BackQuotedString(s, location) => Ok((
-            parse_quoted(&ctx.flags.back_quotes, s, location)?,
+        TokenKind::BackQuotedString(s) => Ok((
+            parse_quoted(&ctx.flags.back_quotes, s, token.location)?,
             lexer::next(ctx, stream, false, greedy)?,
             0,
         )),
         _ => {
-            let location = token.span();
+            let location = token.location.clone();
             Error::new(ErrorKind::UnexpectedToken(token), location)
         }
     }
@@ -367,12 +404,12 @@ fn parse_term(
     let (mut term, mut next, mut precedence) =
         next_term(ctx, stream, token, max_precedence, greedy)?;
     loop {
-        let (l, op_precedence, r, bin_op) = match &next {
-            Token::Name(s, _) => lookup_op(ctx, s),
-            Token::Comma(_) => (999, 1000, 1000, true),
+        let (l, op_precedence, r, bin_op) = match &next.kind {
+            TokenKind::Name(s) => lookup_op(ctx, s),
+            TokenKind::Comma => (999, 1000, 1000, true),
 
             /* ISO/IEC 13211-1:1995/Cor.2:2012 */
-            Token::Bar(_) => lookup_op(ctx, "|"),
+            TokenKind::Bar => lookup_op(ctx, "|"),
 
             _ => return Ok((term, next, precedence)),
         };
@@ -381,12 +418,13 @@ fn parse_term(
             return Ok((term, next, precedence));
         }
 
-        let (functor, location) = match &next {
-            Token::Name(s, l) => (s.clone(), l.clone()),
-            Token::Bar(p) => ("|".to_string(), Span::from(p)),
-            Token::Comma(p) => (",".to_string(), Span::from(p)),
+        let functor = match &next.kind {
+            TokenKind::Name(s) => s.clone(),
+            TokenKind::Bar => "|".to_string(),
+            TokenKind::Comma => ",".to_string(),
             _ => panic!(),
         };
+        let location = next.location.clone();
         let mut args = vec![term];
 
         if bin_op {
@@ -406,21 +444,21 @@ pub(crate) fn next(
     greedy: bool,
 ) -> Result<Option<Term>, Box<Error>> {
     let t = lexer::next(ctx, stream, false, greedy)?;
-    if let Token::Eof(_) = t {
+    if let TokenKind::Eof = t.kind {
         return Ok(None);
     }
 
     let (term, next, _) = parse_term(ctx, stream, t, 1201, greedy)?;
-    match next {
-        Token::End(_) => Ok(Some(term)),
-        _ => Error::new(ErrorKind::ExpectedChar('.'), next.span()),
+    match next.kind {
+        TokenKind::End => Ok(Some(term)),
+        _ => Error::new(ErrorKind::ExpectedChar('.'), next.location),
     }
 }
 
 pub(crate) fn skip_to_end(ctx: &Context, stream: &mut dyn ReadStream) -> Result<(), Box<Error>> {
     loop {
-        match lexer::next(ctx, stream, false, true)? {
-            Token::Eof(_) | Token::End(_) => break Ok(()),
+        match lexer::next(ctx, stream, false, true)?.kind {
+            TokenKind::Eof | TokenKind::End => break Ok(()),
             _ => {}
         }
     }
