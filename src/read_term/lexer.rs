@@ -121,26 +121,26 @@ fn integral(
     start: Position,
 ) -> Result<Token, Box<Error>> {
     let mut t = String::new();
-    let mut span = Span::from(start);
+    let mut location = Span::from(start);
     loop {
         match peek_char(ctx, stream)? {
             Char::Digit(c) if c <= max => t.push(c),
             Char::SmallLetter(c @ 'a'..='f') if radix == 16 => t.push(c),
             _ => break,
         }
-        span.inc(eat_char(stream)?);
+        location.inc(eat_char(stream)?);
     }
 
     if t.is_empty() {
         match radix {
-            2 => Error::new(ErrorKind::BadInteger("0b".to_string()), span),
-            8 => Error::new(ErrorKind::BadInteger("0o".to_string()), span),
-            _ => Error::new(ErrorKind::BadInteger("0x".to_string()), span),
+            2 => Error::new(ErrorKind::BadInteger("0b".to_string()), location),
+            8 => Error::new(ErrorKind::BadInteger("0o".to_string()), location),
+            _ => Error::new(ErrorKind::BadInteger("0x".to_string()), location),
         }
     } else {
         Ok(Token {
             kind: TokenKind::Int(t, radix),
-            location: span,
+            location,
         })
     }
 }
@@ -152,18 +152,18 @@ fn numeric(
     start: Position,
 ) -> Result<Token, Box<Error>> {
     let mut t = c.to_string();
-    let mut span = Span::from(start);
+    let mut location = Span::from(start);
     loop {
         match peek_char(ctx, stream)? {
             Char::Digit(c) => t.push(c),
             _ => {
                 break Ok(Token {
                     kind: TokenKind::Int(t, 10),
-                    location: span,
+                    location,
                 })
             }
         }
-        span.inc(eat_char(stream)?);
+        location.inc(eat_char(stream)?);
     }
 }
 
@@ -174,14 +174,14 @@ fn alpha_numeric(
     start: Position,
 ) -> Result<(String, Span), Box<Error>> {
     let mut t = c.to_string();
-    let mut span = Span::from(start);
+    let mut location = Span::from(start);
     loop {
         match peek_char(ctx, stream)? {
             Char::Underscore => t.push('_'),
             Char::SmallLetter(c) | Char::CapitalLetter(c) | Char::Digit(c) => t.push(c),
-            _ => break Ok((t, span)),
+            _ => break Ok((t, location)),
         }
-        span.inc(eat_char(stream)?);
+        location.inc(eat_char(stream)?);
     }
 }
 
@@ -196,10 +196,10 @@ fn char_code(
         o.push(init_c);
     }
 
-    let mut span = Span::from(start);
+    let mut location = Span::from(start);
     loop {
         match next_char_raw(stream)? {
-            (None, p) => return Error::new(ErrorKind::Missing('\\'), span.add(p)),
+            (None, p) => return Error::new(ErrorKind::Missing('\\'), location.add(p)),
             (Some('\\'), p) => match u32::from_str_radix(&o, if init_c == 'x' { 16 } else { 8 }) {
                 Ok(u) => match char::from_u32(u) {
                     None => {
@@ -221,7 +221,7 @@ fn char_code(
             (Some(c @ '0'..='7'), _) => o.push(c),
             (Some(c), p) => {
                 o.push(c);
-                span.inc(p);
+                location.inc(p);
                 if greedy {
                     loop {
                         match next_char_raw(stream) {
@@ -245,7 +245,7 @@ fn char_code(
     } else {
         o = "\\".to_string() + &o;
     }
-    Error::new(ErrorKind::BadEscape(o), span)
+    Error::new(ErrorKind::BadEscape(o), location)
 }
 
 fn quoted_inner<const Q: char>(
@@ -254,10 +254,10 @@ fn quoted_inner<const Q: char>(
     greedy: bool,
 ) -> Result<(String, Span), Box<Error>> {
     let mut t = String::new();
-    let mut span = Span::from(start);
+    let mut location = Span::from(start);
     loop {
         match next_char_raw(stream)? {
-            (None, p) => return Error::new(ErrorKind::Missing(Q), span.add(p)),
+            (None, p) => return Error::new(ErrorKind::Missing(Q), location.add(p)),
             (Some('\\'), p) => match next_char_raw(stream)? {
                 (Some('\n'), _) => {}
                 (Some('\\'), _) => t.push('\\'),
@@ -273,16 +273,16 @@ fn quoted_inner<const Q: char>(
                 (Some(c @ '0'..='7'), _) | (Some(c @ 'x'), _) => {
                     let (c, p) = char_code(stream, c, p, greedy)?;
                     t.push(c);
-                    span.inc(p);
+                    location.inc(p);
                 }
                 (Some(c), p) => {
                     return Error::new(
                         ErrorKind::BadEscape(String::from_iter(vec!['\\', c])),
-                        span.add(p),
+                        location.add(p),
                     )
                 }
                 (None, p) => {
-                    return Error::new(ErrorKind::BadEscape('\\'.to_string()), span.add(p))
+                    return Error::new(ErrorKind::BadEscape('\\'.to_string()), location.add(p))
                 }
             },
             (Some(c), p) if c == Q => match peek_char_raw(stream)? {
@@ -290,7 +290,7 @@ fn quoted_inner<const Q: char>(
                     t.push(c);
                     eat_char(stream)?;
                 }
-                _ => return Ok((t, span.add(p))),
+                _ => return Ok((t, location.add(p))),
             },
             (Some(c), _) => t.push(c),
         }
@@ -321,8 +321,8 @@ fn exponent(
     start: Position,
 ) -> Result<Token, Box<Error>> {
     let mut t = String::from_iter(vec!['.', c]);
-    let mut span = Span::from(start);
-    span.inc(eat_char(stream)?);
+    let mut location = Span::from(start);
+    location.inc(eat_char(stream)?);
 
     loop {
         match peek_char(ctx, stream)? {
@@ -340,11 +340,11 @@ fn exponent(
             _ => {
                 return Ok(Token {
                     kind: TokenKind::Exponent(t),
-                    location: span,
+                    location,
                 })
             }
         }
-        span.inc(eat_char(stream)?);
+        location.inc(eat_char(stream)?);
     }
 
     match next_char(ctx, stream)? {
@@ -352,7 +352,7 @@ fn exponent(
         (Char::Graphic('-'), _) => t.push('-'),
         (Char::Underscore, p) => {
             t.push('_');
-            return Error::new(ErrorKind::BadFloat(t), span.add(p));
+            return Error::new(ErrorKind::BadFloat(t), location.add(p));
         }
         (Char::Digit(c), p)
         | (Char::Meta(c), p)
@@ -362,9 +362,9 @@ fn exponent(
         | (Char::Solo(c), p)
         | (Char::Layout(c), p) => {
             t.push(c);
-            return Error::new(ErrorKind::BadFloat(t), span.add(p));
+            return Error::new(ErrorKind::BadFloat(t), location.add(p));
         }
-        (_, p) => return Error::new(ErrorKind::BadFloat(t), span.add(p)),
+        (_, p) => return Error::new(ErrorKind::BadFloat(t), location.add(p)),
     }
 
     loop {
@@ -373,11 +373,11 @@ fn exponent(
             _ => {
                 break Ok(Token {
                     kind: TokenKind::Exponent(t),
-                    location: span,
+                    location,
                 })
             }
         }
-        span.inc(eat_char(stream)?);
+        location.inc(eat_char(stream)?);
     }
 }
 
@@ -388,7 +388,7 @@ fn graphic(
     p: Position,
 ) -> Result<Token, Box<Error>> {
     let mut t = c.to_string();
-    let mut span = Span::from(p);
+    let mut location = Span::from(p);
     loop {
         match peek_char(ctx, stream)? {
             Char::Graphic(c) => t.push(c),
@@ -396,11 +396,11 @@ fn graphic(
             _ => {
                 break Ok(Token {
                     kind: TokenKind::Name(t),
-                    location: span,
+                    location,
                 })
             }
         }
-        span.inc(eat_char(stream)?);
+        location.inc(eat_char(stream)?);
     }
 }
 
@@ -462,10 +462,10 @@ pub(super) fn next(
             // name (* 6.4 *)
             // letter digit token (* 6.4.2 *)
             (Char::SmallLetter(c), p) => {
-                let (s, span) = alpha_numeric(ctx, stream, c, p)?;
+                let (s, location) = alpha_numeric(ctx, stream, c, p)?;
                 return Ok(Token {
                     kind: TokenKind::Name(s),
-                    location: span,
+                    location,
                 });
             }
 
@@ -493,10 +493,10 @@ pub(super) fn next(
 
             // quoted token (* 6.4.2 *)
             (Char::Meta('\''), p) => {
-                let (s, span) = quoted::<'\''>(stream, p, greedy)?;
+                let (s, location) = quoted::<'\''>(stream, p, greedy)?;
                 return Ok(Token {
                     kind: TokenKind::Name(s),
-                    location: span,
+                    location,
                 });
             }
 
@@ -518,17 +518,17 @@ pub(super) fn next(
 
             // variable (* 6.4 *)
             (Char::Underscore, p) => {
-                let (s, span) = alpha_numeric(ctx, stream, '_', p)?;
+                let (s, location) = alpha_numeric(ctx, stream, '_', p)?;
                 return Ok(Token {
                     kind: TokenKind::Var(s),
-                    location: span,
+                    location,
                 });
             }
             (Char::CapitalLetter(c), p) => {
-                let (s, span) = alpha_numeric(ctx, stream, c, p)?;
+                let (s, location) = alpha_numeric(ctx, stream, c, p)?;
                 return Ok(Token {
                     kind: TokenKind::Var(s),
-                    location: span,
+                    location,
                 });
             }
 
@@ -588,19 +588,19 @@ pub(super) fn next(
 
             // double quoted list (* 6.4 *)
             (Char::Meta('"'), p) => {
-                let (s, span) = quoted::<'"'>(stream, p, greedy)?;
+                let (s, location) = quoted::<'"'>(stream, p, greedy)?;
                 return Ok(Token {
                     kind: TokenKind::DoubleQuotedList(s),
-                    location: span,
+                    location,
                 });
             }
 
             // back quoted string (* 6.4.7 *)
             (Char::Meta('`'), p) => {
-                let (s, span) = quoted::<'`'>(stream, p, greedy)?;
+                let (s, location) = quoted::<'`'>(stream, p, greedy)?;
                 return Ok(Token {
                     kind: TokenKind::BackQuotedString(s),
-                    location: span,
+                    location,
                 });
             }
 
