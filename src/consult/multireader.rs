@@ -17,8 +17,8 @@ impl MultiReader {
         for s in self.streams.iter() {
             if s.position().source == stream.position().source {
                 return Error::new(
-                    ErrorKind::IncludeLoop(stream.position().source),
                     Span::from(&stream.position()),
+                    ErrorKind::IncludeLoop(stream.position().source),
                 );
             }
         }

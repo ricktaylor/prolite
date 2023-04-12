@@ -1,6 +1,7 @@
 use super::*;
 use error::*;
 use multireader::*;
+use program::*;
 
 use flags::{QuoteFlag, UnknownFlag};
 use operators::Operator;
@@ -9,22 +10,6 @@ use read_term::parser;
 use read_term::term::{Compound, Term, TermKind};
 use read_term::Context;
 
-pub(super) struct Program {}
-
-impl Program {
-    fn new() -> Self {
-        Program {}
-    }
-
-    fn assert_clause(&mut self, head: &Term, tail: &Term) -> Result<(), Box<Error>> {
-        Ok(())
-    }
-
-    fn assert_fact(&mut self, term: &Term) -> Result<(), Box<Error>> {
-        Ok(())
-    }
-}
-
 struct ConsultContext<'a> {
     context: Context,
     stream: MultiReader,
@@ -32,6 +17,7 @@ struct ConsultContext<'a> {
     program: &'a mut Program,
     resolver: &'a mut dyn StreamResolver,
     loaded_set: &'a mut Vec<String>,
+    current_procedure: Option<String>,
 }
 
 impl<'a> ConsultContext<'a> {
@@ -57,6 +43,7 @@ impl<'a> ConsultContext<'a> {
             program,
             resolver,
             loaded_set,
+            current_procedure: None,
         })
     }
 
@@ -77,22 +64,66 @@ impl<'a> ConsultContext<'a> {
     }
 }
 
+fn predicate_indicator(term: Term) -> Result<String, Box<Error>> {
+    match &term.kind {
+        TermKind::Atom(s) => Ok(format!("{}/0", s)),
+        TermKind::Compound(c) => Ok(format!("{}/{}", c.functor, c.args.len())),
+        _ => Error::new(term.location.clone(), ErrorKind::NotCallableTerm(term)),
+    }
+}
+
+fn assert_clause(ctx: &mut ConsultContext, head: Term, tail: Term) -> Result<(), Box<Error>> {
+    let pi = predicate_indicator(head)?;
+    if let Some(p) = ctx.program.predicates.get(&pi) {
+        // Check discontiguous/multifile flags
+        if !p.predicates.is_empty() {
+            if !p.flags.discontiguous {
+                match &ctx.current_procedure {
+                    Some(s) if *s == pi => {}
+                    None => {}
+                    Some(_) => {}
+                }
+            }
+
+            if !p.flags.multifile {}
+        }
+    } else {
+        let mut p = Procedure {
+            ..Default::default()
+        };
+
+        ctx.program.predicates.insert(pi.clone(), p);
+    }
+    ctx.current_procedure = Some(pi);
+    Ok(())
+}
+
+fn assert_fact(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    let l = term.location.clone();
+    assert_clause(ctx, term, Term::new_atom("true".to_string(), l))
+}
+
 fn load_text(ctx: &mut ConsultContext) -> Result<(), Box<Error>> {
     loop {
         match parser::next(&ctx.context, &mut ctx.stream, true) {
             Ok(None) => break,
             Ok(Some(t)) => {
-                let r = match &t.kind {
-                    TermKind::Compound(c) if c.functor == ":-" => match c.args.len() {
-                        1 => directive(ctx, &c.args[0]),
-                        2 => ctx.program.assert_clause(&c.args[0], &c.args[1]),
-                        _ => ctx.program.assert_fact(&t),
+                let r = match t.kind {
+                    TermKind::Compound(mut c) if c.functor == ":-" => match c.args.len() {
+                        1 => directive(ctx, c.args.pop().unwrap()),
+                        2 => {
+                            let mut i = c.args.into_iter();
+                            assert_clause(ctx, i.next().unwrap(), i.next().unwrap())
+                        }
+                        _ => assert_fact(
+                            ctx,
+                            Term {
+                                kind: TermKind::Compound(c),
+                                location: t.location,
+                            },
+                        ),
                     },
-                    TermKind::Compound(_) | TermKind::Atom(_) => ctx.program.assert_fact(&t),
-                    _ => {
-                        let l = t.location.clone();
-                        Error::new(ErrorKind::NotCallableTerm(t), l)
-                    }
+                    _ => assert_fact(ctx, t),
                 };
                 ctx.error(r)?;
             }
@@ -107,38 +138,57 @@ fn load_text(ctx: &mut ConsultContext) -> Result<(), Box<Error>> {
 
 fn directive_expand(
     ctx: &mut ConsultContext,
-    c: &Compound,
-    d: fn(&mut ConsultContext, &Term) -> Result<(), Box<Error>>,
+    mut c: Compound,
+    d: fn(&mut ConsultContext, Term) -> Result<(), Box<Error>>,
 ) -> Result<(), Box<Error>> {
+    // Clear current procedure
+    ctx.current_procedure = None;
+
     if c.args.len() == 1 {
-        if let Some(list) = c.args[0].list_iter() {
-            for arg in list {
-                (d)(ctx, arg)?;
+        // PI or PI_list
+        let mut pi = c.args.pop().unwrap();
+        match pi.kind {
+            TermKind::Compound(c) if c.functor == "." && c.args.len() == 2 => {
+                let mut i = c.args.into_iter();
+                loop {
+                    (d)(ctx, i.next().unwrap())?;
+                    pi = i.next().unwrap();
+
+                    match pi.kind {
+                        TermKind::Compound(c) if c.functor == "." && c.args.len() == 2 => {
+                            i = c.args.into_iter();
+                        }
+                        TermKind::Atom(s) if s == "[]" => break Ok(()),
+                        _ => break (d)(ctx, pi),
+                    }
+                }
             }
-        } else {
-            (d)(ctx, &c.args[0])?;
+            _ => (d)(ctx, pi),
         }
     } else {
-        for arg in c.args.iter() {
+        for arg in c.args {
             (d)(ctx, arg)?;
         }
+        Ok(())
     }
-    Ok(())
 }
 
-fn directive(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
-    match &term.kind {
+fn directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    match term.kind {
         TermKind::Compound(c) if c.functor == "op" && c.args.len() == 3 => {
-            op(ctx, &c.args[0], &c.args[1], &c.args[2])
+            let mut i = c.args.into_iter();
+            op(ctx, i.next().unwrap(), i.next().unwrap(), i.next().unwrap())
         }
-        TermKind::Compound(c) if c.functor == "initialization" && c.args.len() == 1 => {
-            initialization(ctx, &c.args[0])
+        TermKind::Compound(mut c) if c.functor == "initialization" && c.args.len() == 1 => {
+            initialization(ctx, c.args.pop().unwrap())
         }
         TermKind::Compound(c) if c.functor == "set_prolog_flag" && c.args.len() == 2 => {
-            prolog_flag(ctx, &c.args[0], &c.args[1])
+            let mut i = c.args.into_iter();
+            prolog_flag(ctx, i.next().unwrap(), i.next().unwrap())
         }
         TermKind::Compound(c) if c.functor == "char_conversion" && c.args.len() == 2 => {
-            char_conversion(ctx, &c.args[0], &c.args[1])
+            let mut i = c.args.into_iter();
+            char_conversion(ctx, i.next().unwrap(), i.next().unwrap())
         }
         TermKind::Compound(c) if c.functor == "include" => directive_expand(ctx, c, include),
         TermKind::Compound(c) if c.functor == "ensure_loaded" => {
@@ -150,27 +200,21 @@ fn directive(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
         TermKind::Compound(c) if c.functor == "discontiguous" => {
             directive_expand(ctx, c, discontiguous)
         }
-        _ => Error::new(
-            ErrorKind::UnknownDirective(term.clone()),
-            term.location.clone(),
-        ),
+        _ => Error::new(term.location.clone(), ErrorKind::UnknownDirective(term)),
     }
 }
 
-fn include(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
+fn include(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     match &term.kind {
         TermKind::Atom(s) => {
             let (_, stream) = ctx.resolver.open(s)?;
             ctx.stream.include(stream)
         }
-        _ => Error::new(
-            ErrorKind::BadStreamName(term.clone()),
-            term.location.clone(),
-        ),
+        _ => Error::new(term.location.clone(), ErrorKind::BadStreamName(term)),
     }
 }
 
-fn ensure_loaded(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
+fn ensure_loaded(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     match &term.kind {
         TermKind::Atom(s) => {
             let (full_path, stream) = ctx.resolver.open(s)?;
@@ -192,29 +236,26 @@ fn ensure_loaded(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>
             ctx.stream = prev_stream;
             Ok(())
         }
-        _ => Error::new(
-            ErrorKind::BadStreamName(term.clone()),
-            term.location.clone(),
-        ),
+        _ => Error::new(term.location.clone(), ErrorKind::BadStreamName(term)),
     }
 }
 
 fn update_op(
     ctx: &mut ConsultContext,
     specifier: &Operator,
-    operator: &Term,
+    operator: Term,
     remove: bool,
 ) -> Result<(), Box<Error>> {
-    match &operator.kind {
-        TermKind::Atom(s) if s == "," => Error::new(
-            ErrorKind::InvalidOperator(operator.clone()),
+    match operator.kind {
+        TermKind::Atom(ref s) if s == "," => Error::new(
             operator.location.clone(),
+            ErrorKind::InvalidOperator(operator),
         ),
         TermKind::Atom(s) if remove => {
-            ctx.context.operators.remove(s);
+            ctx.context.operators.remove(&s);
             Ok(())
         }
-        TermKind::Atom(s) => {
+        TermKind::Atom(ref s) => {
             if let Some(ops) = ctx.context.operators.get_mut(s) {
                 let mut found = false;
                 for o in ops.iter_mut() {
@@ -241,12 +282,12 @@ fn update_op(
                             }
                             Operator::xf(_) | Operator::yf(_) => {
                                 return Error::new(
+                                    operator.location.clone(),
                                     ErrorKind::InvalidOpCombo(
-                                        operator.clone(),
+                                        operator,
                                         o.clone(),
                                         specifier.clone(),
                                     ),
-                                    operator.location.clone(),
                                 )
                             }
                             _ => (),
@@ -259,12 +300,12 @@ fn update_op(
                             }
                             Operator::xf(_) | Operator::yf(_) => {
                                 return Error::new(
+                                    operator.location.clone(),
                                     ErrorKind::InvalidOpCombo(
-                                        operator.clone(),
+                                        operator,
                                         o.clone(),
                                         specifier.clone(),
                                     ),
-                                    operator.location.clone(),
                                 )
                             }
                             _ => (),
@@ -277,12 +318,12 @@ fn update_op(
                             }
                             Operator::xf(_) | Operator::yf(_) => {
                                 return Error::new(
+                                    operator.location.clone(),
                                     ErrorKind::InvalidOpCombo(
-                                        operator.clone(),
+                                        operator,
                                         o.clone(),
                                         specifier.clone(),
                                     ),
-                                    operator.location.clone(),
                                 )
                             }
                             _ => (),
@@ -295,12 +336,12 @@ fn update_op(
                             }
                             Operator::xfx(_) | Operator::xfy(_) | Operator::yfx(_) => {
                                 return Error::new(
+                                    operator.location.clone(),
                                     ErrorKind::InvalidOpCombo(
-                                        operator.clone(),
+                                        operator,
                                         o.clone(),
                                         specifier.clone(),
                                     ),
-                                    operator.location.clone(),
                                 )
                             }
                             _ => (),
@@ -313,12 +354,12 @@ fn update_op(
                             }
                             Operator::xfx(_) | Operator::xfy(_) | Operator::yfx(_) => {
                                 return Error::new(
+                                    operator.location.clone(),
                                     ErrorKind::InvalidOpCombo(
-                                        operator.clone(),
+                                        operator,
                                         o.clone(),
                                         specifier.clone(),
                                     ),
-                                    operator.location.clone(),
                                 )
                             }
                             _ => (),
@@ -337,36 +378,36 @@ fn update_op(
             Ok(())
         }
         _ => Error::new(
-            ErrorKind::InvalidOperator(operator.clone()),
             operator.location.clone(),
+            ErrorKind::InvalidOperator(operator),
         ),
     }
 }
 
 fn op(
     ctx: &mut ConsultContext,
-    priority: &Term,
-    specifier: &Term,
-    operator: &Term,
+    priority: Term,
+    specifier: Term,
+    mut operator: Term,
 ) -> Result<(), Box<Error>> {
     // Unpack specifier
-    let (op_spec, remove) = match &specifier.kind {
-        TermKind::Atom(s) => {
+    let (op_spec, remove) = match specifier.kind {
+        TermKind::Atom(ref s) => {
             // Unpack priority
-            let p = match &priority.kind {
+            let p = match priority.kind {
                 TermKind::Integer(n) => match n {
-                    0..=1200 => *n as u16,
+                    0..=1200 => n as u16,
                     _ => {
                         return Error::new(
-                            ErrorKind::InvalidOpPriority(priority.clone()),
                             priority.location.clone(),
+                            ErrorKind::InvalidOpPriority(priority),
                         )
                     }
                 },
                 _ => {
                     return Error::new(
-                        ErrorKind::InvalidOpPriority(priority.clone()),
                         priority.location.clone(),
+                        ErrorKind::InvalidOpPriority(priority),
                     )
                 }
             };
@@ -381,69 +422,79 @@ fn op(
                 "yf" => (Operator::yf(p), p == 0),
                 _ => {
                     return Error::new(
-                        ErrorKind::InvalidOpSpecifier(specifier.clone()),
                         specifier.location.clone(),
+                        ErrorKind::InvalidOpSpecifier(specifier),
                     )
                 }
             }
         }
         _ => {
             return Error::new(
-                ErrorKind::InvalidOpSpecifier(specifier.clone()),
                 specifier.location.clone(),
+                ErrorKind::InvalidOpSpecifier(specifier),
             )
         }
     };
 
     // Iterate atom_or_atom_list
-    if let Some(l) = operator.list_iter() {
-        for o in l {
-            update_op(ctx, &op_spec, o, remove)?;
+    match operator.kind {
+        TermKind::Compound(c) if c.functor == "." && c.args.len() == 2 => {
+            let mut i = c.args.into_iter();
+            loop {
+                update_op(ctx, &op_spec, i.next().unwrap(), remove)?;
+
+                operator = i.next().unwrap();
+                match operator.kind {
+                    TermKind::Compound(c) if c.functor == "." && c.args.len() == 2 => {
+                        i = c.args.into_iter();
+                    }
+                    TermKind::Atom(s) if s == "[]" => break Ok(()),
+                    _ => break update_op(ctx, &op_spec, operator, remove),
+                }
+            }
         }
-    } else {
-        update_op(ctx, &op_spec, operator, remove)?;
+        _ => update_op(ctx, &op_spec, operator, remove),
     }
-    Ok(())
 }
 
-fn bool_flag(flag: &Term, value: &Term) -> Result<bool, Box<Error>> {
-    match &value.kind {
-        TermKind::Atom(s) => match s.as_str() {
+fn bool_flag(flag: Term, value: Term) -> Result<bool, Box<Error>> {
+    match value.kind {
+        TermKind::Atom(ref s) => match s.as_str() {
             "on" => Ok(true),
             "off" => Ok(false),
             _ => Error::new(
-                ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
                 value.location.clone(),
+                ErrorKind::InvalidFlagValue(flag, value),
             ),
         },
         _ => Error::new(
-            ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
             value.location.clone(),
+            ErrorKind::InvalidFlagValue(flag, value),
         ),
     }
 }
 
-fn quote_flag(flag: &Term, value: &Term) -> Result<QuoteFlag, Box<Error>> {
-    match &value.kind {
-        TermKind::Atom(s) => match s.as_str() {
+fn quote_flag(flag: Term, value: Term) -> Result<QuoteFlag, Box<Error>> {
+    match value.kind {
+        TermKind::Atom(ref s) => match s.as_str() {
             "chars" => Ok(QuoteFlag::Chars),
             "codes" => Ok(QuoteFlag::Codes),
             "atom" => Ok(QuoteFlag::Atom),
             _ => Error::new(
-                ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
                 value.location.clone(),
+                ErrorKind::InvalidFlagValue(flag, value),
             ),
         },
         _ => Error::new(
-            ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
             value.location.clone(),
+            ErrorKind::InvalidFlagValue(flag, value),
         ),
     }
 }
 
-fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<(), Box<Error>> {
-    match &flag.kind {
-        TermKind::Atom(s) => match s.as_str() {
+fn prolog_flag(ctx: &mut ConsultContext, flag: Term, value: Term) -> Result<(), Box<Error>> {
+    match flag.kind {
+        TermKind::Atom(ref s) => match s.as_str() {
             "char_conversion" => ctx.context.flags.char_conversion = bool_flag(flag, value)?,
             "debug" => ctx.context.flags.debug = bool_flag(flag, value)?,
             "unknown" => match &value.kind {
@@ -453,31 +504,31 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: &Term, value: &Term) -> Result<()
                     "warning" => ctx.context.flags.unknown = UnknownFlag::Warning,
                     _ => {
                         return Error::new(
-                            ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
                             value.location.clone(),
+                            ErrorKind::InvalidFlagValue(flag, value),
                         )
                     }
                 },
                 _ => {
                     return Error::new(
-                        ErrorKind::InvalidFlagValue(flag.clone(), value.clone()),
                         value.location.clone(),
+                        ErrorKind::InvalidFlagValue(flag, value),
                     )
                 }
             },
             "double_quotes" => ctx.context.flags.double_quotes = quote_flag(flag, value)?,
             "back_quotes" => ctx.context.flags.back_quotes = quote_flag(flag, value)?,
-            _ => return Error::new(ErrorKind::InvalidFlag(flag.clone()), flag.location.clone()),
+            _ => return Error::new(flag.location.clone(), ErrorKind::InvalidFlag(flag)),
         },
-        _ => return Error::new(ErrorKind::InvalidFlag(flag.clone()), flag.location.clone()),
+        _ => return Error::new(flag.location.clone(), ErrorKind::InvalidFlag(flag)),
     }
     Ok(())
 }
 
 fn char_conversion(
     ctx: &mut ConsultContext,
-    in_char: &Term,
-    out_char: &Term,
+    in_char: Term,
+    out_char: Term,
 ) -> Result<(), Box<Error>> {
     match &in_char.kind {
         TermKind::Atom(s) if s.len() == 1 => {
@@ -493,36 +544,36 @@ fn char_conversion(
                     Ok(())
                 }
                 _ => Error::new(
-                    ErrorKind::InvalidCharacter(out_char.clone()),
                     out_char.location.clone(),
+                    ErrorKind::InvalidCharacter(out_char),
                 ),
             }
         }
         _ => Error::new(
-            ErrorKind::InvalidCharacter(in_char.clone()),
             in_char.location.clone(),
+            ErrorKind::InvalidCharacter(in_char),
         ),
     }
 }
 
-fn initialization(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
-    todo!()
+fn initialization(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    Ok(())
 }
 
-fn public(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
-    todo!()
+fn public(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    Ok(())
 }
 
-fn dynamic(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
-    todo!()
+fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    Ok(())
 }
 
-fn multifile(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
-    todo!()
+fn multifile(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    Ok(())
 }
 
-fn discontiguous(ctx: &mut ConsultContext, term: &Term) -> Result<(), Box<Error>> {
-    todo!()
+fn discontiguous(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    Ok(())
 }
 
 pub(super) fn consult(
@@ -531,9 +582,13 @@ pub(super) fn consult(
     sink: Option<ErrorSinkFn>,
 ) -> Result<Program, Box<Error>> {
     let mut program = Program::new();
-    let mut loaded_set = Vec::new();
-    let mut ctx = ConsultContext::new(resolver, source, &mut program, sink, &mut loaded_set)?;
-    load_text(&mut ctx)?;
+    load_text(&mut ConsultContext::new(
+        resolver,
+        source,
+        &mut program,
+        sink,
+        &mut Vec::new(),
+    )?)?;
 
-    todo!()
+    Ok(program)
 }

@@ -27,7 +27,7 @@ pub(super) struct Error {
 }
 
 impl Error {
-    pub(super) fn new<T>(kind: ErrorKind, location: Span) -> Result<T, Box<Error>> {
+    pub(super) fn new<T>(location: Span, kind: ErrorKind) -> Result<T, Box<Error>> {
         Err(Box::new(Self { kind, location }))
     }
 }

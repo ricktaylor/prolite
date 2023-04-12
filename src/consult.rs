@@ -1,4 +1,5 @@
 pub(super) mod error;
+pub(super) mod program;
 pub(super) mod text;
 
 mod multireader;
