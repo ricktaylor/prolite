@@ -66,31 +66,45 @@ impl<'a> ConsultContext<'a> {
     }
 }
 
+fn check_not_builtin(pi: &str, location: &stream::Span) -> Result<(), Box<Error>> {
+    // TODO - check against builtins!
+
+    Ok(())
+}
+
 fn predicate_indicator(term: &Term) -> Result<String, Box<Error>> {
-    match &term.kind {
+    let pi = match &term.kind {
         TermKind::Atom(s) => Ok(format!("{}/0", s)),
         TermKind::Compound(c) => Ok(format!("{}/{}", c.functor, c.args.len())),
         _ => Error::new(
             term.location.clone(),
             ErrorKind::NotCallableTerm(term.clone()),
         ),
-    }
+    }?;
+    check_not_builtin(&pi, &term.location)?;
+    Ok(pi)
 }
 
-fn assert_clause(ctx: &mut ConsultContext, head: Term, tail: Term) -> Result<(), Box<Error>> {
-    let pi = predicate_indicator(&head)?;
+fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> {
+    let pi = predicate_indicator(&clause.args[0])?;
     if let Some(p) = ctx.program.procedures.get(&pi) {
         // Check discontiguous/multifile flags
         if !p.predicates.is_empty() {
             if !p.flags.multifile && ctx.current_text != p.source_text {
-                return Error::new(head.location, ErrorKind::NotMultifile(pi));
+                return Error::new(
+                    clause.args.into_iter().next().unwrap().location,
+                    ErrorKind::NotMultifile(pi),
+                );
             }
 
             if !p.flags.discontiguous {
                 match &ctx.current_procedure {
                     Some(s) => {
                         if *s != pi {
-                            return Error::new(head.location, ErrorKind::NotDiscontiguous(pi));
+                            return Error::new(
+                                clause.args.into_iter().next().unwrap().location,
+                                ErrorKind::NotDiscontiguous(pi),
+                            );
                         }
                     }
                     None => {}
@@ -109,32 +123,28 @@ fn assert_clause(ctx: &mut ConsultContext, head: Term, tail: Term) -> Result<(),
     Ok(())
 }
 
-fn assert_fact(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    let l = term.location.clone();
-    assert_clause(ctx, term, Term::new_atom("true".to_string(), l))
-}
-
 fn load_text(ctx: &mut ConsultContext) -> Result<(), Box<Error>> {
     loop {
         match parser::next(&ctx.context, &mut ctx.stream, true) {
             Ok(None) => break,
             Ok(Some(t)) => {
                 let r = match t.kind {
-                    TermKind::Compound(mut c) if c.functor == ":-" => match c.args.len() {
-                        1 => directive(ctx, c.args.pop().unwrap()),
-                        2 => {
-                            let mut i = c.args.into_iter();
-                            assert_clause(ctx, i.next().unwrap(), i.next().unwrap())
-                        }
-                        _ => assert_fact(
+                    TermKind::Compound(mut c) if c.functor == ":-" && c.args.len() == 1 => {
+                        directive(ctx, c.args.pop().unwrap())
+                    }
+                    TermKind::Compound(c) if c.functor == ":-" && c.args.len() == 2 => {
+                        assert(ctx, c)
+                    }
+                    _ => {
+                        let t2 = Term::new_atom("true".to_string(), t.location.clone());
+                        assert(
                             ctx,
-                            Term {
-                                kind: TermKind::Compound(c),
-                                location: t.location,
+                            Compound {
+                                functor: ":-".to_string(),
+                                args: vec![t, t2],
                             },
-                        ),
-                    },
-                    _ => assert_fact(ctx, t),
+                        )
+                    }
                 };
                 ctx.error(r)?;
             }
@@ -583,6 +593,7 @@ fn lookup_procedure<'a>(
                 match c.args[1].kind {
                     TermKind::Integer(n) if n >= 0 => {
                         let pi = format!("{}/{}", s, n);
+                        check_not_builtin(&pi, &term.location)?;
                         return Ok(ctx
                             .program
                             .procedures
@@ -610,17 +621,32 @@ fn public(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
 }
 
 fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    lookup_procedure(ctx, term)?.flags.dynamic = true;
+    let p = lookup_procedure(ctx, term)?;
+    if !p.flags.dynamic && !p.predicates.is_empty() {
+        // Error!!
+        todo!()
+    }
+    p.flags.dynamic = true;
     Ok(())
 }
 
 fn multifile(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    lookup_procedure(ctx, term)?.flags.multifile = true;
+    let p = lookup_procedure(ctx, term)?;
+    if !p.flags.multifile && !p.predicates.is_empty() {
+        // Error!!
+        todo!()
+    }
+    p.flags.multifile = true;
     Ok(())
 }
 
 fn discontiguous(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    lookup_procedure(ctx, term)?.flags.discontiguous = true;
+    let p = lookup_procedure(ctx, term)?;
+    if !p.flags.discontiguous && !p.predicates.is_empty() {
+        // Error!!
+        todo!()
+    }
+    p.flags.discontiguous = true;
     Ok(())
 }
 

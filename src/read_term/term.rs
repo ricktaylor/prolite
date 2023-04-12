@@ -29,7 +29,7 @@ impl Term {
         }
     }
 
-    pub(super) fn new_compound(functor: String, location: Span, args: Vec<Term>) -> Self {
+    pub(crate) fn new_compound(functor: String, location: Span, args: Vec<Term>) -> Self {
         Term {
             kind: TermKind::Compound(Compound { functor, args }),
             location,
