@@ -20,16 +20,17 @@ pub(super) struct Predicate {
 pub(super) struct Procedure {
     pub flags: Flags,
     pub predicates: Vec<Predicate>,
+    pub source_text: String,
 }
 
 pub(super) struct Program {
-    pub predicates: HashMap<String, Procedure>,
+    pub procedures: HashMap<String, Procedure>,
 }
 
 impl Program {
     pub(super) fn new() -> Self {
         Program {
-            predicates: HashMap::new(),
+            procedures: HashMap::new(),
         }
     }
 }

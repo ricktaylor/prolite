@@ -10,6 +10,8 @@ pub(super) enum ErrorKind {
     NotCallableTerm(Term),
     UnknownDirective(Term),
     BadStreamName(Term),
+    NotDiscontiguous(String),
+    NotMultifile(String),
     IncludeLoop(String),
     InvalidOperator(Term),
     InvalidOpPriority(Term),
@@ -18,6 +20,7 @@ pub(super) enum ErrorKind {
     InvalidFlag(Term),
     InvalidFlagValue(Term, Term),
     InvalidCharacter(Term),
+    InvalidPredicateIndicator(Term),
 }
 
 #[derive(Debug)]

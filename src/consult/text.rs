@@ -18,6 +18,7 @@ struct ConsultContext<'a> {
     resolver: &'a mut dyn StreamResolver,
     loaded_set: &'a mut Vec<String>,
     current_procedure: Option<String>,
+    current_text: String,
 }
 
 impl<'a> ConsultContext<'a> {
@@ -44,6 +45,7 @@ impl<'a> ConsultContext<'a> {
             resolver,
             loaded_set,
             current_procedure: None,
+            current_text: full_name,
         })
     }
 
@@ -64,35 +66,44 @@ impl<'a> ConsultContext<'a> {
     }
 }
 
-fn predicate_indicator(term: Term) -> Result<String, Box<Error>> {
+fn predicate_indicator(term: &Term) -> Result<String, Box<Error>> {
     match &term.kind {
         TermKind::Atom(s) => Ok(format!("{}/0", s)),
         TermKind::Compound(c) => Ok(format!("{}/{}", c.functor, c.args.len())),
-        _ => Error::new(term.location.clone(), ErrorKind::NotCallableTerm(term)),
+        _ => Error::new(
+            term.location.clone(),
+            ErrorKind::NotCallableTerm(term.clone()),
+        ),
     }
 }
 
 fn assert_clause(ctx: &mut ConsultContext, head: Term, tail: Term) -> Result<(), Box<Error>> {
-    let pi = predicate_indicator(head)?;
-    if let Some(p) = ctx.program.predicates.get(&pi) {
+    let pi = predicate_indicator(&head)?;
+    if let Some(p) = ctx.program.procedures.get(&pi) {
         // Check discontiguous/multifile flags
         if !p.predicates.is_empty() {
-            if !p.flags.discontiguous {
-                match &ctx.current_procedure {
-                    Some(s) if *s == pi => {}
-                    None => {}
-                    Some(_) => {}
-                }
+            if !p.flags.multifile && ctx.current_text != p.source_text {
+                return Error::new(head.location, ErrorKind::NotMultifile(pi));
             }
 
-            if !p.flags.multifile {}
+            if !p.flags.discontiguous {
+                match &ctx.current_procedure {
+                    Some(s) => {
+                        if *s != pi {
+                            return Error::new(head.location, ErrorKind::NotDiscontiguous(pi));
+                        }
+                    }
+                    None => {}
+                }
+            }
         }
     } else {
         let mut p = Procedure {
+            source_text: ctx.current_text.clone(),
             ..Default::default()
         };
 
-        ctx.program.predicates.insert(pi.clone(), p);
+        ctx.program.procedures.insert(pi.clone(), p);
     }
     ctx.current_procedure = Some(pi);
     Ok(())
@@ -141,9 +152,6 @@ fn directive_expand(
     mut c: Compound,
     d: fn(&mut ConsultContext, Term) -> Result<(), Box<Error>>,
 ) -> Result<(), Box<Error>> {
-    // Clear current procedure
-    ctx.current_procedure = None;
-
     if c.args.len() == 1 {
         // PI or PI_list
         let mut pi = c.args.pop().unwrap();
@@ -174,6 +182,9 @@ fn directive_expand(
 }
 
 fn directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    // Clear current procedure
+    ctx.current_procedure = None;
+
     match term.kind {
         TermKind::Compound(c) if c.functor == "op" && c.args.len() == 3 => {
             let mut i = c.args.into_iter();
@@ -223,17 +234,19 @@ fn ensure_loaded(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>>
                     return Ok(());
                 }
             }
-            ctx.loaded_set.push(full_path);
+            ctx.loaded_set.push(full_path.clone());
 
             // New context and stream
             let prev_ctx = std::mem::take(&mut ctx.context);
             let prev_stream = std::mem::replace(&mut ctx.stream, MultiReader::new(stream));
+            let prev_text = std::mem::replace(&mut ctx.current_text, full_path);
 
             load_text(ctx)?;
 
             // Restore the previous context
             ctx.context = prev_ctx;
             ctx.stream = prev_stream;
+            ctx.current_text = prev_text;
             Ok(())
         }
         _ => Error::new(term.location.clone(), ErrorKind::BadStreamName(term)),
@@ -560,19 +573,54 @@ fn initialization(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>
     Ok(())
 }
 
+fn lookup_procedure<'a>(
+    ctx: &'a mut ConsultContext,
+    term: Term,
+) -> Result<&'a mut Procedure, Box<Error>> {
+    match &term.kind {
+        TermKind::Compound(c) if c.functor == "/" && c.args.len() == 2 => {
+            if let TermKind::Atom(ref s) = c.args[0].kind {
+                match c.args[1].kind {
+                    TermKind::Integer(n) if n >= 0 => {
+                        let pi = format!("{}/{}", s, n);
+                        return Ok(ctx
+                            .program
+                            .procedures
+                            .entry(pi)
+                            .or_insert_with(|| Procedure {
+                                source_text: ctx.current_text.clone(),
+                                ..Default::default()
+                            }));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    Error::new(
+        term.location.clone(),
+        ErrorKind::InvalidPredicateIndicator(term),
+    )
+}
+
 fn public(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    lookup_procedure(ctx, term)?.flags.public = true;
     Ok(())
 }
 
 fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    lookup_procedure(ctx, term)?.flags.dynamic = true;
     Ok(())
 }
 
 fn multifile(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    lookup_procedure(ctx, term)?.flags.multifile = true;
     Ok(())
 }
 
 fn discontiguous(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    lookup_procedure(ctx, term)?.flags.discontiguous = true;
     Ok(())
 }
 
