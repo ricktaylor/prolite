@@ -415,12 +415,12 @@ fn parse_term(
     let (mut term, mut next, mut precedence) =
         next_term(ctx, stream, token, max_precedence, greedy)?;
     loop {
-        let (l, op_precedence, r, bin_op) = match &next.kind {
-            TokenKind::Name(s) => lookup_op(ctx, s),
-            TokenKind::Comma => (999, 1000, 1000, true),
+        let ((l, op_precedence, r, bin_op), f) = match &next.kind {
+            TokenKind::Name(s) => (lookup_op(ctx, s), ""),
+            TokenKind::Comma => ((999, 1000, 1000, true), ","),
 
             /* ISO/IEC 13211-1:1995/Cor.2:2012 */
-            TokenKind::Bar => lookup_op(ctx, "|"),
+            TokenKind::Bar => (lookup_op(ctx, "|"), "|"),
 
             _ => return Ok((term, next, precedence)),
         };
@@ -431,9 +431,7 @@ fn parse_term(
 
         let functor = match next.kind {
             TokenKind::Name(s) => s,
-            TokenKind::Bar => "|".to_string(),
-            TokenKind::Comma => ",".to_string(),
-            _ => panic!(),
+            _ => f.to_string(),
         };
         let location = next.location;
         let mut args = vec![term];
