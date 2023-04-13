@@ -24,7 +24,7 @@ impl StreamResolver for FSResolver {
     fn open(
         &mut self,
         name: &str,
-    ) -> Result<(String, Box<dyn stream::ReadStream>), StreamResolverError> {
+    ) -> Result<(String, Box<dyn stream::ReadStream>), std::io::Error> {
         let mut fp = self.root.join(name);
         let mut f = OpenOptions::new().read(true).open(&fp);
         if let Err(ref e) = f {
@@ -38,10 +38,7 @@ impl StreamResolver for FSResolver {
         }
 
         match f {
-            Err(e) => Err(StreamResolverError {
-                error: e,
-                path: fp.into_os_string().into_string().unwrap(),
-            }),
+            Err(e) => Err(e),
             Ok(f) => {
                 let n = fp
                     .canonicalize()

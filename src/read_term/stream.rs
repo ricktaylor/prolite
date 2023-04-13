@@ -26,7 +26,7 @@ impl Position {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Span {
     pub start: Position,
     pub end: Option<Position>,

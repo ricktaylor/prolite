@@ -16,10 +16,7 @@ impl MultiReader {
     pub(super) fn include(&mut self, stream: Box<dyn ReadStream>) -> Result<(), Box<Error>> {
         for s in self.streams.iter() {
             if s.position().source == stream.position().source {
-                return Error::new(
-                    Span::from(&stream.position()),
-                    ErrorKind::IncludeLoop(stream.position().source),
-                );
+                return Error::new(Error::IncludeLoop(stream.position().source));
             }
         }
         self.streams.push(stream);

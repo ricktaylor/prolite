@@ -1,7 +1,8 @@
+use std::collections::HashMap;
+
 use super::*;
 use error::*;
 use multireader::*;
-use program::*;
 
 use flags::{QuoteFlag, UnknownFlag};
 use operators::Operator;
@@ -10,15 +11,43 @@ use read_term::parser;
 use read_term::term::{Compound, Term, TermKind};
 use read_term::Context;
 
+#[derive(Default, Debug, Clone)]
+pub(super) struct Flags {
+    pub public: bool,
+    pub dynamic: bool,
+    pub multifile: bool,
+    pub discontiguous: bool,
+}
+
+#[derive(Default, Debug)]
+pub(super) struct Procedure {
+    pub flags: Flags,
+    pub predicates: Vec<Compound>,
+    pub source_text: String,
+}
+
+pub(super) struct Text {
+    pub procedures: HashMap<String, Procedure>,
+}
+
+impl Text {
+    pub(super) fn new() -> Self {
+        Text {
+            procedures: HashMap::new(),
+        }
+    }
+}
+
 struct ConsultContext<'a> {
     context: Context,
     stream: MultiReader,
     sink: ErrorSinkFn,
-    program: &'a mut Program,
+    text: &'a mut Text,
     resolver: &'a mut dyn StreamResolver,
-    loaded_set: &'a mut Vec<String>,
+    loaded_set: Vec<String>,
     current_procedure: Option<String>,
     current_text: String,
+    failed: bool,
 }
 
 impl<'a> ConsultContext<'a> {
@@ -29,24 +58,29 @@ impl<'a> ConsultContext<'a> {
     fn new(
         resolver: &'a mut dyn StreamResolver,
         source: &str,
-        program: &'a mut Program,
+        text: &'a mut Text,
         error_sink: Option<ErrorSinkFn>,
-        loaded_set: &'a mut Vec<String>,
     ) -> Result<Self, Box<Error>> {
-        let (full_name, stream) = resolver.open(source)?;
-        Ok(Self {
-            context: Default::default(),
-            stream: MultiReader::new(stream),
-            sink: match error_sink {
-                None => Self::null_sink,
-                Some(s) => s,
-            },
-            program,
-            resolver,
-            loaded_set,
-            current_procedure: None,
-            current_text: full_name,
-        })
+        match resolver.open(source) {
+            Err(e) => Error::new(Error::StreamResolver(
+                Term::new_atom(source.to_string(), Default::default()),
+                e,
+            )),
+            Ok((full_name, stream)) => Ok(Self {
+                context: Default::default(),
+                stream: MultiReader::new(stream),
+                sink: match error_sink {
+                    None => Self::null_sink,
+                    Some(s) => s,
+                },
+                text,
+                resolver,
+                loaded_set: Vec::new(),
+                current_procedure: None,
+                current_text: full_name,
+                failed: false,
+            }),
+        }
     }
 
     fn error<E>(&mut self, r: Result<(), Box<E>>) -> Result<(), Box<Error>>
@@ -54,6 +88,7 @@ impl<'a> ConsultContext<'a> {
         text::Error: From<E>,
     {
         if let Err(e) = r {
+            self.failed = true;
             let e2 = Error::from(*e);
             if (self.sink)(&e2) {
                 Ok(())
@@ -64,96 +99,102 @@ impl<'a> ConsultContext<'a> {
             Ok(())
         }
     }
+
+    fn load_text(&mut self) -> Result<(), Box<Error>> {
+        loop {
+            match parser::next(&self.context, &mut self.stream, true) {
+                Ok(None) => break,
+                Ok(Some(t)) => {
+                    let r = match t.kind {
+                        TermKind::Compound(mut c) if c.functor == ":-" && c.args.len() == 1 => {
+                            directive(self, c.args.pop().unwrap())
+                        }
+                        TermKind::Compound(c) if c.functor == ":-" && c.args.len() == 2 => {
+                            assert(self, c)
+                        }
+                        _ => {
+                            let l = t.location.clone();
+                            assert(
+                                self,
+                                Compound {
+                                    functor: ":-".to_string(),
+                                    args: vec![t, Term::new_atom("true".to_string(), l)],
+                                },
+                            )
+                        }
+                    };
+                    self.error(r)?;
+                }
+                Err(e) => {
+                    self.error(Err(e))?;
+                    parser::skip_to_end(&self.context, &mut self.stream)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
-fn check_not_builtin(pi: &str, location: &stream::Span) -> Result<(), Box<Error>> {
+fn is_builtin(pi: &str) -> bool {
     // TODO - check against builtins!
 
-    Ok(())
+    false
 }
 
-fn predicate_indicator(term: &Term) -> Result<String, Box<Error>> {
-    let pi = match &term.kind {
-        TermKind::Atom(s) => Ok(format!("{}/0", s)),
-        TermKind::Compound(c) => Ok(format!("{}/{}", c.functor, c.args.len())),
-        _ => Error::new(
-            term.location.clone(),
-            ErrorKind::NotCallableTerm(term.clone()),
-        ),
-    }?;
-    check_not_builtin(&pi, &term.location)?;
-    Ok(pi)
+fn assert_clause(proc: &mut Procedure, clause: Compound) -> Result<(), Box<Error>> {
+    todo!()
 }
 
 fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> {
-    let pi = predicate_indicator(&clause.args[0])?;
-    if let Some(p) = ctx.program.procedures.get(&pi) {
+    let pi = match &clause.args[0].kind {
+        TermKind::Atom(s) => format!("{}/0", s),
+        TermKind::Compound(c) => format!("{}/{}", c.functor, c.args.len()),
+        _ => {
+            return Error::new(Error::NotCallableTerm(
+                clause.args.into_iter().next().unwrap(),
+            ))
+        }
+    };
+    if is_builtin(&pi) {
+        todo!();
+    }
+
+    if let Some(p) = ctx.text.procedures.get_mut(&pi) {
         // Check discontiguous/multifile flags
         if !p.predicates.is_empty() {
             if !p.flags.multifile && ctx.current_text != p.source_text {
-                return Error::new(
-                    clause.args.into_iter().next().unwrap().location,
-                    ErrorKind::NotMultifile(pi),
-                );
+                return Error::new(Error::NotMultifile(
+                    clause.args.into_iter().next().unwrap(),
+                    p.predicates.first().unwrap().args[0].location.clone(),
+                ));
             }
 
             if !p.flags.discontiguous {
                 match &ctx.current_procedure {
                     Some(s) => {
                         if *s != pi {
-                            return Error::new(
-                                clause.args.into_iter().next().unwrap().location,
-                                ErrorKind::NotDiscontiguous(pi),
-                            );
+                            return Error::new(Error::NotDiscontiguous(
+                                clause.args.into_iter().next().unwrap(),
+                                p.predicates.first().unwrap().args[0].location.clone(),
+                            ));
                         }
                     }
                     None => {}
                 }
             }
         }
+        assert_clause(p, clause)?;
     } else {
         let mut p = Procedure {
             source_text: ctx.current_text.clone(),
             ..Default::default()
         };
 
-        ctx.program.procedures.insert(pi.clone(), p);
+        assert_clause(&mut p, clause)?;
+
+        ctx.text.procedures.insert(pi.clone(), p);
     }
     ctx.current_procedure = Some(pi);
-    Ok(())
-}
-
-fn load_text(ctx: &mut ConsultContext) -> Result<(), Box<Error>> {
-    loop {
-        match parser::next(&ctx.context, &mut ctx.stream, true) {
-            Ok(None) => break,
-            Ok(Some(t)) => {
-                let r = match t.kind {
-                    TermKind::Compound(mut c) if c.functor == ":-" && c.args.len() == 1 => {
-                        directive(ctx, c.args.pop().unwrap())
-                    }
-                    TermKind::Compound(c) if c.functor == ":-" && c.args.len() == 2 => {
-                        assert(ctx, c)
-                    }
-                    _ => {
-                        let t2 = Term::new_atom("true".to_string(), t.location.clone());
-                        assert(
-                            ctx,
-                            Compound {
-                                functor: ":-".to_string(),
-                                args: vec![t, t2],
-                            },
-                        )
-                    }
-                };
-                ctx.error(r)?;
-            }
-            Err(e) => {
-                ctx.error(Err(e))?;
-                parser::skip_to_end(&ctx.context, &mut ctx.stream)?;
-            }
-        }
-    }
     Ok(())
 }
 
@@ -221,45 +262,49 @@ fn directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
         TermKind::Compound(c) if c.functor == "discontiguous" => {
             directive_expand(ctx, c, discontiguous)
         }
-        _ => Error::new(term.location.clone(), ErrorKind::UnknownDirective(term)),
+        _ => Error::new(Error::UnknownDirective(term)),
     }
 }
 
 fn include(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    match &term.kind {
-        TermKind::Atom(s) => {
-            let (_, stream) = ctx.resolver.open(s)?;
-            ctx.stream.include(stream)
-        }
-        _ => Error::new(term.location.clone(), ErrorKind::BadStreamName(term)),
+    match term.kind {
+        TermKind::Atom(ref s) => match ctx.resolver.open(s) {
+            Err(e) => Error::new(Error::StreamResolver(term, e)),
+            Ok((_, stream)) => ctx.stream.include(stream),
+        },
+        _ => Error::new(Error::BadStreamName(term)),
     }
 }
 
 fn ensure_loaded(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    match &term.kind {
-        TermKind::Atom(s) => {
-            let (full_path, stream) = ctx.resolver.open(s)?;
-            for s in ctx.loaded_set.iter() {
-                if *s == full_path {
-                    return Ok(());
+    match term.kind {
+        TermKind::Atom(ref s) => {
+            match ctx.resolver.open(s) {
+                Err(e) => Error::new(Error::StreamResolver(term, e)),
+                Ok((full_path, stream)) => {
+                    for s in ctx.loaded_set.iter() {
+                        if *s == full_path {
+                            return Ok(());
+                        }
+                    }
+                    ctx.loaded_set.push(full_path.clone());
+
+                    // New context and stream
+                    let prev_ctx = std::mem::take(&mut ctx.context);
+                    let prev_stream = std::mem::replace(&mut ctx.stream, MultiReader::new(stream));
+                    let prev_text = std::mem::replace(&mut ctx.current_text, full_path);
+
+                    ctx.load_text()?;
+
+                    // Restore the previous context
+                    ctx.context = prev_ctx;
+                    ctx.stream = prev_stream;
+                    ctx.current_text = prev_text;
+                    Ok(())
                 }
             }
-            ctx.loaded_set.push(full_path.clone());
-
-            // New context and stream
-            let prev_ctx = std::mem::take(&mut ctx.context);
-            let prev_stream = std::mem::replace(&mut ctx.stream, MultiReader::new(stream));
-            let prev_text = std::mem::replace(&mut ctx.current_text, full_path);
-
-            load_text(ctx)?;
-
-            // Restore the previous context
-            ctx.context = prev_ctx;
-            ctx.stream = prev_stream;
-            ctx.current_text = prev_text;
-            Ok(())
         }
-        _ => Error::new(term.location.clone(), ErrorKind::BadStreamName(term)),
+        _ => Error::new(Error::BadStreamName(term)),
     }
 }
 
@@ -270,10 +315,7 @@ fn update_op(
     remove: bool,
 ) -> Result<(), Box<Error>> {
     match operator.kind {
-        TermKind::Atom(ref s) if s == "," => Error::new(
-            operator.location.clone(),
-            ErrorKind::InvalidOperator(operator),
-        ),
+        TermKind::Atom(ref s) if s == "," => Error::new(Error::InvalidOperator(operator)),
         TermKind::Atom(s) if remove => {
             ctx.context.operators.remove(&s);
             Ok(())
@@ -304,14 +346,11 @@ fn update_op(
                                 break;
                             }
                             Operator::xf(_) | Operator::yf(_) => {
-                                return Error::new(
-                                    operator.location.clone(),
-                                    ErrorKind::InvalidOpCombo(
-                                        operator,
-                                        o.clone(),
-                                        specifier.clone(),
-                                    ),
-                                )
+                                return Error::new(Error::InvalidOpCombo(
+                                    operator,
+                                    o.clone(),
+                                    specifier.clone(),
+                                ))
                             }
                             _ => (),
                         },
@@ -322,14 +361,11 @@ fn update_op(
                                 break;
                             }
                             Operator::xf(_) | Operator::yf(_) => {
-                                return Error::new(
-                                    operator.location.clone(),
-                                    ErrorKind::InvalidOpCombo(
-                                        operator,
-                                        o.clone(),
-                                        specifier.clone(),
-                                    ),
-                                )
+                                return Error::new(Error::InvalidOpCombo(
+                                    operator,
+                                    o.clone(),
+                                    specifier.clone(),
+                                ))
                             }
                             _ => (),
                         },
@@ -340,14 +376,11 @@ fn update_op(
                                 break;
                             }
                             Operator::xf(_) | Operator::yf(_) => {
-                                return Error::new(
-                                    operator.location.clone(),
-                                    ErrorKind::InvalidOpCombo(
-                                        operator,
-                                        o.clone(),
-                                        specifier.clone(),
-                                    ),
-                                )
+                                return Error::new(Error::InvalidOpCombo(
+                                    operator,
+                                    o.clone(),
+                                    specifier.clone(),
+                                ))
                             }
                             _ => (),
                         },
@@ -358,14 +391,11 @@ fn update_op(
                                 break;
                             }
                             Operator::xfx(_) | Operator::xfy(_) | Operator::yfx(_) => {
-                                return Error::new(
-                                    operator.location.clone(),
-                                    ErrorKind::InvalidOpCombo(
-                                        operator,
-                                        o.clone(),
-                                        specifier.clone(),
-                                    ),
-                                )
+                                return Error::new(Error::InvalidOpCombo(
+                                    operator,
+                                    o.clone(),
+                                    specifier.clone(),
+                                ))
                             }
                             _ => (),
                         },
@@ -376,14 +406,11 @@ fn update_op(
                                 break;
                             }
                             Operator::xfx(_) | Operator::xfy(_) | Operator::yfx(_) => {
-                                return Error::new(
-                                    operator.location.clone(),
-                                    ErrorKind::InvalidOpCombo(
-                                        operator,
-                                        o.clone(),
-                                        specifier.clone(),
-                                    ),
-                                )
+                                return Error::new(Error::InvalidOpCombo(
+                                    operator,
+                                    o.clone(),
+                                    specifier.clone(),
+                                ))
                             }
                             _ => (),
                         },
@@ -400,10 +427,7 @@ fn update_op(
             }
             Ok(())
         }
-        _ => Error::new(
-            operator.location.clone(),
-            ErrorKind::InvalidOperator(operator),
-        ),
+        _ => Error::new(Error::InvalidOperator(operator)),
     }
 }
 
@@ -420,19 +444,9 @@ fn op(
             let p = match priority.kind {
                 TermKind::Integer(n) => match n {
                     0..=1200 => n as u16,
-                    _ => {
-                        return Error::new(
-                            priority.location.clone(),
-                            ErrorKind::InvalidOpPriority(priority),
-                        )
-                    }
+                    _ => return Error::new(Error::InvalidOpPriority(priority)),
                 },
-                _ => {
-                    return Error::new(
-                        priority.location.clone(),
-                        ErrorKind::InvalidOpPriority(priority),
-                    )
-                }
+                _ => return Error::new(Error::InvalidOpPriority(priority)),
             };
 
             match s.as_str() {
@@ -443,20 +457,10 @@ fn op(
                 "yfx" => (Operator::yfx(p), p == 0),
                 "xf" => (Operator::xf(p), p == 0),
                 "yf" => (Operator::yf(p), p == 0),
-                _ => {
-                    return Error::new(
-                        specifier.location.clone(),
-                        ErrorKind::InvalidOpSpecifier(specifier),
-                    )
-                }
+                _ => return Error::new(Error::InvalidOpSpecifier(specifier)),
             }
         }
-        _ => {
-            return Error::new(
-                specifier.location.clone(),
-                ErrorKind::InvalidOpSpecifier(specifier),
-            )
-        }
+        _ => return Error::new(Error::InvalidOpSpecifier(specifier)),
     };
 
     // Iterate atom_or_atom_list
@@ -485,15 +489,9 @@ fn bool_flag(flag: Term, value: Term) -> Result<bool, Box<Error>> {
         TermKind::Atom(ref s) => match s.as_str() {
             "on" => Ok(true),
             "off" => Ok(false),
-            _ => Error::new(
-                value.location.clone(),
-                ErrorKind::InvalidFlagValue(flag, value),
-            ),
+            _ => Error::new(Error::InvalidFlagValue(flag, value)),
         },
-        _ => Error::new(
-            value.location.clone(),
-            ErrorKind::InvalidFlagValue(flag, value),
-        ),
+        _ => Error::new(Error::InvalidFlagValue(flag, value)),
     }
 }
 
@@ -503,15 +501,9 @@ fn quote_flag(flag: Term, value: Term) -> Result<QuoteFlag, Box<Error>> {
             "chars" => Ok(QuoteFlag::Chars),
             "codes" => Ok(QuoteFlag::Codes),
             "atom" => Ok(QuoteFlag::Atom),
-            _ => Error::new(
-                value.location.clone(),
-                ErrorKind::InvalidFlagValue(flag, value),
-            ),
+            _ => Error::new(Error::InvalidFlagValue(flag, value)),
         },
-        _ => Error::new(
-            value.location.clone(),
-            ErrorKind::InvalidFlagValue(flag, value),
-        ),
+        _ => Error::new(Error::InvalidFlagValue(flag, value)),
     }
 }
 
@@ -525,25 +517,15 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: Term, value: Term) -> Result<(), 
                     "error" => ctx.context.flags.unknown = UnknownFlag::Error,
                     "fail" => ctx.context.flags.unknown = UnknownFlag::Fail,
                     "warning" => ctx.context.flags.unknown = UnknownFlag::Warning,
-                    _ => {
-                        return Error::new(
-                            value.location.clone(),
-                            ErrorKind::InvalidFlagValue(flag, value),
-                        )
-                    }
+                    _ => return Error::new(Error::InvalidFlagValue(flag, value)),
                 },
-                _ => {
-                    return Error::new(
-                        value.location.clone(),
-                        ErrorKind::InvalidFlagValue(flag, value),
-                    )
-                }
+                _ => return Error::new(Error::InvalidFlagValue(flag, value)),
             },
             "double_quotes" => ctx.context.flags.double_quotes = quote_flag(flag, value)?,
             "back_quotes" => ctx.context.flags.back_quotes = quote_flag(flag, value)?,
-            _ => return Error::new(flag.location.clone(), ErrorKind::InvalidFlag(flag)),
+            _ => return Error::new(Error::InvalidFlag(flag)),
         },
-        _ => return Error::new(flag.location.clone(), ErrorKind::InvalidFlag(flag)),
+        _ => return Error::new(Error::InvalidFlag(flag)),
     }
     Ok(())
 }
@@ -566,16 +548,10 @@ fn char_conversion(
                     }
                     Ok(())
                 }
-                _ => Error::new(
-                    out_char.location.clone(),
-                    ErrorKind::InvalidCharacter(out_char),
-                ),
+                _ => Error::new(Error::InvalidCharacter(out_char)),
             }
         }
-        _ => Error::new(
-            in_char.location.clone(),
-            ErrorKind::InvalidCharacter(in_char),
-        ),
+        _ => Error::new(Error::InvalidCharacter(in_char)),
     }
 }
 
@@ -593,15 +569,14 @@ fn lookup_procedure<'a>(
                 match c.args[1].kind {
                     TermKind::Integer(n) if n >= 0 => {
                         let pi = format!("{}/{}", s, n);
-                        check_not_builtin(&pi, &term.location)?;
-                        return Ok(ctx
-                            .program
-                            .procedures
-                            .entry(pi)
-                            .or_insert_with(|| Procedure {
-                                source_text: ctx.current_text.clone(),
-                                ..Default::default()
-                            }));
+                        if is_builtin(&pi) {
+                            todo!()
+                        }
+
+                        return Ok(ctx.text.procedures.entry(pi).or_insert_with(|| Procedure {
+                            source_text: ctx.current_text.clone(),
+                            ..Default::default()
+                        }));
                     }
                     _ => {}
                 }
@@ -609,10 +584,7 @@ fn lookup_procedure<'a>(
         }
         _ => {}
     }
-    Error::new(
-        term.location.clone(),
-        ErrorKind::InvalidPredicateIndicator(term),
-    )
+    Error::new(Error::InvalidPredicateIndicator(term))
 }
 
 fn public(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
@@ -654,15 +626,14 @@ pub(super) fn consult(
     resolver: &mut dyn StreamResolver,
     source: &str,
     sink: Option<ErrorSinkFn>,
-) -> Result<Program, Box<Error>> {
-    let mut program = Program::new();
-    load_text(&mut ConsultContext::new(
-        resolver,
-        source,
-        &mut program,
-        sink,
-        &mut Vec::new(),
-    )?)?;
+) -> Result<Option<Text>, Box<Error>> {
+    let mut text = Text::new();
+    let mut ctx = ConsultContext::new(resolver, source, &mut text, sink)?;
 
-    Ok(program)
+    ctx.load_text()?;
+
+    Ok(match ctx.failed {
+        true => None,
+        false => Some(text),
+    })
 }
