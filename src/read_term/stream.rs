@@ -64,10 +64,10 @@ impl Span {
         } else {
             Span {
                 start: a.start.clone(),
-                end: match &b.end {
-                    None => Some(b.start.clone()),
-                    Some(e) => Some(e.clone()),
-                },
+                end: Some(match &b.end {
+                    None => b.start.clone(),
+                    Some(e) => e.clone(),
+                }),
             }
         }
     }

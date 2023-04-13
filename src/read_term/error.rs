@@ -11,7 +11,7 @@ pub(crate) enum ErrorKind {
     Unexpected(String),
     StreamError(stream::Error),
     ExpectedChar(char),
-    UnexpectedToken(Token),
+    UnexpectedToken(TokenKind),
     ParseIntError(std::num::ParseIntError),
     ParseFloatError(std::num::ParseFloatError),
 }

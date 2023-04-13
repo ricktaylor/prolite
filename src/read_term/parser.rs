@@ -146,7 +146,7 @@ fn next_term(
                     lexer::next(ctx, stream, false, greedy)?,
                     0,
                 )),
-                _ => Ok((parse_integer(&s, r, next.location.clone())?, next, 0)),
+                _ => Ok((parse_integer(&s, r, token.location)?, next, 0)),
             }
         }
         TokenKind::CharCode(c) => Ok((
@@ -236,8 +236,15 @@ fn next_term(
                                             *p,
                                         )),
                                         Err(e) => {
-                                            if let ErrorKind::UnexpectedToken(next) = e.kind {
-                                                Ok((Term::new_atom(s, token.location), next, 1201))
+                                            if let ErrorKind::UnexpectedToken(k) = e.kind {
+                                                Ok((
+                                                    Term::new_atom(s, token.location),
+                                                    Token {
+                                                        kind: k,
+                                                        location: e.location,
+                                                    },
+                                                    1201,
+                                                ))
                                             } else {
                                                 Err(e)
                                             }
@@ -256,8 +263,15 @@ fn next_term(
                                             *p,
                                         )),
                                         Err(e) => {
-                                            if let ErrorKind::UnexpectedToken(next) = e.kind {
-                                                Ok((Term::new_atom(s, token.location), next, 1201))
+                                            if let ErrorKind::UnexpectedToken(k) = e.kind {
+                                                Ok((
+                                                    Term::new_atom(s, token.location),
+                                                    Token {
+                                                        kind: k,
+                                                        location: e.location,
+                                                    },
+                                                    1201,
+                                                ))
                                             } else {
                                                 Err(e)
                                             }
@@ -370,10 +384,7 @@ fn next_term(
             lexer::next(ctx, stream, false, greedy)?,
             0,
         )),
-        _ => {
-            let location = token.location.clone();
-            Error::new(ErrorKind::UnexpectedToken(token), location)
-        }
+        _ => Error::new(ErrorKind::UnexpectedToken(token.kind), token.location),
     }
 }
 
@@ -418,17 +429,18 @@ fn parse_term(
             return Ok((term, next, precedence));
         }
 
-        let functor = match &next.kind {
-            TokenKind::Name(s) => s.clone(),
+        let functor = match next.kind {
+            TokenKind::Name(s) => s,
             TokenKind::Bar => "|".to_string(),
             TokenKind::Comma => ",".to_string(),
             _ => panic!(),
         };
-        let location = next.location.clone();
+        let location = next.location;
         let mut args = vec![term];
 
+        next = lexer::next(ctx, stream, false, greedy)?;
+
         if bin_op {
-            next = lexer::next(ctx, stream, false, greedy)?;
             (term, next, _) = parse_term(ctx, stream, next, r, greedy)?;
             args.push(term);
         }

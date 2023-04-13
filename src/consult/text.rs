@@ -142,7 +142,9 @@ fn is_builtin(pi: &str) -> bool {
 }
 
 fn assert_clause(proc: &mut Procedure, clause: Compound) -> Result<(), Box<Error>> {
-    todo!()
+    //todo!()
+
+    Ok(())
 }
 
 fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> {
