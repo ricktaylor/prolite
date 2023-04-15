@@ -10,6 +10,7 @@ pub(super) enum Error {
     NotCallableTerm(Term),
     UnknownDirective(Term),
     BadStreamName(Term),
+    AlterBuiltin(Term),
     AlreadyNotPublic(Term, stream::Span),
     AlreadyNotDynamic(Term, stream::Span),
     AlreadyNotDiscontiguous(Term, stream::Span),

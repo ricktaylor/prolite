@@ -135,12 +135,6 @@ impl<'a> ConsultContext<'a> {
     }
 }
 
-fn assert_clause(proc: &mut Procedure, clause: Compound) -> Result<(), Box<Error>> {
-    //todo!()
-
-    Ok(())
-}
-
 fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> {
     let pi = match &clause.args[0].kind {
         TermKind::Atom(s) => format!("{}/0", s),
@@ -152,7 +146,7 @@ fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> 
         }
     };
     if builtins::is_builtin(&pi) {
-        todo!();
+        return Error::new(Error::AlterBuiltin(clause.args.into_iter().next().unwrap()));
     }
 
     if let Some(p) = ctx.text.procedures.get_mut(&pi) {
@@ -179,16 +173,16 @@ fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> 
                 }
             }
         }
-        assert_clause(p, clause)?;
+        p.predicates.push(clause);
     } else {
-        let mut p = Procedure {
-            source_text: ctx.current_text.clone(),
-            ..Default::default()
-        };
-
-        assert_clause(&mut p, clause)?;
-
-        ctx.text.procedures.insert(pi.clone(), p);
+        ctx.text.procedures.insert(
+            pi.clone(),
+            Procedure {
+                source_text: ctx.current_text.clone(),
+                predicates: vec![clause],
+                ..Default::default()
+            },
+        );
     }
     ctx.current_procedure = Some(pi);
     Ok(())
@@ -566,7 +560,7 @@ fn lookup_procedure<'a>(
                     TermKind::Integer(n) if n >= 0 => {
                         let pi = format!("{}/{}", s, n);
                         if builtins::is_builtin(&pi) {
-                            todo!()
+                            return Error::new(Error::AlterBuiltin(term.clone()));
                         }
 
                         return Ok(ctx.text.procedures.entry(pi).or_insert_with(|| Procedure {
