@@ -563,7 +563,7 @@ fn initialization(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>
 
 fn lookup_procedure<'a>(
     ctx: &'a mut ConsultContext,
-    term: Term,
+    term: &Term,
 ) -> Result<&'a mut Procedure, Box<Error>> {
     match &term.kind {
         TermKind::Compound(c) if c.functor == "/" && c.args.len() == 2 => {
@@ -586,42 +586,59 @@ fn lookup_procedure<'a>(
         }
         _ => {}
     }
-    Error::new(Error::InvalidPredicateIndicator(term))
+    Error::new(Error::InvalidPredicateIndicator(term.clone()))
 }
 
 fn public(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    lookup_procedure(ctx, term)?.flags.public = true;
-    Ok(())
+    let p = lookup_procedure(ctx, &term)?;
+    if !p.flags.public && !p.predicates.is_empty() {
+        Error::new(Error::AlreadyNotPublic(
+            term,
+            p.predicates.first().unwrap().args[0].location.clone(),
+        ))
+    } else {
+        p.flags.dynamic = true;
+        Ok(())
+    }
 }
 
 fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    let p = lookup_procedure(ctx, term)?;
+    let p = lookup_procedure(ctx, &term)?;
     if !p.flags.dynamic && !p.predicates.is_empty() {
-        // Error!!
-        todo!()
+        Error::new(Error::AlreadyNotDynamic(
+            term,
+            p.predicates.first().unwrap().args[0].location.clone(),
+        ))
+    } else {
+        p.flags.dynamic = true;
+        Ok(())
     }
-    p.flags.dynamic = true;
-    Ok(())
 }
 
 fn multifile(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    let p = lookup_procedure(ctx, term)?;
+    let p = lookup_procedure(ctx, &term)?;
     if !p.flags.multifile && !p.predicates.is_empty() {
-        // Error!!
-        todo!()
+        Error::new(Error::AlreadyNotMultifile(
+            term,
+            p.predicates.first().unwrap().args[0].location.clone(),
+        ))
+    } else {
+        p.flags.multifile = true;
+        Ok(())
     }
-    p.flags.multifile = true;
-    Ok(())
 }
 
 fn discontiguous(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    let p = lookup_procedure(ctx, term)?;
+    let p = lookup_procedure(ctx, &term)?;
     if !p.flags.discontiguous && !p.predicates.is_empty() {
-        // Error!!
-        todo!()
+        Error::new(Error::AlreadyNotDiscontiguous(
+            term,
+            p.predicates.first().unwrap().args[0].location.clone(),
+        ))
+    } else {
+        p.flags.discontiguous = true;
+        Ok(())
     }
-    p.flags.discontiguous = true;
-    Ok(())
 }
 
 pub(super) fn consult(
