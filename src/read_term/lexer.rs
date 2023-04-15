@@ -8,7 +8,6 @@ pub(crate) enum TokenKind {
     Name(String),
     Var(String),
     Int(String, u32),
-    CharCode(char),
     Exponent(String),
     DoubleQuotedList(String),
     BackQuotedString(String),

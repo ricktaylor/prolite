@@ -16,8 +16,6 @@ pub(super) enum Error {
     AlreadyNotMultifile(Term, stream::Span),
     NotDiscontiguous(Term, stream::Span),
     NotMultifile(Term, stream::Span),
-    AlreadySinglefile(Term, stream::Span),
-    AlreadyHasPredicates(Term, Term),
     IncludeLoop(String),
     InvalidOperator(Term),
     InvalidOpPriority(Term),

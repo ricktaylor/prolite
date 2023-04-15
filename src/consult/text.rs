@@ -135,12 +135,6 @@ impl<'a> ConsultContext<'a> {
     }
 }
 
-fn is_builtin(pi: &str) -> bool {
-    // TODO - check against builtins!
-
-    false
-}
-
 fn assert_clause(proc: &mut Procedure, clause: Compound) -> Result<(), Box<Error>> {
     //todo!()
 
@@ -157,7 +151,7 @@ fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> 
             ))
         }
     };
-    if is_builtin(&pi) {
+    if builtins::is_builtin(&pi) {
         todo!();
     }
 
@@ -571,7 +565,7 @@ fn lookup_procedure<'a>(
                 match c.args[1].kind {
                     TermKind::Integer(n) if n >= 0 => {
                         let pi = format!("{}/{}", s, n);
-                        if is_builtin(&pi) {
+                        if builtins::is_builtin(&pi) {
                             todo!()
                         }
 

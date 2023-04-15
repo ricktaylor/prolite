@@ -149,14 +149,6 @@ fn next_term(
                 _ => Ok((parse_integer(&s, r, token.location)?, next, 0)),
             }
         }
-        TokenKind::CharCode(c) => Ok((
-            Term {
-                kind: TermKind::Integer(c as i64),
-                location: token.location,
-            },
-            lexer::next(ctx, stream, false, greedy)?,
-            0,
-        )),
 
         /* 6.3.2 */
         TokenKind::Var(s) => Ok((
@@ -204,14 +196,6 @@ fn next_term(
                         )),
                     }
                 }
-                TokenKind::CharCode(c) if s == "-" => Ok((
-                    Term {
-                        kind: TermKind::Integer(-(c as i64)),
-                        location: token.location,
-                    },
-                    lexer::next(ctx, stream, false, greedy)?,
-                    0,
-                )),
 
                 /* 6.3.3 */
                 TokenKind::OpenCt => parse_compound(ctx, stream, s, token.location, greedy),

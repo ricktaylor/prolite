@@ -1,6 +1,7 @@
 pub(super) mod error;
 pub(super) mod text;
 
+mod builtins;
 mod multireader;
 
 use super::{flags, operators, read_term};
