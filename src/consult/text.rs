@@ -13,17 +13,16 @@ use read_term::Context;
 
 #[derive(Default, Debug, Clone)]
 pub(super) struct Flags {
-    pub public: bool,
     pub dynamic: bool,
-    pub multifile: bool,
-    pub discontiguous: bool,
+    multifile: bool,
+    discontiguous: bool,
 }
 
 #[derive(Default, Debug)]
 pub(super) struct Procedure {
     pub flags: Flags,
     pub predicates: Vec<Compound>,
-    pub source_text: String,
+    source_text: String,
 }
 
 pub(super) struct Text {
@@ -246,7 +245,6 @@ fn directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
         TermKind::Compound(c) if c.functor == "ensure_loaded" => {
             directive_expand(ctx, c, ensure_loaded)
         }
-        TermKind::Compound(c) if c.functor == "public" => directive_expand(ctx, c, public),
         TermKind::Compound(c) if c.functor == "dynamic" => directive_expand(ctx, c, dynamic),
         TermKind::Compound(c) if c.functor == "multifile" => directive_expand(ctx, c, multifile),
         TermKind::Compound(c) if c.functor == "discontiguous" => {
@@ -575,19 +573,6 @@ fn lookup_procedure<'a>(
         _ => {}
     }
     Error::new(Error::InvalidPredicateIndicator(term.clone()))
-}
-
-fn public(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    let p = lookup_procedure(ctx, &term)?;
-    if !p.flags.public && !p.predicates.is_empty() {
-        Error::new(Error::AlreadyNotPublic(
-            term,
-            p.predicates.first().unwrap().args[0].location.clone(),
-        ))
-    } else {
-        p.flags.dynamic = true;
-        Ok(())
-    }
 }
 
 fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
