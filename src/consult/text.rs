@@ -18,21 +18,29 @@ pub(super) struct Flags {
     discontiguous: bool,
 }
 
+#[derive(Debug)]
+pub(super) struct Clause {
+    head: Term,
+    body: Term,
+}
+
 #[derive(Default, Debug)]
 pub(super) struct Procedure {
     pub flags: Flags,
-    pub predicates: Vec<Compound>,
+    pub predicates: Vec<Clause>,
     source_text: String,
 }
 
 pub(super) struct Text {
     pub procedures: HashMap<String, Procedure>,
+    pub initialization: Vec<Term>,
 }
 
 impl Text {
     pub(super) fn new() -> Self {
         Text {
             procedures: HashMap::new(),
+            initialization: Vec::new(),
         }
     }
 }
@@ -109,18 +117,10 @@ impl<'a> ConsultContext<'a> {
                             directive(self, c.args.pop().unwrap())
                         }
                         TermKind::Compound(c) if c.functor == ":-" && c.args.len() == 2 => {
-                            assert(self, c)
+                            let mut i = c.args.into_iter();
+                            assert(self, i.next().unwrap(), Some(i.next().unwrap()))
                         }
-                        _ => {
-                            let l = t.location.clone();
-                            assert(
-                                self,
-                                Compound {
-                                    functor: ":-".to_string(),
-                                    args: vec![t, Term::new_atom("true".to_string(), l)],
-                                },
-                            )
-                        }
+                        _ => assert(self, t, None),
                     };
                     self.error(r)?;
                 }
@@ -134,27 +134,61 @@ impl<'a> ConsultContext<'a> {
     }
 }
 
-fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> {
-    let pi = match &clause.args[0].kind {
+fn convert_to_goal(term: Term) -> Result<Term, Box<Error>> {
+    match term.kind {
+        TermKind::Var(_) => Ok(Term::new_compound(
+            "call".to_string(),
+            term.location.clone(),
+            vec![term],
+        )),
+        TermKind::Compound(mut c) => {
+            if c.args.len() == 2 {
+                match c.functor.as_str() {
+                    "," | ";" | "->" => {
+                        let mut new_args = Vec::new();
+                        for a in c.args.into_iter() {
+                            new_args.push(convert_to_goal(a)?);
+                        }
+                        c.args = new_args;
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Term {
+                kind: TermKind::Compound(c),
+                location: term.location,
+            })
+        }
+        TermKind::Float(_) | TermKind::Integer(_) => Error::new(Error::NotCallable(term)),
+        _ => Ok(term),
+    }
+}
+
+fn assert(ctx: &mut ConsultContext, head: Term, body: Option<Term>) -> Result<(), Box<Error>> {
+    let pi = match &head.kind {
         TermKind::Atom(s) => format!("{}/0", s),
         TermKind::Compound(c) => format!("{}/{}", c.functor, c.args.len()),
-        _ => {
-            return Error::new(Error::InvalidHead(
-                clause.args.into_iter().next().unwrap(),
-            ))
-        }
+        _ => return Error::new(Error::InvalidHead(head)),
     };
     if builtins::is_builtin(&pi) {
-        return Error::new(Error::AlterBuiltin(clause.args.into_iter().next().unwrap()));
+        return Error::new(Error::AlterBuiltin(head));
     }
+
+    let clause = Clause {
+        body: match body {
+            None => Term::new_atom("true".to_string(), head.location.clone()),
+            Some(b) => convert_to_goal(b)?,
+        },
+        head,
+    };
 
     if let Some(p) = ctx.text.procedures.get_mut(&pi) {
         // Check discontiguous/multifile flags
         if !p.predicates.is_empty() {
             if !p.flags.multifile && ctx.current_text != p.source_text {
                 return Error::new(Error::NotMultifile(
-                    clause.args.into_iter().next().unwrap(),
-                    p.predicates.first().unwrap().args[0].location.clone(),
+                    clause.head,
+                    p.predicates.first().unwrap().head.location.clone(),
                 ));
             }
 
@@ -163,8 +197,8 @@ fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> 
                     Some(s) => {
                         if *s != pi {
                             return Error::new(Error::NotDiscontiguous(
-                                clause.args.into_iter().next().unwrap(),
-                                p.predicates.first().unwrap().args[0].location.clone(),
+                                clause.head,
+                                p.predicates.first().unwrap().head.location.clone(),
                             ));
                         }
                     }
@@ -544,6 +578,7 @@ fn char_conversion(
 }
 
 fn initialization(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    ctx.text.initialization.push(convert_to_goal(term)?);
     Ok(())
 }
 
@@ -580,7 +615,7 @@ fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     if !p.flags.dynamic && !p.predicates.is_empty() {
         Error::new(Error::AlreadyNotDynamic(
             term,
-            p.predicates.first().unwrap().args[0].location.clone(),
+            p.predicates.first().unwrap().head.location.clone(),
         ))
     } else {
         p.flags.dynamic = true;
@@ -593,7 +628,7 @@ fn multifile(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     if !p.flags.multifile && !p.predicates.is_empty() {
         Error::new(Error::AlreadyNotMultifile(
             term,
-            p.predicates.first().unwrap().args[0].location.clone(),
+            p.predicates.first().unwrap().head.location.clone(),
         ))
     } else {
         p.flags.multifile = true;
@@ -606,7 +641,7 @@ fn discontiguous(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>>
     if !p.flags.discontiguous && !p.predicates.is_empty() {
         Error::new(Error::AlreadyNotDiscontiguous(
             term,
-            p.predicates.first().unwrap().args[0].location.clone(),
+            p.predicates.first().unwrap().head.location.clone(),
         ))
     } else {
         p.flags.discontiguous = true;
