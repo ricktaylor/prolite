@@ -26,24 +26,18 @@ impl<R: std::io::Read> Utf8Reader<R> {
         char::from_u32(i).unwrap_or(Self::REPLACEMENT_CHAR)
     }
 
-    fn peek_byte(&mut self) -> Result<Option<u8>, stream::Error> {
+    fn peek_byte(&mut self) -> Result<Option<u8>, std::io::Error> {
         if self.next_byte.is_none() {
             let mut buf = [0u8];
-            self.next_byte = match self.reader.read(&mut buf) {
-                Err(e) => {
-                    return Err(stream::Error {
-                        error: e,
-                        location: self.position.clone(),
-                    })
-                }
-                Ok(1) => Some(buf[0]),
-                Ok(_) => None,
+            self.next_byte = match self.reader.read(&mut buf)? {
+                1 => Some(buf[0]),
+                _ => None
             }
         }
         Ok(self.next_byte)
     }
 
-    fn continuation(&mut self, count: usize, val: u32) -> Result<Option<char>, stream::Error> {
+    fn continuation(&mut self, count: usize, val: u32) -> Result<Option<char>, std::io::Error> {
         let mut val = val;
         for _ in 1..count {
             self.next_byte = None;
@@ -57,7 +51,7 @@ impl<R: std::io::Read> Utf8Reader<R> {
 }
 
 impl<R: std::io::Read> stream::ReadStream for Utf8Reader<R> {
-    fn get(&mut self) -> Result<Option<char>, stream::Error> {
+    fn get(&mut self) -> Result<Option<char>, std::io::Error> {
         let r = self.peek()?;
         match r {
             Some('\n') => self.position.linefeed(),
@@ -69,7 +63,7 @@ impl<R: std::io::Read> stream::ReadStream for Utf8Reader<R> {
         Ok(r)
     }
 
-    fn peek(&mut self) -> Result<Option<char>, stream::Error> {
+    fn peek(&mut self) -> Result<Option<char>, std::io::Error> {
         if self.next_char.is_none() {
             self.next_char = match self.peek_byte()? {
                 None => None,

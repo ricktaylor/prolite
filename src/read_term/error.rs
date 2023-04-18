@@ -9,7 +9,7 @@ pub(crate) enum ErrorKind {
     BadFloat(String),
     BadInteger(String),
     Unexpected(String),
-    StreamError(stream::Error),
+    StreamError(std::io::Error),
     ExpectedChar(char),
     UnexpectedToken(TokenKind),
     ParseIntError(std::num::ParseIntError),
@@ -25,14 +25,5 @@ pub(crate) struct Error {
 impl Error {
     pub(super) fn new<T>(kind: ErrorKind, location: Span) -> Result<T, Box<Error>> {
         Err(Box::new(Self { kind, location }))
-    }
-}
-
-impl From<stream::Error> for Box<Error> {
-    fn from(e: stream::Error) -> Self {
-        Box::new(Error {
-            location: Span::from(&e.location),
-            kind: ErrorKind::StreamError(e),
-        })
     }
 }

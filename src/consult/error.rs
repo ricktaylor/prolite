@@ -1,13 +1,13 @@
 use super::*;
 use operators::Operator;
 use read_term::term::Term;
-use stream::{Position, Span};
 
 #[derive(Debug)]
 pub(super) enum Error {
     ReadTerm(read_term::error::Error),
     StreamResolver(Term, std::io::Error),
     InvalidHead(Term),
+    NotCallable(Term),
     UnknownDirective(Term),
     BadStreamName(Term),
     AlterBuiltin(Term),

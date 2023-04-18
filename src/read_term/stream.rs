@@ -10,7 +10,7 @@ impl Default for Position {
         Self {
             source: String::new(),
             line: 1,
-            column: 1,
+            column: 0,
         }
     }
 }
@@ -41,44 +41,25 @@ impl Span {
     }
 
     pub fn inc(&mut self, b: Position) -> &mut Self {
-        match self.end {
-            None if self.start == b => self.end = None,
-            None => self.end = Some(b),
-            Some(ref mut e) => *e = b,
-        };
+        self.end = Some(b);
         self
     }
 
-    pub fn add(mut self, b: Position) -> Self {
-        match self.end {
-            None if self.start == b => self.end = None,
-            None => self.end = Some(b),
-            Some(ref mut e) => *e = b,
-        };
-        self
-    }
-
-    pub fn concat(a: &Span, b: &Span) -> Span {
-        if a == b {
-            a.clone()
+    pub fn append(&mut self, b: Span) {
+        self.end = if b.end.is_some() {
+            b.end
         } else {
-            Span {
-                start: a.start.clone(),
-                end: Some(match &b.end {
-                    None => b.start.clone(),
-                    Some(e) => e.clone(),
-                }),
-            }
-        }
+            Some(b.start)
+        };
     }
-}
 
-impl From<&Position> for Span {
-    fn from(p: &Position) -> Self {
-        Span {
-            start: p.clone(),
-            end: None,
-        }
+    pub fn join(mut self, b: Span) -> Self {
+        self.end = if b.end.is_some() {
+            b.end
+        } else {
+            Some(b.start)
+        };
+        self
     }
 }
 
@@ -91,14 +72,8 @@ impl From<Position> for Span {
     }
 }
 
-#[derive(Debug)]
-pub struct Error {
-    pub error: std::io::Error,
-    pub location: Position,
-}
-
 pub trait ReadStream {
-    fn get(&mut self) -> Result<Option<char>, Error>;
-    fn peek(&mut self) -> Result<Option<char>, Error>;
+    fn get(&mut self) -> Result<Option<char>, std::io::Error>;
+    fn peek(&mut self) -> Result<Option<char>, std::io::Error>;
     fn position(&self) -> Position;
 }

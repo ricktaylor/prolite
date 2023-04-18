@@ -1,6 +1,6 @@
 use super::*;
 use error::*;
-use stream::{ReadStream, Span};
+use stream::ReadStream;
 
 pub(super) struct MultiReader {
     streams: Vec<Box<dyn ReadStream>>,
@@ -25,7 +25,7 @@ impl MultiReader {
 }
 
 impl ReadStream for MultiReader {
-    fn get(&mut self) -> Result<Option<char>, stream::Error> {
+    fn get(&mut self) -> Result<Option<char>, std::io::Error> {
         while let Some(s) = self.streams.last_mut() {
             if let Some(c) = s.get()? {
                 return Ok(Some(c));
@@ -35,7 +35,7 @@ impl ReadStream for MultiReader {
         Ok(None)
     }
 
-    fn peek(&mut self) -> Result<Option<char>, stream::Error> {
+    fn peek(&mut self) -> Result<Option<char>, std::io::Error> {
         for s in self.streams.iter_mut().rev() {
             if let Some(c) = s.peek()? {
                 return Ok(Some(c));

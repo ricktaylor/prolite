@@ -142,7 +142,7 @@ fn next_term(
             let next = lexer::next(ctx, stream, true, greedy)?;
             match next.kind {
                 TokenKind::Exponent(t) => Ok((
-                    parse_float(&(s + &t), Span::concat(&token.location, &next.location))?,
+                    parse_float(&(s + &t), token.location.join(next.location))?,
                     lexer::next(ctx, stream, false, greedy)?,
                     0,
                 )),
@@ -178,19 +178,12 @@ fn next_term(
                     let next2 = lexer::next(ctx, stream, true, greedy)?;
                     match next2.kind {
                         TokenKind::Exponent(u) => Ok((
-                            parse_float(
-                                &(s + &t + &u),
-                                Span::concat(&token.location, &next2.location),
-                            )?,
+                            parse_float(&(s + &t + &u), token.location.join(next2.location))?,
                             lexer::next(ctx, stream, false, greedy)?,
                             0,
                         )),
                         _ => Ok((
-                            parse_integer(
-                                &(s + &t),
-                                r,
-                                Span::concat(&token.location, &next.location),
-                            )?,
+                            parse_integer(&(s + &t), r, token.location.join(next.location))?,
                             next2,
                             0,
                         )),
@@ -293,15 +286,12 @@ fn next_term(
                         ctx,
                         stream,
                         "[]".to_string(),
-                        Span::concat(&token.location, &next2.location),
+                        token.location.join(next2.location),
                         greedy,
                     )
                 } else {
                     Ok((
-                        Term::new_atom(
-                            "[]".to_string(),
-                            Span::concat(&token.location, &next.location),
-                        ),
+                        Term::new_atom("[]".to_string(), token.location.join(next.location)),
                         next2,
                         0,
                     ))
@@ -324,15 +314,12 @@ fn next_term(
                         ctx,
                         stream,
                         "{}".to_string(),
-                        Span::concat(&token.location, &next2.location),
+                        token.location.join(next2.location),
                         greedy,
                     )
                 } else {
                     Ok((
-                        Term::new_atom(
-                            "{}".to_string(),
-                            Span::concat(&token.location, &next.location),
-                        ),
+                        Term::new_atom("{}".to_string(), token.location.join(next.location)),
                         next2,
                         0,
                     ))
@@ -343,7 +330,7 @@ fn next_term(
                     Ok((
                         Term::new_compound(
                             "{}".to_string(),
-                            Span::concat(&token.location, &next.location),
+                            token.location.join(next.location),
                             vec![term],
                         ),
                         lexer::next(ctx, stream, false, greedy)?,
