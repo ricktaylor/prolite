@@ -31,7 +31,7 @@ impl<R: std::io::Read> Utf8Reader<R> {
             let mut buf = [0u8];
             self.next_byte = match self.reader.read(&mut buf)? {
                 1 => Some(buf[0]),
-                _ => None
+                _ => None,
             }
         }
         Ok(self.next_byte)

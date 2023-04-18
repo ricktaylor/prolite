@@ -62,17 +62,17 @@ impl From<char> for Char {
 fn next_char_raw(stream: &mut dyn ReadStream) -> Result<(Option<char>, Span), Box<Error>> {
     let p = stream.position();
     match stream.get() {
-        Err(e) => Error::new(ErrorKind::StreamError(e),Span::from(p)),
+        Err(e) => Error::new(ErrorKind::StreamError(e), Span::from(p)),
         Ok(Some(c)) => Ok((Some(c), Span::new(p, stream.position()))),
-        Ok(None) => Ok((None, Span::from(p)))
+        Ok(None) => Ok((None, Span::from(p))),
     }
 }
 
 fn peek_char_raw(stream: &mut dyn ReadStream) -> Result<Option<char>, Box<Error>> {
     match stream.peek() {
-        Err(e) => Error::new(ErrorKind::StreamError(e),Span::from(stream.position())),
+        Err(e) => Error::new(ErrorKind::StreamError(e), Span::from(stream.position())),
         Ok(Some(c)) => Ok(Some(c)),
-        Ok(None) => Ok(None)
+        Ok(None) => Ok(None),
     }
 }
 
