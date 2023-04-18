@@ -7,11 +7,10 @@ use stream::{Position, Span};
 pub(super) enum Error {
     ReadTerm(read_term::error::Error),
     StreamResolver(Term, std::io::Error),
-    NotCallableTerm(Term),
+    InvalidHead(Term),
     UnknownDirective(Term),
     BadStreamName(Term),
     AlterBuiltin(Term),
-    AlreadyNotPublic(Term, stream::Span),
     AlreadyNotDynamic(Term, stream::Span),
     AlreadyNotDiscontiguous(Term, stream::Span),
     AlreadyNotMultifile(Term, stream::Span),

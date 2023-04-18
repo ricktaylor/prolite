@@ -139,7 +139,7 @@ fn assert(ctx: &mut ConsultContext, clause: Compound) -> Result<(), Box<Error>> 
         TermKind::Atom(s) => format!("{}/0", s),
         TermKind::Compound(c) => format!("{}/{}", c.functor, c.args.len()),
         _ => {
-            return Error::new(Error::NotCallableTerm(
+            return Error::new(Error::InvalidHead(
                 clause.args.into_iter().next().unwrap(),
             ))
         }
