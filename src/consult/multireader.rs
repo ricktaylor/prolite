@@ -14,10 +14,12 @@ impl MultiReader {
     }
 
     pub(super) fn include(&mut self, stream: Box<dyn ReadStream>) -> Result<(), Box<Error>> {
-        for s in self.streams.iter() {
-            if s.position().source == stream.position().source {
-                return Error::new(Error::IncludeLoop(stream.position().source));
-            }
+        if self
+            .streams
+            .iter()
+            .any(|s| s.position().source == stream.position().source)
+        {
+            return Error::new(Error::IncludeLoop(stream.position().source));
         }
         self.streams.push(stream);
         Ok(())
@@ -36,19 +38,12 @@ impl ReadStream for MultiReader {
     }
 
     fn peek(&mut self) -> Result<Option<char>, std::io::Error> {
-        for s in self.streams.iter_mut().rev() {
-            if let Some(c) = s.peek()? {
-                return Ok(Some(c));
-            }
-        }
-        Ok(None)
+        self.streams.last_mut().map_or(Ok(None), |s| s.peek())
     }
 
     fn position(&self) -> stream::Position {
-        if let Some(s) = self.streams.first() {
-            s.position()
-        } else {
-            stream::Position::default()
-        }
+        self.streams
+            .first()
+            .map_or(stream::Position::default(), |s| s.position())
     }
 }

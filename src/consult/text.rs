@@ -90,17 +90,13 @@ impl<'a> ConsultContext<'a> {
         }
     }
 
-    fn error<E>(&mut self, r: Result<(), Box<E>>) -> Result<(), Box<Error>>
-    where
-        text::Error: From<E>,
-    {
+    fn error(&mut self, r: Result<(), Box<Error>>) -> Result<(), Box<Error>> {
         if let Err(e) = r {
             self.failed = true;
-            let e2 = Error::from(*e);
-            if (self.sink)(&e2) {
+            if (self.sink)(&e) {
                 Ok(())
             } else {
-                Err(Box::new(e2))
+                Err(e)
             }
         } else {
             Ok(())
@@ -109,7 +105,9 @@ impl<'a> ConsultContext<'a> {
 
     fn load_text(&mut self) -> Result<(), Box<Error>> {
         loop {
-            match parser::next(&self.context, &mut self.stream, true) {
+            match parser::next(&self.context, &mut self.stream, true)
+                .map_err(|e| Error::ReadTerm(*e))
+            {
                 Ok(None) => break,
                 Ok(Some(t)) => {
                     let r = match t.kind {
@@ -125,8 +123,9 @@ impl<'a> ConsultContext<'a> {
                     self.error(r)?;
                 }
                 Err(e) => {
-                    self.error(Err(e))?;
-                    parser::skip_to_end(&self.context, &mut self.stream)?;
+                    self.error(Err(Box::new(e)))?;
+                    parser::skip_to_end(&self.context, &mut self.stream)
+                        .map_err(|e| Error::ReadTerm(*e))?;
                 }
             }
         }
@@ -145,11 +144,11 @@ fn convert_to_goal(term: Term) -> Result<Term, Box<Error>> {
             if c.args.len() == 2 {
                 match c.functor.as_str() {
                     "," | ";" | "->" => {
-                        let mut new_args = Vec::new();
-                        for a in c.args.into_iter() {
-                            new_args.push(convert_to_goal(a)?);
-                        }
-                        c.args = new_args;
+                        c.args = c
+                            .args
+                            .into_iter()
+                            .map(convert_to_goal)
+                            .collect::<Result<Vec<Term>, _>>()?;
                     }
                     _ => {}
                 }
@@ -248,9 +247,7 @@ fn directive_expand(
             _ => (d)(ctx, pi),
         }
     } else {
-        for arg in c.args {
-            (d)(ctx, arg)?;
-        }
+        c.args.into_iter().try_for_each(|a| (d)(ctx, a))?;
         Ok(())
     }
 }
@@ -304,10 +301,8 @@ fn ensure_loaded(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>>
             match ctx.resolver.open(s) {
                 Err(e) => Error::new(Error::StreamResolver(term, e)),
                 Ok((full_path, stream)) => {
-                    for s in ctx.loaded_set.iter() {
-                        if *s == full_path {
-                            return Ok(());
-                        }
+                    if ctx.loaded_set.iter().any(|s| *s == full_path) {
+                        return Ok(());
                     }
                     ctx.loaded_set.push(full_path.clone());
 

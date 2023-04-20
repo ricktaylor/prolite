@@ -42,38 +42,41 @@ enum Char {
     Eof,
 }
 
-impl From<char> for Char {
-    fn from(c: char) -> Self {
-        match c {
-            ' ' | '\t' | '\n' => Char::Layout(c),
-            '!' | '(' | ')' | ',' | ';' | '[' | ']' | '{' | '}' | '|' | '%' => Char::Solo(c),
-            '\\' | '\'' | '"' | '`' => Char::Meta(c),
-            '0'..='9' => Char::Digit(c),
-            '_' => Char::Underscore,
-            'A'..='Z' => Char::CapitalLetter(c),
-            'a'..='z' => Char::SmallLetter(c),
-            '#' | '$' | '&' | '*' | '+' | '-' | '.' | '/' | ':' | '<' | '=' | '>' | '?' | '@'
-            | '^' | '~' => Char::Graphic(c),
-            _ => Char::Invalid(c),
-        }
+fn map_char(c: char) -> Char {
+    match c {
+        ' ' | '\t' | '\n' => Char::Layout(c),
+        '!' | '(' | ')' | ',' | ';' | '[' | ']' | '{' | '}' | '|' | '%' => Char::Solo(c),
+        '\\' | '\'' | '"' | '`' => Char::Meta(c),
+        '0'..='9' => Char::Digit(c),
+        '_' => Char::Underscore,
+        'A'..='Z' => Char::CapitalLetter(c),
+        'a'..='z' => Char::SmallLetter(c),
+        '#' | '$' | '&' | '*' | '+' | '-' | '.' | '/' | ':' | '<' | '=' | '>' | '?' | '@' | '^'
+        | '~' => Char::Graphic(c),
+        _ => Char::Invalid(c),
     }
 }
 
 fn next_char_raw(stream: &mut dyn ReadStream) -> Result<(Option<char>, Span), Box<Error>> {
     let p = stream.position();
-    match stream.get() {
-        Err(e) => Error::new(ErrorKind::StreamError(e), Span::from(p)),
-        Ok(Some(c)) => Ok((Some(c), Span::new(p, stream.position()))),
-        Ok(None) => Ok((None, Span::from(p))),
+    match stream.get().map_err(|e| {
+        Box::new(Error {
+            kind: ErrorKind::StreamError(e),
+            location: Span::new(stream.position(), None),
+        })
+    })? {
+        Some(c) => Ok((Some(c), Span::new(p, Some(stream.position())))),
+        None => Ok((None, Span::new(p, None))),
     }
 }
 
 fn peek_char_raw(stream: &mut dyn ReadStream) -> Result<Option<char>, Box<Error>> {
-    match stream.peek() {
-        Err(e) => Error::new(ErrorKind::StreamError(e), Span::from(stream.position())),
-        Ok(Some(c)) => Ok(Some(c)),
-        Ok(None) => Ok(None),
-    }
+    stream.peek().map_err(|e| {
+        Box::new(Error {
+            kind: ErrorKind::StreamError(e),
+            location: Span::new(stream.position(), None),
+        })
+    })
 }
 
 fn eat_char(stream: &mut dyn ReadStream) -> Result<Position, Box<Error>> {
@@ -82,14 +85,11 @@ fn eat_char(stream: &mut dyn ReadStream) -> Result<Position, Box<Error>> {
 }
 
 fn convert_char(ctx: &Context, c: Option<char>) -> Char {
-    if let Some(c) = c {
-        match ctx.char_conversion.get(&c) {
-            Some(c) => Char::from(*c),
-            None => Char::from(c),
-        }
-    } else {
-        Char::Eof
-    }
+    c.map_or(Char::Eof, |c| {
+        ctx.char_conversion
+            .get(&c)
+            .map_or_else(|| map_char(c), |c| map_char(*c))
+    })
 }
 
 fn next_char(ctx: &Context, stream: &mut dyn ReadStream) -> Result<(Char, Span), Box<Error>> {

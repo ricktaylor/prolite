@@ -32,15 +32,3 @@ impl Error {
         Err(Box::new(e))
     }
 }
-
-impl From<read_term::error::Error> for Error {
-    fn from(e: read_term::error::Error) -> Self {
-        Error::ReadTerm(e)
-    }
-}
-
-impl From<Box<read_term::error::Error>> for Box<Error> {
-    fn from(e: Box<read_term::error::Error>) -> Self {
-        Box::new(Error::from(*e))
-    }
-}

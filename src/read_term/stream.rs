@@ -10,7 +10,7 @@ impl Default for Position {
         Self {
             source: String::new(),
             line: 1,
-            column: 0,
+            column: 1,
         }
     }
 }
@@ -33,42 +33,21 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn new(start: Position, end: Position) -> Self {
-        Self {
-            end: if end == start { None } else { Some(end) },
-            start,
-        }
+    pub fn new(start: Position, end: Option<Position>) -> Self {
+        Self { start, end }
     }
 
-    pub fn inc(&mut self, b: Position) -> &mut Self {
+    pub fn inc(&mut self, b: Position) {
         self.end = Some(b);
-        self
     }
 
     pub fn append(&mut self, b: Span) {
-        self.end = if b.end.is_some() {
-            b.end
-        } else {
-            Some(b.start)
-        };
+        self.end = b.end.or(Some(b.start));
     }
 
     pub fn join(mut self, b: Span) -> Self {
-        self.end = if b.end.is_some() {
-            b.end
-        } else {
-            Some(b.start)
-        };
+        self.end = b.end.or(Some(b.start));
         self
-    }
-}
-
-impl From<Position> for Span {
-    fn from(p: Position) -> Self {
-        Span {
-            start: p,
-            end: None,
-        }
     }
 }
 
