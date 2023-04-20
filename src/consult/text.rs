@@ -58,10 +58,6 @@ struct ConsultContext<'a> {
 }
 
 impl<'a> ConsultContext<'a> {
-    fn null_sink(_: &Error) -> bool {
-        false
-    }
-
     fn new(
         resolver: &'a mut dyn StreamResolver,
         source: &str,
@@ -76,10 +72,7 @@ impl<'a> ConsultContext<'a> {
             Ok((full_name, stream)) => Ok(Self {
                 context: Default::default(),
                 stream: MultiReader::new(stream),
-                sink: match error_sink {
-                    None => Self::null_sink,
-                    Some(s) => s,
-                },
+                sink: error_sink.unwrap_or(|_| false),
                 text,
                 resolver,
                 loaded_set: Vec::new(),
