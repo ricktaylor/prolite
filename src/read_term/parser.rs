@@ -350,7 +350,7 @@ fn next_term(
                 0,
             ))
         }
-        TokenKind::BackQuotedString(s) => Ok((
+        TokenKind::BackQuotedString(s) if !ctx.flags.strict_iso => Ok((
             parse_quoted(&ctx.flags.back_quotes, s, token.location)?,
             lexer::next(ctx, stream, false, greedy)?,
             0,

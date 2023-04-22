@@ -522,6 +522,9 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: Term, value: Term) -> Result<(), 
         TermKind::Atom(ref s) => match s.as_str() {
             "char_conversion" => ctx.context.flags.char_conversion = bool_flag(flag, value)?,
             "debug" => ctx.context.flags.debug = bool_flag(flag, value)?,
+            "strict_iso" if !ctx.context.flags.strict_iso => {
+                ctx.context.flags.strict_iso = bool_flag(flag, value)?
+            }
             "unknown" => match &value.kind {
                 TermKind::Atom(s) => match s.as_str() {
                     "error" => ctx.context.flags.unknown = UnknownFlag::Error,
@@ -532,7 +535,9 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: Term, value: Term) -> Result<(), 
                 _ => return Error::new(Error::InvalidFlagValue(flag, value)),
             },
             "double_quotes" => ctx.context.flags.double_quotes = quote_flag(flag, value)?,
-            "back_quotes" => ctx.context.flags.back_quotes = quote_flag(flag, value)?,
+            "back_quotes" if !ctx.context.flags.strict_iso => {
+                ctx.context.flags.back_quotes = quote_flag(flag, value)?
+            }
             _ => return Error::new(Error::InvalidFlag(flag)),
         },
         _ => return Error::new(Error::InvalidFlag(flag)),

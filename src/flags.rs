@@ -20,6 +20,7 @@ pub(crate) struct Flags {
     pub unknown: UnknownFlag,
     pub debug: bool,
     pub colon_sets_calling_context: bool,
+    pub strict_iso: bool,
 }
 
 impl Default for Flags {
@@ -31,6 +32,7 @@ impl Default for Flags {
             unknown: UnknownFlag::Error,
             debug: false,
             colon_sets_calling_context: false,
+            strict_iso: false,
         }
     }
 }
