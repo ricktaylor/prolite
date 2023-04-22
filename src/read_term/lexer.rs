@@ -86,9 +86,13 @@ fn eat_char(stream: &mut dyn ReadStream) -> Result<Position, Box<Error>> {
 
 fn convert_char(ctx: &Context, c: Option<char>) -> Char {
     c.map_or(Char::Eof, |c| {
-        ctx.char_conversion
-            .get(&c)
-            .map_or_else(|| map_char(c), |c| map_char(*c))
+        if ctx.flags.char_conversion {
+            ctx.char_conversion
+                .get(&c)
+                .map_or_else(|| map_char(c), |c| map_char(*c))
+        } else {
+            map_char(c)
+        }
     })
 }
 
