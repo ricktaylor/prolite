@@ -121,5 +121,5 @@ static BUILTINS: phf::Map<&'static str, BuiltinType> = phf_map! {
 };
 
 pub fn is_builtin(pi: &str) -> bool {
-    BUILTINS.get(pi).is_some()
+    BUILTINS.get(pi).is_some() || pi.starts_with("call/")
 }
