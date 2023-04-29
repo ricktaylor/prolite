@@ -49,6 +49,7 @@ struct ConsultContext<'a> {
     context: Context,
     stream: MultiReader,
     sink: ErrorSinkFn,
+    directives: HashMap<String, Procedure>,
     text: &'a mut Text,
     resolver: &'a mut dyn StreamResolver,
     loaded_set: Vec<String>,
@@ -64,36 +65,26 @@ impl<'a> ConsultContext<'a> {
         text: &'a mut Text,
         error_sink: Option<ErrorSinkFn>,
     ) -> Result<Self, Box<Error>> {
-        match resolver.open(source) {
-            Err(e) => Error::new(Error::StreamResolver(
-                Term::new_atom(source.to_string(), Default::default()),
-                e,
-            )),
-            Ok((full_name, stream)) => Ok(Self {
+        resolver
+            .open(source)
+            .map_err(|e| {
+                Box::new(Error::StreamResolver(
+                    Term::new_atom(source.to_string(), Default::default()),
+                    e,
+                ))
+            })
+            .map(|(full_name, stream)| Self {
                 context: Default::default(),
                 stream: MultiReader::new(stream),
                 sink: error_sink.unwrap_or(|_| false),
+                directives: HashMap::new(),
                 text,
                 resolver,
                 loaded_set: Vec::new(),
                 current_procedure: None,
                 current_text: full_name,
                 failed: false,
-            }),
-        }
-    }
-
-    fn error(&mut self, r: Result<(), Box<Error>>) -> Result<(), Box<Error>> {
-        if let Err(e) = r {
-            self.failed = true;
-            if (self.sink)(&e) {
-                Ok(())
-            } else {
-                Err(e)
-            }
-        } else {
-            Ok(())
-        }
+            })
     }
 
     fn load_text(&mut self) -> Result<(), Box<Error>> {
@@ -101,7 +92,7 @@ impl<'a> ConsultContext<'a> {
             match parser::next(&self.context, &mut self.stream, true)
                 .map_err(|e| Error::ReadTerm(*e))
             {
-                Ok(None) => break,
+                Ok(None) => break Ok(()),
                 Ok(Some(t)) => {
                     let r = match t.kind {
                         TermKind::Compound(mut c) if c.functor == ":-" && c.args.len() == 1 => {
@@ -113,16 +104,30 @@ impl<'a> ConsultContext<'a> {
                         }
                         _ => assert(self, t, None),
                     };
-                    self.error(r)?;
+
+                    if let Err(e) = r {
+                        self.failed = true;
+                        if !(self.sink)(&e) {
+                            break Err(e);
+                        }
+                    }
                 }
                 Err(e) => {
-                    self.error(Err(Box::new(e)))?;
-                    parser::skip_to_end(&self.context, &mut self.stream)
-                        .map_err(|e| Error::ReadTerm(*e))?;
+                    self.failed = true;
+                    if (self.sink)(&e) {
+                        if let Err(e) = parser::skip_to_end(&self.context, &mut self.stream)
+                            .map_err(|e| Error::ReadTerm(*e))
+                        {
+                            if !(self.sink)(&e) {
+                                break Err(Box::new(e));
+                            }
+                        }
+                    } else {
+                        break Err(Box::new(e));
+                    }
                 }
             }
         }
-        Ok(())
     }
 }
 
@@ -174,28 +179,35 @@ fn assert(ctx: &mut ConsultContext, head: Term, body: Option<Term>) -> Result<()
         head,
     };
 
-    if let Some(p) = ctx.text.procedures.get_mut(&pi) {
-        // Check discontiguous/multifile flags
-        if !p.predicates.is_empty() {
+    let p = if !ctx.context.flags.strict_iso {
+        ctx.directives
+            .get_mut(&pi)
+            .or_else(|| ctx.text.procedures.get_mut(&pi))
+    } else {
+        ctx.text.procedures.get_mut(&pi)
+    };
+
+    if let Some(p) = p {
+        if let Some(first) = p.predicates.first() {
             if !p.flags.multifile && ctx.current_text != p.source_text {
                 return Error::new(Error::NotMultifile(
                     clause.head,
-                    p.predicates.first().unwrap().head.location.clone(),
+                    first.head.location.clone(),
+                    p.source_text.clone(),
                 ));
             }
 
-            if !p.flags.discontiguous {
-                match &ctx.current_procedure {
-                    Some(s) => {
-                        if *s != pi {
-                            return Error::new(Error::NotDiscontiguous(
-                                clause.head,
-                                p.predicates.first().unwrap().head.location.clone(),
-                            ));
-                        }
-                    }
-                    None => {}
-                }
+            if !p.flags.discontiguous
+                && ctx
+                    .current_procedure
+                    .as_ref()
+                    .filter(|s| **s != pi)
+                    .is_some()
+            {
+                return Error::new(Error::NotDiscontiguous(
+                    clause.head,
+                    first.head.location.clone(),
+                ));
             }
         }
         p.predicates.push(clause);
@@ -274,29 +286,51 @@ fn directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
         TermKind::Compound(c) if c.functor == "discontiguous" => {
             directive_expand(ctx, c, discontiguous)
         }
+        TermKind::Compound(c) if !ctx.context.flags.strict_iso => {
+            if c.functor == "directive" {
+                directive_expand(ctx, c, declare_directive)
+            } else {
+                let pi = format!("{}/{}", c.functor, c.args.len());
+                let t = Term {
+                    kind: TermKind::Compound(c),
+                    location: term.location,
+                };
+                if let Some(p) = ctx.directives.get(&pi) {
+                    directive_eval(ctx, t)
+                } else {
+                    Error::new(Error::UnknownDirective(t))
+                }
+            }
+        }
         _ => Error::new(Error::UnknownDirective(term)),
     }
 }
 
+fn directive_eval(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    let goal = convert_to_goal(term)?;
+
+    todo!()
+}
+
 fn include(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     match term.kind {
-        TermKind::Atom(ref s) => match ctx.resolver.open(s) {
-            Err(e) => Error::new(Error::StreamResolver(term, e)),
-            Ok((_, stream)) => ctx.stream.include(stream),
-        },
+        TermKind::Atom(ref s) => ctx
+            .resolver
+            .open(s)
+            .map_err(|e| Box::new(Error::StreamResolver(term, e)))
+            .and_then(|(_, stream)| ctx.stream.include(stream)),
         _ => Error::new(Error::BadStreamName(term)),
     }
 }
 
 fn ensure_loaded(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     match term.kind {
-        TermKind::Atom(ref s) => {
-            match ctx.resolver.open(s) {
-                Err(e) => Error::new(Error::StreamResolver(term, e)),
-                Ok((full_path, stream)) => {
-                    if ctx.loaded_set.iter().any(|s| *s == full_path) {
-                        return Ok(());
-                    }
+        TermKind::Atom(ref s) => ctx
+            .resolver
+            .open(s)
+            .map_err(|e| Box::new(Error::StreamResolver(term, e)))
+            .and_then(|(full_path, stream)| {
+                if !ctx.loaded_set.iter().any(|s| *s == full_path) {
                     ctx.loaded_set.push(full_path.clone());
 
                     // New context and stream
@@ -310,10 +344,9 @@ fn ensure_loaded(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>>
                     ctx.context = prev_ctx;
                     ctx.stream = prev_stream;
                     ctx.current_text = prev_text;
-                    Ok(())
                 }
-            }
-        }
+                Ok(())
+            }),
         _ => Error::new(Error::BadStreamName(term)),
     }
 }
@@ -575,25 +608,12 @@ fn initialization(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>
     Ok(())
 }
 
-fn lookup_procedure<'a>(
-    ctx: &'a mut ConsultContext,
-    term: &Term,
-) -> Result<&'a mut Procedure, Box<Error>> {
+fn pi_from_term(term: &Term) -> Result<String, Box<Error>> {
     match &term.kind {
         TermKind::Compound(c) if c.functor == "/" && c.args.len() == 2 => {
             if let TermKind::Atom(ref s) = c.args[0].kind {
                 match c.args[1].kind {
-                    TermKind::Integer(n) if n >= 0 => {
-                        let pi = format!("{}/{}", s, n);
-                        if builtins::is_builtin(&pi) {
-                            return Error::new(Error::AlterBuiltin(term.clone()));
-                        }
-
-                        return Ok(ctx.text.procedures.entry(pi).or_insert_with(|| Procedure {
-                            source_text: ctx.current_text.clone(),
-                            ..Default::default()
-                        }));
-                    }
+                    TermKind::Integer(n) if n >= 0 => return Ok(format!("{}/{}", s, n)),
                     _ => {}
                 }
             }
@@ -603,8 +623,32 @@ fn lookup_procedure<'a>(
     Error::new(Error::InvalidPredicateIndicator(term.clone()))
 }
 
+fn lookup_procedure<'a>(
+    ctx: &'a mut ConsultContext,
+    term: &Term,
+) -> Result<(&'a mut Procedure, bool), Box<Error>> {
+    let pi = pi_from_term(term)?;
+    if builtins::is_builtin(&pi) {
+        return Error::new(Error::AlterBuiltin(term.clone()));
+    }
+
+    if !ctx.context.flags.strict_iso {
+        if let Some(p) = ctx.directives.get_mut(&pi) {
+            return Ok((p, true));
+        }
+    }
+
+    Ok((
+        ctx.text.procedures.entry(pi).or_insert_with(|| Procedure {
+            source_text: ctx.current_text.clone(),
+            ..Default::default()
+        }),
+        false,
+    ))
+}
+
 fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    let p = lookup_procedure(ctx, &term)?;
+    let (p, _) = lookup_procedure(ctx, &term)?;
     if !p.flags.dynamic && !p.predicates.is_empty() {
         Error::new(Error::AlreadyNotDynamic(
             term,
@@ -617,8 +661,8 @@ fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
 }
 
 fn multifile(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    let p = lookup_procedure(ctx, &term)?;
-    if !p.flags.multifile && !p.predicates.is_empty() {
+    let (p, directive) = lookup_procedure(ctx, &term)?;
+    if (!p.flags.multifile && !p.predicates.is_empty()) || directive {
         Error::new(Error::AlreadyNotMultifile(
             term,
             p.predicates.first().unwrap().head.location.clone(),
@@ -630,8 +674,8 @@ fn multifile(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
 }
 
 fn discontiguous(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    let p = lookup_procedure(ctx, &term)?;
-    if !p.flags.discontiguous && !p.predicates.is_empty() {
+    let (p, directive) = lookup_procedure(ctx, &term)?;
+    if (!p.flags.discontiguous && !p.predicates.is_empty()) || directive {
         Error::new(Error::AlreadyNotDiscontiguous(
             term,
             p.predicates.first().unwrap().head.location.clone(),
@@ -640,6 +684,38 @@ fn discontiguous(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>>
         p.flags.discontiguous = true;
         Ok(())
     }
+}
+
+fn declare_directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+    let pi = pi_from_term(&term)?;
+    if let Some(p) = ctx.text.procedures.get(&pi) {
+        return Error::new(Error::AlreadyNotDirective(
+            term,
+            p.predicates.first().unwrap().head.location.clone(),
+        ));
+    }
+
+    if builtins::is_builtin(&pi) {
+        return Error::new(Error::AlterBuiltin(term));
+    }
+
+    if pi == "initialization/1"
+        || pi.starts_with("include/")
+        || pi.starts_with("ensure_loaded/")
+        || pi.starts_with("dynamic/")
+        || pi.starts_with("multifile/")
+        || pi.starts_with("discontiguous/")
+        || pi.starts_with("directive/")
+    {
+        return Error::new(Error::AlterBuiltin(term));
+    }
+
+    let p = ctx.directives.entry(pi).or_insert_with(|| Procedure {
+        source_text: ctx.current_text.clone(),
+        ..Default::default()
+    });
+    p.flags.dynamic = true;
+    Ok(())
 }
 
 pub(super) fn consult(
