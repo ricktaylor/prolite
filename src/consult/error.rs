@@ -3,7 +3,7 @@ use operators::Operator;
 use read_term::term::Term;
 
 #[derive(Debug)]
-pub(super) enum Error {
+pub(crate) enum Error {
     ReadTerm(read_term::error::Error),
     StreamResolver(Term, std::io::Error),
     InvalidHead(Term),

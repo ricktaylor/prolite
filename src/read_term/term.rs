@@ -35,4 +35,27 @@ impl Term {
             location,
         }
     }
+
+    pub(crate) fn into_goal(self) -> Term {
+        match self.kind {
+            TermKind::Var(_) => {
+                Term::new_compound("call".to_string(), self.location.clone(), vec![self])
+            }
+            TermKind::Compound(mut c) => {
+                if c.args.len() == 2 {
+                    match c.functor.as_str() {
+                        "," | ";" | "->" => {
+                            c.args = c.args.into_iter().map(|t| t.into_goal()).collect()
+                        }
+                        _ => {}
+                    }
+                }
+                Term {
+                    kind: TermKind::Compound(c),
+                    location: self.location,
+                }
+            }
+            _ => self,
+        }
+    }
 }

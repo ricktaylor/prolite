@@ -131,31 +131,9 @@ impl<'a> ConsultContext<'a> {
     }
 }
 
-fn convert_to_goal(term: Term) -> Result<Term, Box<Error>> {
+fn convert_to_goal(mut term: Term) -> Result<Term, Box<Error>> {
+    term = term.into_goal();
     match term.kind {
-        TermKind::Var(_) => Ok(Term::new_compound(
-            "call".to_string(),
-            term.location.clone(),
-            vec![term],
-        )),
-        TermKind::Compound(mut c) => {
-            if c.args.len() == 2 {
-                match c.functor.as_str() {
-                    "," | ";" | "->" => {
-                        c.args = c
-                            .args
-                            .into_iter()
-                            .map(convert_to_goal)
-                            .collect::<Result<Vec<Term>, _>>()?;
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Term {
-                kind: TermKind::Compound(c),
-                location: term.location,
-            })
-        }
         TermKind::Float(_) | TermKind::Integer(_) => Error::new(Error::NotCallable(term)),
         _ => Ok(term),
     }

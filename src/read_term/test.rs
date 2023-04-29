@@ -1,22 +1,20 @@
 use super::*;
+use term::*;
 
 #[test]
 fn test_read_term() {
-    test_term("test_false((1 \\= 1)).");
-    test_term("test_false((\\+ (true))).");
-    test_term("defined((\\+)/1).");
-    test_term("/(7,35).");
-    test_term("X21 is /(7,35).");
-    test_term("0.2000.");
-    test_term("test_val(X21 is /(7,35),X21,0.2000).");
+    read_term("test_false((1 \\= 1)).");
+    read_term("test_false((\\+ (true))).");
+    read_term("defined((\\+)/1).");
+    read_term("/(7,35).");
+    read_term("X21 is /(7,35).");
+    read_term("0.2000.");
+    read_term("test_val(X21 is /(7,35),X21,0.2000).");
 }
 
-fn test_term(s: &str) {
+pub(crate) fn read_term(s: &str) -> Term {
     let ctx: Context = Default::default();
     let mut stream = utf8reader::Utf8Reader::new(s.as_bytes(), s);
 
-    let r = parser::next(&ctx, &mut stream, false);
-    if let Err(e) = r {
-        println!("{:?}", e);
-    }
+    parser::next(&ctx, &mut stream, false).unwrap().unwrap()
 }
