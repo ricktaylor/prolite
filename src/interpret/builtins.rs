@@ -28,13 +28,13 @@ where
 
 fn deref_var<'a>(mut term: &'a Term, substs: &'a [Var]) -> &'a Term {
     while let TermKind::Var(s) = &term.kind {
-        let t = substs
+        match substs
             .binary_search_by(|v| v.name.cmp(s))
-            .map_or_else(|_| panic!(), |idx| substs[idx].value);
-        if t.is_none() {
-            break;
+            .map_or_else(|_| panic!(), |idx| substs[idx].value)
+        {
+            None => break,
+            Some(t) => term = t,
         }
-        term = t.unwrap();
     }
     term
 }
@@ -48,17 +48,33 @@ fn solve_fail(_: &mut Context, _: &[Term], _: &[Var], _: &mut dyn Solver) -> Res
 }
 
 fn solve_call(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
+    // call/1 is "not transparent" to cut, so use a continuation to record the response from next
+    let mut next_cut = false;
+    let close_cut = &mut Continuation::new(|c, s| {
+        next.solve(c, s).map_cut(|| {
+            next_cut = true;
+            Response::Cut
+        })
+    });
+
     if let TermKind::Var(_) = &args[0].kind {
+        // Convert variable to body
         solve(
             ctx,
             &deref_var(&args[0], substs).clone().into_goal(),
             substs,
-            next,
+            close_cut,
         )
     } else {
-        solve(ctx, &args[0], substs, next)
+        solve(ctx, &args[0], substs, close_cut)
     }
-    .map_cut(|| Response::Fail)
+    .map_cut(|| {
+        if next_cut {
+            Response::Cut
+        } else {
+            Response::Fail
+        }
+    })
 }
 
 fn solve_cut(ctx: &mut Context, _: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
@@ -117,6 +133,55 @@ fn solve_if(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Sol
         Some(else_term) if !if_true => solve(ctx, else_term, substs, next),
         _ => Response::Fail,
     })
+}
+
+fn solve_once(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
+    // call/1 is "not transparent" to cut, so use a continuation to record the response from next
+    let mut next_cut = false;
+    let close_cut = &mut Continuation::new(|c, s| {
+        next.solve(c, s).map_cut(|| {
+            next_cut = true;
+            Response::Cut
+        })
+    });
+
+    // once/1 is called only once, so use a continuation to cut
+    let once_cut =
+        &mut Continuation::new(|c, s| close_cut.solve(c, s).map_failed(|| Response::Cut));
+
+    if let TermKind::Var(_) = &args[0].kind {
+        // Convert variable to body
+        solve(
+            ctx,
+            &deref_var(&args[0], substs).clone().into_goal(),
+            substs,
+            once_cut,
+        )
+    } else {
+        solve(ctx, &args[0], substs, once_cut)
+    }
+    .map_cut(|| {
+        if next_cut {
+            Response::Cut
+        } else {
+            Response::Fail
+        }
+    })
+}
+
+fn solve_repeat(
+    ctx: &mut Context,
+    args: &[Term],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
+    loop {
+        let r = solve(ctx, &args[0], substs, next);
+        match r {
+            Response::Fail => {}
+            _ => break r,
+        }
+    }
 }
 
 fn not_impl(_: &mut Context, _: &[Term], _: &[Var], _: &mut dyn Solver) -> Response {
@@ -224,8 +289,8 @@ static BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "char_conversion/2" => not_impl,
     "current_char_conversion/2" => not_impl,
     "\\+/1" => not_impl,
-    "once/1" => not_impl,
-    "repeat/0" => not_impl,
+    "once/1" => solve_once,
+    "repeat/0" => solve_repeat,
     "atom_length/2" => not_impl,
     "atom_concat/3" => not_impl,
     "sub_atom/5" => not_impl,
