@@ -20,7 +20,7 @@ pub(super) struct Context {
 impl Default for Context {
     fn default() -> Self {
         Self {
-            flags: Default::default(),
+            flags: flags::Flags::default(),
             operators: operators::Operator::default_table(),
             char_conversion: HashMap::new(),
         }

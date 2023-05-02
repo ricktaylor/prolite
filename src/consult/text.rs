@@ -69,12 +69,12 @@ impl<'a> ConsultContext<'a> {
             .open(source)
             .map_err(|e| {
                 Box::new(Error::StreamResolver(
-                    Term::new_atom(source.to_string(), Default::default()),
+                    Term::new_atom(source.to_string(), stream::Span::default()),
                     e,
                 ))
             })
             .map(|(full_name, stream)| Self {
-                context: Default::default(),
+                context: Context::default(),
                 stream: MultiReader::new(stream),
                 sink: error_sink.unwrap_or(|_| false),
                 directives: HashMap::new(),
@@ -195,7 +195,7 @@ fn assert(ctx: &mut ConsultContext, head: Term, body: Option<Term>) -> Result<()
             Procedure {
                 source_text: ctx.current_text.clone(),
                 predicates: vec![clause],
-                ..Default::default()
+                ..Procedure::default()
             },
         );
     }
@@ -690,7 +690,7 @@ fn declare_directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Err
 
     let p = ctx.directives.entry(pi).or_insert_with(|| Procedure {
         source_text: ctx.current_text.clone(),
-        ..Default::default()
+        ..Procedure::default()
     });
     p.flags.dynamic = true;
     Ok(())

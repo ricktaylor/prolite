@@ -2,7 +2,7 @@ use super::*;
 use term::*;
 
 pub(crate) fn read_term(s: &str) -> Term {
-    let ctx: Context = Default::default();
+    let ctx = Context::default();
     let mut stream = utf8reader::Utf8Reader::new(s.as_bytes(), s);
 
     parser::next(&ctx, &mut stream, false).unwrap().unwrap()
