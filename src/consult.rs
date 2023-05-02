@@ -15,4 +15,4 @@ pub trait StreamResolver {
 type ErrorSinkFn = fn(e: &error::Error) -> bool;
 
 #[cfg(test)]
-mod test;
+pub(super) mod test;

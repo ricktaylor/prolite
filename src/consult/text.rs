@@ -12,26 +12,26 @@ use read_term::term::{Compound, Term, TermKind};
 use read_term::Context;
 
 #[derive(Default, Debug, Clone)]
-pub(super) struct Flags {
+pub(crate) struct Flags {
     pub dynamic: bool,
     multifile: bool,
     discontiguous: bool,
 }
 
 #[derive(Debug)]
-pub(super) struct Clause {
+pub(crate) struct Clause {
     head: Term,
     body: Term,
 }
 
 #[derive(Default, Debug)]
-pub(super) struct Procedure {
+pub(crate) struct Procedure {
     pub flags: Flags,
     pub predicates: Vec<Clause>,
     source_text: String,
 }
 
-pub(super) struct Text {
+pub(crate) struct Text {
     pub procedures: HashMap<String, Procedure>,
     pub initialization: Vec<Term>,
 }
@@ -273,7 +273,7 @@ fn directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
                     kind: TermKind::Compound(c),
                     location: term.location,
                 };
-                if let Some(p) = ctx.directives.get(&pi) {
+                if ctx.directives.get(&pi).is_some() {
                     directive_eval(ctx, t)
                 } else {
                     Error::new(Error::UnknownDirective(t))

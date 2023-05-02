@@ -2,6 +2,7 @@ mod builtins;
 mod solve;
 
 use super::read_term::*;
+use super::consult;
 
 #[derive(Debug)]
 pub(crate) enum Response {

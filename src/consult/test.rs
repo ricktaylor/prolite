@@ -60,19 +60,19 @@ fn error(e: &error::Error) -> bool {
     true
 }
 
-fn test_file(source: &str) {
+pub(crate) fn consult(source: &str) -> Option<Text> {
     let p = Path::new(source);
     let mut res = FSResolver::new(p.parent().unwrap().to_str().unwrap()).unwrap();
-    consult(
+    text::consult(
         &mut res,
         p.file_name().unwrap().to_str().unwrap(),
         Some(error),
     )
-    .unwrap();
+    .unwrap()
 }
 
 #[test]
-fn test_consult() {
-    test_file("./test/vanilla/vanilla.pl");
-    test_file("./test/inriasuite/inriasuite.pl");
+fn test() {
+    consult("./test/vanilla/vanilla.pl");
+    consult("./test/inriasuite/inriasuite.pl");
 }

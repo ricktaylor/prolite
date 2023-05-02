@@ -9,6 +9,15 @@ fn user_defined(
     substs: &[Var],
     next: &dyn Solver,
 ) -> Response {
+
+    match &goal.kind {
+        TermKind::Integer(_) => todo!(),
+        TermKind::Float(_) => todo!(),
+        TermKind::Var(_) => todo!(),
+        TermKind::Atom(s) => println!("User defined function: {}/0 at {}:{}:{}",s,goal.location.start.source,goal.location.start.line,goal.location.start.column),
+        TermKind::Compound(c) => println!("User defined function: {}/{} at {}:{}:{}",c.functor,c.args.len(),goal.location.start.source,goal.location.start.line,goal.location.start.column),
+    }
+
     todo!()
 }
 
@@ -50,7 +59,7 @@ where
 
 pub(crate) fn eval<F: FnMut(&[Var]) -> bool>(goal: &term::Term, callback: F) -> Response {
     // Todo: Actually pull out vars!!
-    let mut substs = Vec::new();
+    let substs = Vec::new();
 
     solve::solve(
         &mut Context::default(),

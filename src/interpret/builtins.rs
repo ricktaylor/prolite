@@ -94,7 +94,7 @@ fn solve_or(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Sol
     solve(ctx, &args[0], substs, next).map_failed(|| solve(ctx, &args[1], substs, next))
 }
 
-fn solve_throw(ctx: &mut Context, args: &[Term], substs: &[Var], _: &mut dyn Solver) -> Response {
+fn solve_throw(_: &mut Context, args: &[Term], substs: &[Var], _: &mut dyn Solver) -> Response {
     Response::Throw(deref_var(&args[0], substs).clone())
 }
 
@@ -133,6 +133,21 @@ fn solve_if(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Sol
         Some(else_term) if !if_true => solve(ctx, else_term, substs, next),
         _ => Response::Fail,
     })
+}
+
+fn solve_not_provable(
+    ctx: &mut Context,
+    args: &[Term],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
+    solve_call(
+        ctx,
+        args,
+        substs,
+        &mut Continuation::new(|_, _| Response::Fail),
+    )
+    .map_failed(|| next.solve(ctx, substs))
 }
 
 fn solve_once(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
@@ -288,7 +303,7 @@ static BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "current_op/3" => not_impl,
     "char_conversion/2" => not_impl,
     "current_char_conversion/2" => not_impl,
-    "\\+/1" => not_impl,
+    "\\+/1" => solve_not_provable,
     "once/1" => solve_once,
     "repeat/0" => solve_repeat,
     "atom_length/2" => not_impl,

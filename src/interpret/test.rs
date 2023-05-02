@@ -11,7 +11,18 @@ fn test_eval(s: &str) {
     println!("{:?}", r);
 }
 
+fn test_consult(s: &str) {
+
+    let t = consult::test::consult(s).unwrap();
+    for i in t.initialization {
+        println!("{:?}", solve::eval(&i, print_result));
+    }
+
+}
+
 #[test]
-fn test_interpret() {
-    test_eval("hello.");
+fn test() {
+    //test_eval("hello.");
+
+    test_consult("./test/vanilla/vanilla.pl");
 }
