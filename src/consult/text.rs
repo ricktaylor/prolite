@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use super::*;
 use error::*;
@@ -8,8 +9,7 @@ use flags::{QuoteFlag, UnknownFlag};
 use operators::Operator;
 
 use read_term::parser;
-use read_term::term::{Compound, Term, TermKind};
-use read_term::Context;
+use read_term::term::{Compound, Term, TermKind, VarInfo};
 
 #[derive(Default, Debug, Clone)]
 pub(crate) struct Flags {
@@ -18,22 +18,24 @@ pub(crate) struct Flags {
     discontiguous: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Clause {
-    head: Term,
-    body: Term,
+    pub var_info: Vec<VarInfo>,
+    pub head: Term,
+    pub body: Term,
 }
 
 #[derive(Default, Debug)]
 pub(crate) struct Procedure {
     pub flags: Flags,
-    pub predicates: Vec<Clause>,
+    pub predicates: Vec<Rc<Clause>>,
     source_text: String,
 }
 
+#[derive(Default)]
 pub(crate) struct Text {
     pub procedures: HashMap<String, Procedure>,
-    pub initialization: Vec<Term>,
+    pub initialization: Vec<(Term, Vec<VarInfo>)>,
 }
 
 impl Text {
@@ -45,8 +47,8 @@ impl Text {
     }
 }
 
-struct ConsultContext<'a> {
-    context: Context,
+struct Context<'a> {
+    context: read_term::Context,
     stream: MultiReader,
     sink: ErrorSinkFn,
     directives: HashMap<String, Procedure>,
@@ -58,7 +60,7 @@ struct ConsultContext<'a> {
     failed: bool,
 }
 
-impl<'a> ConsultContext<'a> {
+impl<'a> Context<'a> {
     fn new(
         resolver: &'a mut dyn StreamResolver,
         source: &str,
@@ -74,7 +76,10 @@ impl<'a> ConsultContext<'a> {
                 ))
             })
             .map(|(full_name, stream)| Self {
-                context: Context::default(),
+                context: read_term::Context {
+                    greedy: true,
+                    ..read_term::Context::default()
+                },
                 stream: MultiReader::new(stream),
                 sink: error_sink.unwrap_or(|_| false),
                 directives: HashMap::new(),
@@ -89,20 +94,21 @@ impl<'a> ConsultContext<'a> {
 
     fn load_text(&mut self) -> Result<(), Box<Error>> {
         loop {
-            match parser::next(&self.context, &mut self.stream, true)
+            let mut var_info = Vec::new();
+            match parser::next(&self.context, &mut var_info, &mut self.stream)
                 .map_err(|e| Error::ReadTerm(*e))
             {
                 Ok(None) => break Ok(()),
                 Ok(Some(t)) => {
                     let r = match t.kind {
                         TermKind::Compound(mut c) if c.functor == ":-" && c.args.len() == 1 => {
-                            directive(self, c.args.pop().unwrap())
+                            directive(self, var_info, c.args.pop().unwrap())
                         }
                         TermKind::Compound(c) if c.functor == ":-" && c.args.len() == 2 => {
                             let mut i = c.args.into_iter();
-                            assert(self, i.next().unwrap(), Some(i.next().unwrap()))
+                            assert(self, var_info, i.next().unwrap(), Some(i.next().unwrap()))
                         }
-                        _ => assert(self, t, None),
+                        _ => assert(self, var_info, t, None),
                     };
 
                     if let Err(e) = r {
@@ -139,7 +145,27 @@ fn convert_to_goal(mut term: Term) -> Result<Term, Box<Error>> {
     }
 }
 
-fn assert(ctx: &mut ConsultContext, head: Term, body: Option<Term>) -> Result<(), Box<Error>> {
+fn new_clause(
+    var_info: Vec<VarInfo>,
+    head: Term,
+    body: Option<Term>,
+) -> Result<Rc<Clause>, Box<Error>> {
+    Ok(Rc::new(Clause {
+        var_info,
+        body: match body {
+            None => Term::new_atom("true".to_string(), head.location.clone()),
+            Some(b) => convert_to_goal(b)?,
+        },
+        head,
+    }))
+}
+
+fn assert(
+    ctx: &mut Context,
+    var_info: Vec<VarInfo>,
+    head: Term,
+    body: Option<Term>,
+) -> Result<(), Box<Error>> {
     let pi = match &head.kind {
         TermKind::Atom(s) => format!("{}/0", s),
         TermKind::Compound(c) => format!("{}/{}", c.functor, c.args.len()),
@@ -148,14 +174,6 @@ fn assert(ctx: &mut ConsultContext, head: Term, body: Option<Term>) -> Result<()
     if builtins::is_builtin(&pi) {
         return Error::new(Error::AlterBuiltin(head));
     }
-
-    let clause = Clause {
-        body: match body {
-            None => Term::new_atom("true".to_string(), head.location.clone()),
-            Some(b) => convert_to_goal(b)?,
-        },
-        head,
-    };
 
     let p = if !ctx.context.flags.strict_iso {
         ctx.directives
@@ -169,7 +187,7 @@ fn assert(ctx: &mut ConsultContext, head: Term, body: Option<Term>) -> Result<()
         if let Some(first) = p.predicates.first() {
             if !p.flags.multifile && ctx.current_text != p.source_text {
                 return Error::new(Error::NotMultifile(
-                    clause.head,
+                    head,
                     first.head.location.clone(),
                     p.source_text.clone(),
                 ));
@@ -182,19 +200,16 @@ fn assert(ctx: &mut ConsultContext, head: Term, body: Option<Term>) -> Result<()
                     .filter(|s| **s != pi)
                     .is_some()
             {
-                return Error::new(Error::NotDiscontiguous(
-                    clause.head,
-                    first.head.location.clone(),
-                ));
+                return Error::new(Error::NotDiscontiguous(head, first.head.location.clone()));
             }
         }
-        p.predicates.push(clause);
+        p.predicates.push(new_clause(var_info, head, body)?);
     } else {
         ctx.text.procedures.insert(
             pi.clone(),
             Procedure {
                 source_text: ctx.current_text.clone(),
-                predicates: vec![clause],
+                predicates: vec![new_clause(var_info, head, body)?],
                 ..Procedure::default()
             },
         );
@@ -204,9 +219,9 @@ fn assert(ctx: &mut ConsultContext, head: Term, body: Option<Term>) -> Result<()
 }
 
 fn directive_expand(
-    ctx: &mut ConsultContext,
+    ctx: &mut Context,
     mut c: Compound,
-    d: fn(&mut ConsultContext, Term) -> Result<(), Box<Error>>,
+    d: fn(&mut Context, Term) -> Result<(), Box<Error>>,
 ) -> Result<(), Box<Error>> {
     if c.args.len() == 1 {
         // PI or PI_list
@@ -235,7 +250,7 @@ fn directive_expand(
     }
 }
 
-fn directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+fn directive(ctx: &mut Context, var_info: Vec<VarInfo>, term: Term) -> Result<(), Box<Error>> {
     // Clear current procedure
     ctx.current_procedure = None;
 
@@ -245,7 +260,7 @@ fn directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
             op(ctx, i.next().unwrap(), i.next().unwrap(), i.next().unwrap())
         }
         TermKind::Compound(mut c) if c.functor == "initialization" && c.args.len() == 1 => {
-            initialization(ctx, c.args.pop().unwrap())
+            initialization(ctx, var_info, c.args.pop().unwrap())
         }
         TermKind::Compound(c) if c.functor == "set_prolog_flag" && c.args.len() == 2 => {
             let mut i = c.args.into_iter();
@@ -284,13 +299,13 @@ fn directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     }
 }
 
-fn directive_eval(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+fn directive_eval(ctx: &mut Context, term: Term) -> Result<(), Box<Error>> {
     let goal = convert_to_goal(term)?;
 
     todo!()
 }
 
-fn include(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+fn include(ctx: &mut Context, term: Term) -> Result<(), Box<Error>> {
     match term.kind {
         TermKind::Atom(ref s) => ctx
             .resolver
@@ -301,7 +316,7 @@ fn include(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     }
 }
 
-fn ensure_loaded(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+fn ensure_loaded(ctx: &mut Context, term: Term) -> Result<(), Box<Error>> {
     match term.kind {
         TermKind::Atom(ref s) => ctx
             .resolver
@@ -330,7 +345,7 @@ fn ensure_loaded(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>>
 }
 
 fn update_op(
-    ctx: &mut ConsultContext,
+    ctx: &mut Context,
     specifier: &Operator,
     operator: Term,
     remove: bool,
@@ -453,7 +468,7 @@ fn update_op(
 }
 
 fn op(
-    ctx: &mut ConsultContext,
+    ctx: &mut Context,
     priority: Term,
     specifier: Term,
     mut operator: Term,
@@ -528,7 +543,7 @@ fn quote_flag(flag: Term, value: Term) -> Result<QuoteFlag, Box<Error>> {
     }
 }
 
-fn prolog_flag(ctx: &mut ConsultContext, flag: Term, value: Term) -> Result<(), Box<Error>> {
+fn prolog_flag(ctx: &mut Context, flag: Term, value: Term) -> Result<(), Box<Error>> {
     match flag.kind {
         TermKind::Atom(ref s) => match s.as_str() {
             "char_conversion" => ctx.context.flags.char_conversion = bool_flag(flag, value)?,
@@ -556,11 +571,7 @@ fn prolog_flag(ctx: &mut ConsultContext, flag: Term, value: Term) -> Result<(), 
     Ok(())
 }
 
-fn char_conversion(
-    ctx: &mut ConsultContext,
-    in_char: Term,
-    out_char: Term,
-) -> Result<(), Box<Error>> {
+fn char_conversion(ctx: &mut Context, in_char: Term, out_char: Term) -> Result<(), Box<Error>> {
     match &in_char.kind {
         TermKind::Atom(s) if s.len() == 1 => {
             let in_char = s.chars().next().unwrap();
@@ -581,8 +592,10 @@ fn char_conversion(
     }
 }
 
-fn initialization(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
-    ctx.text.initialization.push(convert_to_goal(term)?);
+fn initialization(ctx: &mut Context, var_info: Vec<VarInfo>, term: Term) -> Result<(), Box<Error>> {
+    ctx.text
+        .initialization
+        .push((convert_to_goal(term)?, var_info));
     Ok(())
 }
 
@@ -602,7 +615,7 @@ fn pi_from_term(term: &Term) -> Result<String, Box<Error>> {
 }
 
 fn lookup_procedure<'a>(
-    ctx: &'a mut ConsultContext,
+    ctx: &'a mut Context,
     term: &Term,
 ) -> Result<(&'a mut Procedure, bool), Box<Error>> {
     let pi = pi_from_term(term)?;
@@ -625,7 +638,7 @@ fn lookup_procedure<'a>(
     ))
 }
 
-fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+fn dynamic(ctx: &mut Context, term: Term) -> Result<(), Box<Error>> {
     let (p, _) = lookup_procedure(ctx, &term)?;
     if !p.flags.dynamic && !p.predicates.is_empty() {
         Error::new(Error::AlreadyNotDynamic(
@@ -638,7 +651,7 @@ fn dynamic(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     }
 }
 
-fn multifile(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+fn multifile(ctx: &mut Context, term: Term) -> Result<(), Box<Error>> {
     let (p, directive) = lookup_procedure(ctx, &term)?;
     if (!p.flags.multifile && !p.predicates.is_empty()) || directive {
         Error::new(Error::AlreadyNotMultifile(
@@ -651,7 +664,7 @@ fn multifile(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
     }
 }
 
-fn discontiguous(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+fn discontiguous(ctx: &mut Context, term: Term) -> Result<(), Box<Error>> {
     let (p, directive) = lookup_procedure(ctx, &term)?;
     if (!p.flags.discontiguous && !p.predicates.is_empty()) || directive {
         Error::new(Error::AlreadyNotDiscontiguous(
@@ -664,7 +677,7 @@ fn discontiguous(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>>
     }
 }
 
-fn declare_directive(ctx: &mut ConsultContext, term: Term) -> Result<(), Box<Error>> {
+fn declare_directive(ctx: &mut Context, term: Term) -> Result<(), Box<Error>> {
     let pi = pi_from_term(&term)?;
     if let Some(p) = ctx.text.procedures.get(&pi) {
         return Error::new(Error::AlreadyNotDirective(
@@ -702,7 +715,7 @@ pub(super) fn consult(
     sink: Option<ErrorSinkFn>,
 ) -> Result<Option<Text>, Box<Error>> {
     let mut text = Text::new();
-    let mut ctx = ConsultContext::new(resolver, source, &mut text, sink)?;
+    let mut ctx = Context::new(resolver, source, &mut text, sink)?;
 
     ctx.load_text()?;
 

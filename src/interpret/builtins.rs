@@ -4,41 +4,6 @@ use super::*;
 use solve::solve;
 use term::*;
 
-struct Continuation<F: FnMut(&mut Context, &[Var]) -> Response> {
-    solve: F,
-}
-
-impl<F> Solver for Continuation<F>
-where
-    F: FnMut(&mut Context, &[Var]) -> Response,
-{
-    fn solve(&mut self, ctx: &mut Context, substs: &[Var]) -> Response {
-        (self.solve)(ctx, substs)
-    }
-}
-
-impl<F> Continuation<F>
-where
-    F: FnMut(&mut Context, &[Var]) -> Response,
-{
-    fn new(f: F) -> Self {
-        Self { solve: f }
-    }
-}
-
-fn deref_var<'a>(mut term: &'a Term, substs: &'a [Var]) -> &'a Term {
-    while let TermKind::Var(s) = &term.kind {
-        match substs
-            .binary_search_by(|v| v.name.cmp(s))
-            .map_or_else(|_| panic!(), |idx| substs[idx].value)
-        {
-            None => break,
-            Some(t) => term = t,
-        }
-    }
-    term
-}
-
 fn solve_true(ctx: &mut Context, _: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
     next.solve(ctx, substs)
 }

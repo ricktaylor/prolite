@@ -1,6 +1,13 @@
 use super::stream::Span;
 
 #[derive(Debug, Clone)]
+pub(crate) struct VarInfo {
+    pub name: String,
+    pub refcount: usize,
+    pub anon: bool,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct Compound {
     pub functor: String,
     pub args: Vec<Term>,
@@ -10,7 +17,7 @@ pub(crate) struct Compound {
 pub(crate) enum TermKind {
     Integer(i64),
     Float(f64),
-    Var(String),
+    Var(usize),
     Atom(String),
     Compound(Compound),
 }

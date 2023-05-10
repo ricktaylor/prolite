@@ -5,19 +5,21 @@ fn print_result(_: &[Var]) -> bool {
 }
 
 fn test_eval(s: &str) {
-    let t = crate::read_term::test::read_term(s);
-    let r = solve::eval(&t, print_result);
+    let (t, v) = crate::read_term::test::read_term(s);
+    let r = solve::eval(&mut Context::default(), &t, &v, print_result);
 
     println!("{:?}", r);
 }
 
 fn test_consult(s: &str) {
+    let text = consult::test::consult(s).unwrap();
 
-    let t = consult::test::consult(s).unwrap();
-    for i in t.initialization {
-        println!("{:?}", solve::eval(&i, print_result));
+    let mut ctx = Context {
+        procedures: text.procedures,
+    };
+    for (t, v) in text.initialization {
+        solve::eval(&mut ctx, &t, &v, print_result);
     }
-
 }
 
 #[test]

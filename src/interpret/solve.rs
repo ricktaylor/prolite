@@ -1,40 +1,22 @@
 use super::*;
-
 use builtins::*;
 use term::*;
-
-fn user_defined(
-    ctx: &mut Context,
-    goal: &term::Term,
-    substs: &[Var],
-    next: &dyn Solver,
-) -> Response {
-
-    match &goal.kind {
-        TermKind::Integer(_) => todo!(),
-        TermKind::Float(_) => todo!(),
-        TermKind::Var(_) => todo!(),
-        TermKind::Atom(s) => println!("User defined function: {}/0 at {}:{}:{}",s,goal.location.start.source,goal.location.start.line,goal.location.start.column),
-        TermKind::Compound(c) => println!("User defined function: {}/{} at {}:{}:{}",c.functor,c.args.len(),goal.location.start.source,goal.location.start.line,goal.location.start.column),
-    }
-
-    todo!()
-}
+use user_defined::*;
 
 pub(super) fn solve(
     ctx: &mut Context,
-    goal: &term::Term,
+    goal: &Term,
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
     match &goal.kind {
         TermKind::Atom(s) => match is_builtin(&format!("{}/0", s)) {
             Some(f) => (f)(ctx, &[], substs, next),
-            None => user_defined(ctx, goal, substs, next),
+            None => user_defined::solve(ctx, goal, substs, next),
         },
         TermKind::Compound(c) => match is_builtin(&format!("{}/{}", c.functor, c.args.len())) {
             Some(f) => (f)(ctx, &c.args, substs, next),
-            None => user_defined(ctx, goal, substs, next),
+            None => user_defined::solve(ctx, goal, substs, next),
         },
         _ => todo!(),
     }
@@ -57,14 +39,16 @@ where
     }
 }
 
-pub(crate) fn eval<F: FnMut(&[Var]) -> bool>(goal: &term::Term, callback: F) -> Response {
-    // Todo: Actually pull out vars!!
-    let substs = Vec::new();
-
-    solve::solve(
-        &mut Context::default(),
+pub(crate) fn eval<F: FnMut(&[Var]) -> bool>(
+    ctx: &mut Context,
+    goal: &Term,
+    var_info: &[VarInfo],
+    callback: F,
+) -> Response {
+    solve(
+        ctx,
         goal,
-        &substs,
+        &vec![Var::default(); var_info.len()],
         &mut CallbackSolver { callback },
     )
 }

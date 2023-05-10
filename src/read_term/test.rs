@@ -1,11 +1,16 @@
 use super::*;
 use term::*;
 
-pub(crate) fn read_term(s: &str) -> Term {
-    let ctx = Context::default();
-    let mut stream = utf8reader::Utf8Reader::new(s.as_bytes(), s);
+pub(crate) fn read_term(s: &str) -> (Term, Vec<VarInfo>) {
+    let mut stream = utf8reader::Utf8Reader::new(s.as_bytes(), format!("{{{}}}", s).as_str());
+    let mut var_info = Vec::new();
 
-    parser::next(&ctx, &mut stream, false).unwrap().unwrap()
+    (
+        parser::next(&Context::default(), &mut var_info, &mut stream)
+            .unwrap()
+            .unwrap(),
+        var_info,
+    )
 }
 
 #[test]

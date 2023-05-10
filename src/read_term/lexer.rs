@@ -192,10 +192,10 @@ fn alpha_numeric(
 }
 
 fn char_code(
+    ctx: &Context,
     stream: &mut dyn ReadStream,
     init_c: char,
     mut location: Span,
-    greedy: bool,
 ) -> Result<(char, Span), Box<Error>> {
     let mut o = String::new();
     if init_c != 'x' {
@@ -227,7 +227,7 @@ fn char_code(
             (Some(c), l) => {
                 o.push(c);
                 location.append(l);
-                if greedy {
+                if ctx.greedy {
                     loop {
                         match next_char_raw(stream) {
                             Err(_) | Ok((None, _)) => break,
@@ -254,9 +254,9 @@ fn char_code(
 }
 
 fn quoted_inner<const Q: char>(
+    ctx: &Context,
     stream: &mut dyn ReadStream,
     mut location: Span,
-    greedy: bool,
 ) -> Result<(String, Span), Box<Error>> {
     let mut t = String::new();
     loop {
@@ -275,7 +275,7 @@ fn quoted_inner<const Q: char>(
                 (Some('n'), _) => t.push('\n'),
                 (Some('v'), _) => t.push('\x0B'),
                 (Some(c @ '0'..='7'), _) | (Some(c @ 'x'), _) => {
-                    let (c, l) = char_code(stream, c, l, greedy)?;
+                    let (c, l) = char_code(ctx, stream, c, l)?;
                     t.push(c);
                     location.append(l);
                 }
@@ -302,12 +302,12 @@ fn quoted_inner<const Q: char>(
 }
 
 fn quoted<const Q: char>(
+    ctx: &Context,
     stream: &mut dyn ReadStream,
     location: Span,
-    greedy: bool,
 ) -> Result<(String, Span), Box<Error>> {
-    let r = quoted_inner::<Q>(stream, location, greedy);
-    if r.is_err() && greedy {
+    let r = quoted_inner::<Q>(ctx, stream, location);
+    if r.is_err() && ctx.greedy {
         loop {
             match next_char_raw(stream) {
                 Err(_) | Ok((None, _)) | Ok((Some('\\'), _)) => break,
@@ -410,7 +410,6 @@ pub(super) fn next(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     exp: bool,
-    greedy: bool,
 ) -> Result<Token, Box<Error>> {
     let mut c = next_char(ctx, stream)?;
     match c {
@@ -495,7 +494,7 @@ pub(super) fn next(
 
             // quoted token (* 6.4.2 *)
             (Char::Meta('\''), location) => {
-                let (s, location) = quoted::<'\''>(stream, location, greedy)?;
+                let (s, location) = quoted::<'\''>(ctx, stream, location)?;
                 return Ok(Token {
                     kind: TokenKind::Name(s),
                     location,
@@ -590,7 +589,7 @@ pub(super) fn next(
 
             // double quoted list (* 6.4 *)
             (Char::Meta('"'), location) => {
-                let (s, location) = quoted::<'"'>(stream, location, greedy)?;
+                let (s, location) = quoted::<'"'>(ctx, stream, location)?;
                 return Ok(Token {
                     kind: TokenKind::DoubleQuotedList(s),
                     location,
@@ -599,7 +598,7 @@ pub(super) fn next(
 
             // back quoted string (* 6.4.7 *)
             (Char::Meta('`'), location) => {
-                let (s, location) = quoted::<'`'>(stream, location, greedy)?;
+                let (s, location) = quoted::<'`'>(ctx, stream, location)?;
                 return Ok(Token {
                     kind: TokenKind::BackQuotedString(s),
                     location,
@@ -674,7 +673,7 @@ pub(super) fn next(
             | (Char::Meta(c), location)
             | (Char::Invalid(c), location) => {
                 let mut s = c.to_string();
-                if greedy {
+                if ctx.greedy {
                     while let Char::Invalid(c) = peek_char(ctx, stream)? {
                         s.push(c);
                         eat_char(stream)?;
