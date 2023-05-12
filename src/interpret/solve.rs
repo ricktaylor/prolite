@@ -1,7 +1,6 @@
 use super::*;
 use builtins::*;
 use term::*;
-use user_defined::*;
 
 pub(super) fn solve(
     ctx: &mut Context,

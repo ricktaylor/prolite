@@ -1,6 +1,8 @@
 mod builtins;
+mod copy_term;
 mod solve;
 mod user_defined;
+mod write;
 
 use std::collections::HashMap;
 

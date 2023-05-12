@@ -164,6 +164,63 @@ fn solve_repeat(
     }
 }
 
+fn unify_terms<'a>(
+    a: &'a Term,
+    b: &'a Term,
+    mut substs: Vec<Var<'a>>,
+) -> Result<Vec<Var<'a>>, Response> {
+    match &a.kind {
+        TermKind::Var(idx) => substs[*idx] = Some(b),
+        TermKind::Integer(i1) => match &b.kind {
+            TermKind::Var(idx) => substs[*idx] = Some(a),
+            TermKind::Integer(i2) if *i1 == *i2 => {}
+            TermKind::Float(f) if *i1 as f64 == *f => {}
+            _ => return Err(Response::Fail),
+        },
+        TermKind::Float(f1) => match &b.kind {
+            TermKind::Var(idx) => substs[*idx] = Some(a),
+            TermKind::Float(f2) if *f1 == *f2 => {}
+            TermKind::Integer(i) if *f1 == *i as f64 => {}
+            _ => return Err(Response::Fail),
+        },
+        TermKind::Atom(s1) => match &b.kind {
+            TermKind::Var(idx) => substs[*idx] = Some(a),
+            TermKind::Atom(s2) if *s1 == *s2 => {}
+            _ => return Err(Response::Fail),
+        },
+        TermKind::Compound(c1) => match &b.kind {
+            TermKind::Var(idx) => substs[*idx] = Some(a),
+            TermKind::Compound(c2)
+                if c1.functor == c2.functor && c1.args.len() == c2.args.len() =>
+            {
+                return c1
+                    .args
+                    .iter()
+                    .zip(&c2.args)
+                    .try_fold(substs, |substs, (a, b)| unify_terms(a, b, substs));
+            }
+            _ => return Err(Response::Fail),
+        },
+    };
+    Ok(substs)
+}
+
+fn solve_unify(
+    ctx: &mut Context,
+    args: &[Term],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
+    match unify_terms(
+        deref_var(&args[0], substs),
+        deref_var(&args[1], substs),
+        substs.to_vec(),
+    ) {
+        Err(r) => r,
+        Ok(substs) => next.solve(ctx, &substs),
+    }
+}
+
 fn not_impl(_: &mut Context, _: &[Term], _: &[Var], _: &mut dyn Solver) -> Response {
     todo!()
 }
@@ -181,7 +238,7 @@ static BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "->/2" => solve_if,
     "catch/3" => not_impl,
     "throw/1" => solve_throw,
-    "=/2" => not_impl,
+    "=/2" => solve_unify,
     "unify_with_occurs_check/2" => not_impl,
     "\\=/2" => not_impl,
     "var/1" => not_impl,
@@ -201,7 +258,7 @@ static BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "functor/3" => not_impl,
     "arg/3" => not_impl,
     "=../2" => not_impl,
-    "copy_term/2" => not_impl,
+    "copy_term/2" => copy_term::solve,
     "is/2" => not_impl,
     "=:=/2" => not_impl,
     "=\\=/2" => not_impl,

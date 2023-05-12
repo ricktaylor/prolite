@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use super::*;
-use solve::*;
 use term::*;
 
 fn unknown_predicate(ctx: &mut Context) -> Response {
