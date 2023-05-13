@@ -1,5 +1,6 @@
 mod builtins;
 mod copy_term;
+mod findall;
 mod solve;
 mod user_defined;
 mod write;

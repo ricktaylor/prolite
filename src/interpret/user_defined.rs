@@ -34,7 +34,7 @@ pub(super) fn solve(
                             ctx,
                             &clause.body,
                             &vec![None; clause.var_info.len()],
-                            &mut Continuation::new(|c, _| next.solve(c, substs)),
+                            next,
                         ) {
                             Response::Fail => {}
                             Response::Cut => return Response::Fail,
@@ -89,45 +89,6 @@ impl<'a> Substitutions<'a> {
             out: HashMap::new(),
         }
     }
-}
-
-fn solve_clause(
-    ctx: &mut Context,
-    args: &[Term],
-    clause: Rc<Clause>,
-    substs: &[Var],
-    next: &mut dyn Solver,
-) -> Response {
-    let head = match &clause.head.kind {
-        TermKind::Compound(c) => c,
-        _ => panic!("PI arity mismatch!"),
-    };
-
-    // Unify head args
-    let mut s = match args.iter().zip(&head.args).try_fold(
-        Substitutions::new(substs, clause.var_info.len()),
-        |s, (a, b)| unify_head(a, b, s),
-    ) {
-        Err(r) => return r,
-        Ok(r) => r,
-    };
-
-    solve::solve(
-        ctx,
-        &clause.body,
-        &s.b,
-        &mut Continuation::new(|ctx, b_substs| {
-            next.solve(
-                ctx,
-                &s.out
-                    .iter()
-                    .fold(std::mem::take(&mut s.a), |mut a_substs, (idx, &t)| {
-                        a_substs[*idx] = Some(deref_var(t, b_substs));
-                        a_substs
-                    }),
-            )
-        }),
-    )
 }
 
 fn unify_head<'a>(
@@ -218,4 +179,47 @@ fn unify_head<'a>(
             _ => Err(Response::Fail),
         },
     }
+}
+
+fn solve_clause(
+    ctx: &mut Context,
+    args: &[Term],
+    clause: Rc<Clause>,
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
+    let head = match &clause.head.kind {
+        TermKind::Compound(c) => c,
+        _ => panic!("PI arity mismatch!"),
+    };
+
+    // Unify head args
+    args.iter()
+        .zip(&head.args)
+        .try_fold(
+            Substitutions::new(substs, clause.var_info.len()),
+            |s, (a, b)| unify_head(a, b, s),
+        )
+        .map_or_else(
+            |r| r,
+            |mut s| {
+                solve::solve(
+                    ctx,
+                    &clause.body,
+                    &s.b,
+                    &mut Continuation::new(|ctx, b_substs| {
+                        next.solve(
+                            ctx,
+                            &s.out.iter().fold(
+                                std::mem::take(&mut s.a),
+                                |mut a_substs, (idx, &t)| {
+                                    a_substs[*idx] = Some(deref_var(t, b_substs));
+                                    a_substs
+                                },
+                            ),
+                        )
+                    }),
+                )
+            },
+        )
 }

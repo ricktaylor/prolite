@@ -113,8 +113,6 @@ pub(super) fn solve(
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
-    match unify_copy(&args[0], &args[1], Substitutions::new(substs)) {
-        Err(r) => r,
-        Ok(substs) => next.solve(ctx, &substs.b),
-    }
+    unify_copy(&args[0], &args[1], Substitutions::new(substs))
+        .map_or_else(|r| r, |substs| next.solve(ctx, &substs.b))
 }

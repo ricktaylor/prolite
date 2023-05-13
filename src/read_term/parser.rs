@@ -76,7 +76,7 @@ fn parse_list(
         }
     }
 
-    let mut list: Term;
+    let list: Term;
     match next.kind {
         TokenKind::Bar => {
             next = lexer::next(ctx, stream, false)?;
@@ -89,30 +89,28 @@ fn parse_list(
         return Error::new(ErrorKind::ExpectedChar(']'), next.location);
     }
 
-    while let Some(t) = terms.pop() {
-        list = Term::new_compound(".".to_string(), t.location.clone(), vec![t, list]);
-    }
-    Ok(list)
+    Ok(terms.into_iter().rev().fold(list, |list, t| {
+        Term::new_compound(".".to_string(), t.location.clone(), vec![t, list])
+    }))
 }
 
 fn parse_quoted(flags: &flags::QuoteFlag, s: String, location: Span) -> Result<Term, Box<Error>> {
     match flags {
         flags::QuoteFlag::Atom => Ok(Term::new_atom(s, location)),
-        flags::QuoteFlag::Chars => {
-            let mut list = Term::new_atom("[]".to_string(), location.clone());
-            for c in s.chars().rev() {
-                list = Term::new_compound(
+        flags::QuoteFlag::Chars => Ok(s.chars().rev().fold(
+            Term::new_atom("[]".to_string(), location.clone()),
+            |list, c| {
+                Term::new_compound(
                     ".".to_string(),
                     location.clone(),
                     vec![Term::new_atom(c.to_string(), location.clone()), list],
-                );
-            }
-            Ok(list)
-        }
-        flags::QuoteFlag::Codes => {
-            let mut list = Term::new_atom("[]".to_string(), location.clone());
-            for c in s.chars().rev() {
-                list = Term::new_compound(
+                )
+            },
+        )),
+        flags::QuoteFlag::Codes => Ok(s.chars().rev().fold(
+            Term::new_atom("[]".to_string(), location.clone()),
+            |list, c| {
+                Term::new_compound(
                     ".".to_string(),
                     location.clone(),
                     vec![
@@ -122,10 +120,9 @@ fn parse_quoted(flags: &flags::QuoteFlag, s: String, location: Span) -> Result<T
                         },
                         list,
                     ],
-                );
-            }
-            Ok(list)
-        }
+                )
+            },
+        )),
     }
 }
 

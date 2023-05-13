@@ -13,33 +13,7 @@ fn solve_fail(_: &mut Context, _: &[Term], _: &[Var], _: &mut dyn Solver) -> Res
 }
 
 fn solve_call(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
-    // call/1 is "not transparent" to cut, so use a continuation to record the response from next
-    let mut next_cut = false;
-    let close_cut = &mut Continuation::new(|c, s| {
-        next.solve(c, s).map_cut(|| {
-            next_cut = true;
-            Response::Cut
-        })
-    });
-
-    if let TermKind::Var(_) = &args[0].kind {
-        // Convert variable to body
-        solve(
-            ctx,
-            &deref_var(&args[0], substs).clone().into_goal(),
-            substs,
-            close_cut,
-        )
-    } else {
-        solve(ctx, &args[0], substs, close_cut)
-    }
-    .map_cut(|| {
-        if next_cut {
-            Response::Cut
-        } else {
-            Response::Fail
-        }
-    })
+    solve::call(ctx, &args[0], substs, next)
 }
 
 fn solve_cut(ctx: &mut Context, _: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
@@ -51,16 +25,12 @@ fn solve_and(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn So
         ctx,
         &args[0],
         substs,
-        &mut Continuation::new(|c, s| solve(c, &args[1], s, next)),
+        &mut Continuation::new(|ctx, substs| solve(ctx, &args[1], substs, next)),
     )
 }
 
 fn solve_or(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
     solve(ctx, &args[0], substs, next).map_failed(|| solve(ctx, &args[1], substs, next))
-}
-
-fn solve_throw(_: &mut Context, args: &[Term], substs: &[Var], _: &mut dyn Solver) -> Response {
-    Response::Throw(deref_var(&args[0], substs).clone())
 }
 
 fn solve_if(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
@@ -77,9 +47,9 @@ fn solve_if(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Sol
         ctx,
         if_term,
         substs,
-        &mut Continuation::new(|c, s| {
+        &mut Continuation::new(|ctx, substs| {
             if_true = true;
-            solve(c, then_term, s, next)
+            solve(ctx, then_term, substs, next)
                 .map_cut(|| {
                     then_cut = true;
                     Response::Cut
@@ -100,15 +70,48 @@ fn solve_if(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Sol
     })
 }
 
+fn solve_catch(
+    ctx: &mut Context,
+    args: &[Term],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
+    let mut next_throw = false;
+    match solve::call(
+        ctx,
+        &args[0],
+        substs,
+        &mut Continuation::new(|ctx, substs| match next.solve(ctx, substs) {
+            Response::Throw(t) => {
+                next_throw = true;
+                Response::Throw(t)
+            }
+            r => r,
+        }),
+    ) {
+        Response::Throw(ball) if !next_throw => {
+            match solve::unify(&ball, &args[1], substs.to_vec()) {
+                Err(_) => Response::Throw(ball),
+                Ok(substs) => solve::call(ctx, &args[2], &substs, next),
+            }
+        }
+        r => r,
+    }
+}
+
+fn solve_throw(_: &mut Context, args: &[Term], substs: &[Var], _: &mut dyn Solver) -> Response {
+    Response::Throw(deref_var(&args[0], substs).clone())
+}
+
 fn solve_not_provable(
     ctx: &mut Context,
     args: &[Term],
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
-    solve_call(
+    solve::call(
         ctx,
-        args,
+        &args[0],
         substs,
         &mut Continuation::new(|_, _| Response::Fail),
     )
@@ -118,16 +121,17 @@ fn solve_not_provable(
 fn solve_once(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
     // call/1 is "not transparent" to cut, so use a continuation to record the response from next
     let mut next_cut = false;
-    let close_cut = &mut Continuation::new(|c, s| {
-        next.solve(c, s).map_cut(|| {
+    let close_cut = &mut Continuation::new(|ctx, substs| {
+        next.solve(ctx, substs).map_cut(|| {
             next_cut = true;
             Response::Cut
         })
     });
 
     // once/1 is called only once, so use a continuation to cut
-    let once_cut =
-        &mut Continuation::new(|c, s| close_cut.solve(c, s).map_failed(|| Response::Cut));
+    let once_cut = &mut Continuation::new(|ctx, substs| {
+        close_cut.solve(ctx, substs).map_failed(|| Response::Cut)
+    });
 
     if let TermKind::Var(_) = &args[0].kind {
         // Convert variable to body
@@ -164,61 +168,18 @@ fn solve_repeat(
     }
 }
 
-fn unify_terms<'a>(
-    a: &'a Term,
-    b: &'a Term,
-    mut substs: Vec<Var<'a>>,
-) -> Result<Vec<Var<'a>>, Response> {
-    match &a.kind {
-        TermKind::Var(idx) => substs[*idx] = Some(b),
-        TermKind::Integer(i1) => match &b.kind {
-            TermKind::Var(idx) => substs[*idx] = Some(a),
-            TermKind::Integer(i2) if *i1 == *i2 => {}
-            TermKind::Float(f) if *i1 as f64 == *f => {}
-            _ => return Err(Response::Fail),
-        },
-        TermKind::Float(f1) => match &b.kind {
-            TermKind::Var(idx) => substs[*idx] = Some(a),
-            TermKind::Float(f2) if *f1 == *f2 => {}
-            TermKind::Integer(i) if *f1 == *i as f64 => {}
-            _ => return Err(Response::Fail),
-        },
-        TermKind::Atom(s1) => match &b.kind {
-            TermKind::Var(idx) => substs[*idx] = Some(a),
-            TermKind::Atom(s2) if *s1 == *s2 => {}
-            _ => return Err(Response::Fail),
-        },
-        TermKind::Compound(c1) => match &b.kind {
-            TermKind::Var(idx) => substs[*idx] = Some(a),
-            TermKind::Compound(c2)
-                if c1.functor == c2.functor && c1.args.len() == c2.args.len() =>
-            {
-                return c1
-                    .args
-                    .iter()
-                    .zip(&c2.args)
-                    .try_fold(substs, |substs, (a, b)| unify_terms(a, b, substs));
-            }
-            _ => return Err(Response::Fail),
-        },
-    };
-    Ok(substs)
-}
-
 fn solve_unify(
     ctx: &mut Context,
     args: &[Term],
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
-    match unify_terms(
+    solve::unify(
         deref_var(&args[0], substs),
         deref_var(&args[1], substs),
         substs.to_vec(),
-    ) {
-        Err(r) => r,
-        Ok(substs) => next.solve(ctx, &substs),
-    }
+    )
+    .map_or_else(|r| r, |substs| next.solve(ctx, &substs))
 }
 
 fn not_impl(_: &mut Context, _: &[Term], _: &[Var], _: &mut dyn Solver) -> Response {
@@ -236,7 +197,7 @@ static BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     ",/2" => solve_and,
     ";/2" => solve_or,
     "->/2" => solve_if,
-    "catch/3" => not_impl,
+    "catch/3" => solve_catch,
     "throw/1" => solve_throw,
     "=/2" => solve_unify,
     "unify_with_occurs_check/2" => not_impl,
@@ -272,7 +233,7 @@ static BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "assertz/1" => not_impl,
     "retract/1" => not_impl,
     "abolish/1" => not_impl,
-    "findall/3" => not_impl,
+    "findall/3" => findall::solve_findall,
     "bagof/3" => not_impl,
     "setof/3" => not_impl,
     "current_input/1" => not_impl,

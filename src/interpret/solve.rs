@@ -21,6 +21,77 @@ pub(super) fn solve(
     }
 }
 
+pub(super) fn call(ctx: &mut Context, t: &Term, substs: &[Var], next: &mut dyn Solver) -> Response {
+    // call/1 is "not transparent" to cut, so use a continuation to record the response from next
+    let mut next_cut = false;
+    let close_cut = &mut Continuation::new(|ctx, substs| {
+        next.solve(ctx, substs).map_cut(|| {
+            next_cut = true;
+            Response::Cut
+        })
+    });
+
+    if let TermKind::Var(_) = &t.kind {
+        // Convert variable to body
+        solve(
+            ctx,
+            &deref_var(t, substs).clone().into_goal(),
+            substs,
+            close_cut,
+        )
+    } else {
+        solve(ctx, t, substs, close_cut)
+    }
+    .map_cut(|| {
+        if next_cut {
+            Response::Cut
+        } else {
+            Response::Fail
+        }
+    })
+}
+
+pub(super) fn unify<'a>(
+    a: &'a Term,
+    b: &'a Term,
+    mut substs: Vec<Var<'a>>,
+) -> Result<Vec<Var<'a>>, Response> {
+    match &a.kind {
+        TermKind::Var(idx) => substs[*idx] = Some(b),
+        TermKind::Integer(i1) => match &b.kind {
+            TermKind::Var(idx) => substs[*idx] = Some(a),
+            TermKind::Integer(i2) if *i1 == *i2 => {}
+            TermKind::Float(f) if *i1 as f64 == *f => {}
+            _ => return Err(Response::Fail),
+        },
+        TermKind::Float(f1) => match &b.kind {
+            TermKind::Var(idx) => substs[*idx] = Some(a),
+            TermKind::Float(f2) if *f1 == *f2 => {}
+            TermKind::Integer(i) if *f1 == *i as f64 => {}
+            _ => return Err(Response::Fail),
+        },
+        TermKind::Atom(s1) => match &b.kind {
+            TermKind::Var(idx) => substs[*idx] = Some(a),
+            TermKind::Atom(s2) if *s1 == *s2 => {}
+            _ => return Err(Response::Fail),
+        },
+        TermKind::Compound(c1) => match &b.kind {
+            TermKind::Var(idx) => substs[*idx] = Some(a),
+            TermKind::Compound(c2)
+                if c1.functor == c2.functor && c1.args.len() == c2.args.len() =>
+            {
+                return c1
+                    .args
+                    .iter()
+                    .zip(&c2.args)
+                    .try_fold(substs, |substs, (a, b)| unify(a, b, substs));
+            }
+            _ => return Err(Response::Fail),
+        },
+    };
+    Ok(substs)
+}
+
 struct CallbackSolver<F: FnMut(&[Var]) -> bool> {
     callback: F,
 }
