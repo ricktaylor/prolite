@@ -27,7 +27,7 @@ impl StreamResolver for FSResolver {
     ) -> Result<(String, Box<dyn stream::ReadStream>), std::io::Error> {
         let mut fp = self.root.join(name);
         let mut f = OpenOptions::new().read(true).open(&fp);
-        if let Err(ref e) = f {
+        if let Err(e) = &f {
             match e.kind() {
                 std::io::ErrorKind::NotFound if matches!(fp.extension(), None) => {
                     fp.set_extension("pl");

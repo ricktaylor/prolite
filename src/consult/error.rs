@@ -1,31 +1,32 @@
 use super::*;
 use operators::Operator;
 use read_term::term::Term;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub(crate) enum Error {
     ReadTerm(read_term::error::Error),
-    StreamResolver(Term, std::io::Error),
-    InvalidHead(Term),
-    NotCallable(Term),
-    UnknownDirective(Term),
-    BadStreamName(Term),
-    AlterBuiltin(Term),
-    AlreadyNotDirective(Term, stream::Span),
-    AlreadyNotDynamic(Term, stream::Span),
-    AlreadyNotDiscontiguous(Term, stream::Span),
-    AlreadyNotMultifile(Term, stream::Span),
-    NotDiscontiguous(Term, stream::Span),
-    NotMultifile(Term, stream::Span, String),
+    StreamResolver(Rc<Term>, std::io::Error),
+    InvalidHead(Rc<Term>),
+    NotCallable(Rc<Term>),
+    UnknownDirective(Rc<Term>),
+    BadStreamName(Rc<Term>),
+    AlterBuiltin(Rc<Term>),
+    AlreadyNotDirective(Rc<Term>, stream::Span),
+    AlreadyNotDynamic(Rc<Term>, stream::Span),
+    AlreadyNotDiscontiguous(Rc<Term>, stream::Span),
+    AlreadyNotMultifile(Rc<Term>, stream::Span),
+    NotDiscontiguous(Rc<Term>, stream::Span),
+    NotMultifile(Rc<Term>, stream::Span, String),
     IncludeLoop(String),
-    InvalidOperator(Term),
-    InvalidOpPriority(Term),
-    InvalidOpSpecifier(Term),
-    InvalidOpCombo(Term, Operator, Operator),
-    InvalidFlag(Term),
-    InvalidFlagValue(Term, Term),
-    InvalidCharacter(Term),
-    InvalidPredicateIndicator(Term),
+    InvalidOperator(Rc<Term>),
+    InvalidOpPriority(Rc<Term>),
+    InvalidOpSpecifier(Rc<Term>),
+    InvalidOpCombo(Rc<Term>, Operator, Operator),
+    InvalidFlag(Rc<Term>),
+    InvalidFlagValue(Rc<Term>, Rc<Term>),
+    InvalidCharacter(Rc<Term>),
+    InvalidPredicateIndicator(Rc<Term>),
 }
 
 impl Error {

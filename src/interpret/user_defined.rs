@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use super::*;
 use term::*;
 
@@ -9,54 +7,34 @@ fn unknown_predicate(ctx: &mut Context) -> Response {
 
 pub(super) fn solve(
     ctx: &mut Context,
-    goal: &Term,
+    goal: &Rc<Term>,
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
     match &goal.kind {
-        TermKind::Atom(s) => {
-            let pi = format!("{}/0", s);
-
-            println!(
-                "User defined function: {} at {}:{}:{}",
-                pi,
-                goal.location.start.source,
-                goal.location.start.line,
-                goal.location.start.column
-            );
-
-            match ctx.procedures.get(&pi) {
-                None => unknown_predicate(ctx),
-                Some(p) => {
-                    let predicates = p.predicates.to_vec();
-                    for clause in predicates {
-                        match solve::solve(
-                            ctx,
-                            &clause.body,
-                            &vec![None; clause.var_info.len()],
-                            next,
-                        ) {
-                            Response::Fail => {}
-                            Response::Cut => return Response::Fail,
-                            r => return r,
-                        }
+        TermKind::Atom(s) => match ctx.procedures.get(&format!("{}/0", s)) {
+            None => unknown_predicate(ctx),
+            Some(p) => {
+                let predicates = p.predicates.to_vec();
+                for clause in predicates {
+                    match if let Some(body) = &clause.body {
+                        solve::solve(ctx, body, &vec![None; clause.var_info.len()], next)
+                    } else {
+                        next.solve(ctx, substs)
+                    } {
+                        Response::Fail => {}
+                        Response::Cut => return Response::Fail,
+                        r => return r,
                     }
-                    Response::Fail
                 }
+                Response::Fail
             }
-        }
+        },
         TermKind::Compound(c) => {
-            let pi = format!("{}/{}", c.functor, c.args.len());
-
-            println!(
-                "User defined function: {} at {}:{}:{}",
-                pi,
-                goal.location.start.source,
-                goal.location.start.line,
-                goal.location.start.column
-            );
-
-            match ctx.procedures.get(&pi) {
+            match ctx
+                .procedures
+                .get(&format!("{}/{}", c.functor, c.args.len()))
+            {
                 None => unknown_predicate(ctx),
                 Some(p) => {
                     let predicates = p.predicates.to_vec();
@@ -78,11 +56,11 @@ pub(super) fn solve(
 struct Substitutions<'a> {
     a: Vec<Var<'a>>,
     b: Vec<Var<'a>>,
-    out: HashMap<usize, &'a Term>,
+    out: HashMap<usize, &'a Rc<Term>>,
 }
 
 impl<'a> Substitutions<'a> {
-    fn new(a: &'a [Var<'a>], b_len: usize) -> Self {
+    fn new(a: &[Var<'a>], b_len: usize) -> Self {
         Self {
             a: a.to_vec(),
             b: vec![None; b_len],
@@ -92,8 +70,8 @@ impl<'a> Substitutions<'a> {
 }
 
 fn unify_head<'a>(
-    a: &'a Term,
-    b: &'a Term,
+    a: &'a Rc<Term>,
+    b: &'a Rc<Term>,
     mut substs: Substitutions<'a>,
 ) -> Result<Substitutions<'a>, Response> {
     match &a.kind {
@@ -181,9 +159,22 @@ fn unify_head<'a>(
     }
 }
 
+fn copy_out_var<'a>(
+    mut term: &'a Rc<term::Term>,
+    substs: &[Var<'a>],
+) -> Option<&'a Rc<term::Term>> {
+    while let term::TermKind::Var(idx) = &term.kind {
+        match substs[*idx] {
+            None => return None,
+            Some(t) => term = t,
+        }
+    }
+    Some(term)
+}
+
 fn solve_clause(
     ctx: &mut Context,
-    args: &[Term],
+    args: &[Rc<Term>],
     clause: Rc<Clause>,
     substs: &[Var],
     next: &mut dyn Solver,
@@ -203,23 +194,35 @@ fn solve_clause(
         .map_or_else(
             |r| r,
             |mut s| {
-                solve::solve(
-                    ctx,
-                    &clause.body,
-                    &s.b,
-                    &mut Continuation::new(|ctx, b_substs| {
-                        next.solve(
-                            ctx,
-                            &s.out.iter().fold(
-                                std::mem::take(&mut s.a),
-                                |mut a_substs, (idx, &t)| {
-                                    a_substs[*idx] = Some(deref_var(t, b_substs));
-                                    a_substs
-                                },
-                            ),
-                        )
-                    }),
-                )
+                if let Some(body) = &clause.body {
+                    solve::solve(
+                        ctx,
+                        body,
+                        &s.b,
+                        &mut Continuation::new(|ctx, b_substs| {
+                            next.solve(
+                                ctx,
+                                &s.out.iter().fold(
+                                    std::mem::take(&mut s.a),
+                                    |mut a_substs, (idx, &t)| {
+                                        a_substs[*idx] = copy_out_var(t, b_substs);
+                                        a_substs
+                                    },
+                                ),
+                            )
+                        }),
+                    )
+                } else {
+                    next.solve(
+                        ctx,
+                        &s.out
+                            .iter()
+                            .fold(std::mem::take(&mut s.a), |mut a_substs, (idx, &t)| {
+                                a_substs[*idx] = copy_out_var(t, &s.b);
+                                a_substs
+                            }),
+                    )
+                }
             },
         )
 }

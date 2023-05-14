@@ -4,11 +4,11 @@ use term::*;
 struct Substitutions<'a> {
     a: Vec<Var<'a>>,
     b: Vec<Var<'a>>,
-    xref: HashMap<usize, &'a Term>,
+    xref: HashMap<usize, &'a Rc<Term>>,
 }
 
 impl<'a> Substitutions<'a> {
-    fn new(substs: &'a [Var<'a>]) -> Self {
+    fn new(substs: &[Var<'a>]) -> Self {
         Self {
             a: substs.to_vec(),
             b: substs.to_vec(),
@@ -18,8 +18,8 @@ impl<'a> Substitutions<'a> {
 }
 
 fn unify_copy<'a>(
-    a: &'a Term,
-    b: &'a Term,
+    a: &'a Rc<Term>,
+    b: &'a Rc<Term>,
     mut substs: Substitutions<'a>,
 ) -> Result<Substitutions<'a>, Response> {
     match &a.kind {
@@ -109,7 +109,7 @@ fn unify_copy<'a>(
 
 pub(super) fn solve(
     ctx: &mut Context,
-    args: &[Term],
+    args: &[Rc<Term>],
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {

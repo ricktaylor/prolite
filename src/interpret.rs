@@ -6,6 +6,7 @@ mod user_defined;
 mod write;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use super::consult::text::*;
 use super::read_term::*;
@@ -14,7 +15,7 @@ use super::read_term::*;
 pub(crate) enum Response {
     Fail,
     Cut,
-    Throw(term::Term),
+    Throw(Rc<term::Term>),
     Halt(isize),
 }
 
@@ -34,17 +35,7 @@ impl Response {
     }
 }
 
-type Var<'a> = Option<&'a term::Term>;
-
-fn deref_var<'a>(mut term: &'a term::Term, substs: &'a [Var<'a>]) -> &'a term::Term {
-    while let term::TermKind::Var(idx) = &term.kind {
-        match substs[*idx] {
-            None => break,
-            Some(t) => term = t,
-        }
-    }
-    term
-}
+type Var<'a> = Option<&'a Rc<term::Term>>;
 
 #[derive(Default)]
 pub(super) struct Context {

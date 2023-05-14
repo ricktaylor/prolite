@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::str::FromStr;
 
 use super::*;
@@ -9,22 +10,22 @@ use term::*;
 use operators::Operator;
 use stream::ReadStream;
 
-fn parse_integer(s: &str, radix: u32, location: Span) -> Result<Term, Box<Error>> {
+fn parse_integer(s: &str, radix: u32, location: Span) -> Result<Rc<Term>, Box<Error>> {
     match i64::from_str_radix(s, radix) {
-        Ok(i) => Ok(Term {
+        Ok(i) => Ok(Rc::new(Term {
             kind: TermKind::Integer(i),
             location,
-        }),
+        })),
         Err(e) => Error::new(ErrorKind::ParseIntError(e), location),
     }
 }
 
-fn parse_float(s: &str, location: Span) -> Result<Term, Box<Error>> {
+fn parse_float(s: &str, location: Span) -> Result<Rc<Term>, Box<Error>> {
     match f64::from_str(s) {
-        Ok(f) => Ok(Term {
+        Ok(f) => Ok(Rc::new(Term {
             kind: TermKind::Float(f),
             location,
-        }),
+        })),
         Err(e) => Error::new(ErrorKind::ParseFloatError(e), location),
     }
 }
@@ -35,7 +36,7 @@ fn parse_compound(
     stream: &mut dyn ReadStream,
     functor: String,
     location: Span,
-) -> Result<(Term, Token, u16), Box<Error>> {
+) -> Result<(Rc<Term>, Token, u16), Box<Error>> {
     let mut args = Vec::new();
     let mut next = lexer::next(ctx, stream, false)?;
     loop {
@@ -62,11 +63,11 @@ fn parse_list(
     var_info: &mut Vec<VarInfo>,
     stream: &mut dyn ReadStream,
     token: Token,
-) -> Result<Term, Box<Error>> {
+) -> Result<Rc<Term>, Box<Error>> {
     let mut terms = Vec::new();
     let mut next = token;
     loop {
-        let term: Term;
+        let term;
         (term, next, _) = parse_term(ctx, var_info, stream, next, 999)?;
         terms.push(term);
 
@@ -76,7 +77,7 @@ fn parse_list(
         }
     }
 
-    let list: Term;
+    let list;
     match next.kind {
         TokenKind::Bar => {
             next = lexer::next(ctx, stream, false)?;
@@ -94,7 +95,11 @@ fn parse_list(
     }))
 }
 
-fn parse_quoted(flags: &flags::QuoteFlag, s: String, location: Span) -> Result<Term, Box<Error>> {
+fn parse_quoted(
+    flags: &flags::QuoteFlag,
+    s: String,
+    location: Span,
+) -> Result<Rc<Term>, Box<Error>> {
     match flags {
         flags::QuoteFlag::Atom => Ok(Term::new_atom(s, location)),
         flags::QuoteFlag::Chars => Ok(s.chars().rev().fold(
@@ -114,10 +119,10 @@ fn parse_quoted(flags: &flags::QuoteFlag, s: String, location: Span) -> Result<T
                     ".".to_string(),
                     location.clone(),
                     vec![
-                        Term {
+                        Rc::new(Term {
                             kind: TermKind::Integer(c as i64),
                             location: location.clone(),
-                        },
+                        }),
                         list,
                     ],
                 )
@@ -132,7 +137,7 @@ fn parse_variable(
     stream: &mut dyn ReadStream,
     name: String,
     location: Span,
-) -> Result<(Term, Token, u16), Box<Error>> {
+) -> Result<(Rc<Term>, Token, u16), Box<Error>> {
     let p = if name != "_" {
         var_info
             .iter()
@@ -158,10 +163,10 @@ fn parse_variable(
     var_info[p].refcount += 1;
 
     Ok((
-        Term {
+        Rc::new(Term {
             kind: TermKind::Var(p),
             location,
-        },
+        }),
         lexer::next(ctx, stream, false)?,
         0,
     ))
@@ -173,7 +178,7 @@ fn next_term(
     stream: &mut dyn ReadStream,
     token: Token,
     max_precedence: u16,
-) -> Result<(Term, Token, u16), Box<Error>> {
+) -> Result<(Rc<Term>, Token, u16), Box<Error>> {
     match token.kind {
         /* 6.3.1.1 */
         TokenKind::Int(s, r) => {
@@ -412,7 +417,7 @@ fn parse_term(
     stream: &mut dyn ReadStream,
     token: Token,
     max_precedence: u16,
-) -> Result<(Term, Token, u16), Box<Error>> {
+) -> Result<(Rc<Term>, Token, u16), Box<Error>> {
     // This is precedence climbing, if you're interested
     let (mut term, mut next, mut precedence) =
         next_term(ctx, var_info, stream, token, max_precedence)?;
@@ -454,7 +459,7 @@ pub(crate) fn next(
     ctx: &Context,
     var_info: &mut Vec<VarInfo>,
     stream: &mut dyn ReadStream,
-) -> Result<Option<Term>, Box<Error>> {
+) -> Result<Option<Rc<Term>>, Box<Error>> {
     let t = lexer::next(ctx, stream, false)?;
     if let TokenKind::Eof = t.kind {
         return Ok(None);

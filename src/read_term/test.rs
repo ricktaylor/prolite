@@ -1,7 +1,8 @@
 use super::*;
+use std::rc::Rc;
 use term::*;
 
-pub(crate) fn read_term(s: &str) -> (Term, Vec<VarInfo>) {
+pub(crate) fn read_term(s: &str) -> (Rc<Term>, Vec<VarInfo>) {
     let mut stream = utf8reader::Utf8Reader::new(s.as_bytes(), format!("{{{}}}", s).as_str());
     let mut var_info = Vec::new();
 

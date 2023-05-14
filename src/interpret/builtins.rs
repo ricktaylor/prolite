@@ -1,26 +1,43 @@
+use std::todo;
+
 use phf::phf_map;
 
 use super::*;
 use solve::solve;
 use term::*;
 
-fn solve_true(ctx: &mut Context, _: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
+fn solve_true(
+    ctx: &mut Context,
+    _: &[Rc<Term>],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
     next.solve(ctx, substs)
 }
 
-fn solve_fail(_: &mut Context, _: &[Term], _: &[Var], _: &mut dyn Solver) -> Response {
+fn solve_fail(_: &mut Context, _: &[Rc<Term>], _: &[Var], _: &mut dyn Solver) -> Response {
     Response::Fail
 }
 
-fn solve_call(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
+fn solve_call(
+    ctx: &mut Context,
+    args: &[Rc<Term>],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
     solve::call(ctx, &args[0], substs, next)
 }
 
-fn solve_cut(ctx: &mut Context, _: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
+fn solve_cut(ctx: &mut Context, _: &[Rc<Term>], substs: &[Var], next: &mut dyn Solver) -> Response {
     next.solve(ctx, substs).map_failed(|| Response::Cut)
 }
 
-fn solve_and(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
+fn solve_and(
+    ctx: &mut Context,
+    args: &[Rc<Term>],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
     solve(
         ctx,
         &args[0],
@@ -29,11 +46,21 @@ fn solve_and(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn So
     )
 }
 
-fn solve_or(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
+fn solve_or(
+    ctx: &mut Context,
+    args: &[Rc<Term>],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
     solve(ctx, &args[0], substs, next).map_failed(|| solve(ctx, &args[1], substs, next))
 }
 
-fn solve_if(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
+fn solve_if(
+    ctx: &mut Context,
+    args: &[Rc<Term>],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
     let (if_term, then_term, else_term) = match &args[1].kind {
         TermKind::Compound(c) if c.functor == ";" && c.args.len() == 2 => {
             (&args[0], &c.args[0], Some(&c.args[1]))
@@ -72,7 +99,7 @@ fn solve_if(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Sol
 
 fn solve_catch(
     ctx: &mut Context,
-    args: &[Term],
+    args: &[Rc<Term>],
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
@@ -99,13 +126,23 @@ fn solve_catch(
     }
 }
 
-fn solve_throw(_: &mut Context, args: &[Term], substs: &[Var], _: &mut dyn Solver) -> Response {
-    Response::Throw(deref_var(&args[0], substs).clone())
+fn solve_throw(_: &mut Context, args: &[Rc<Term>], substs: &[Var], _: &mut dyn Solver) -> Response {
+    // Dereference ball
+    let mut ball = &args[0];
+    while let term::TermKind::Var(idx) = &ball.kind {
+        if let Some(t) = substs[*idx] {
+            ball = t;
+        } else {
+            // Instantiation error!
+            todo!()
+        }
+    }
+    Response::Throw(ball.clone())
 }
 
 fn solve_not_provable(
     ctx: &mut Context,
-    args: &[Term],
+    args: &[Rc<Term>],
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
@@ -118,76 +155,57 @@ fn solve_not_provable(
     .map_failed(|| next.solve(ctx, substs))
 }
 
-fn solve_once(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response {
-    // call/1 is "not transparent" to cut, so use a continuation to record the response from next
-    let mut next_cut = false;
-    let close_cut = &mut Continuation::new(|ctx, substs| {
-        next.solve(ctx, substs).map_cut(|| {
-            next_cut = true;
-            Response::Cut
-        })
-    });
-
-    // once/1 is called only once, so use a continuation to cut
-    let once_cut = &mut Continuation::new(|ctx, substs| {
-        close_cut.solve(ctx, substs).map_failed(|| Response::Cut)
-    });
-
-    if let TermKind::Var(_) = &args[0].kind {
-        // Convert variable to body
-        solve(
-            ctx,
-            &deref_var(&args[0], substs).clone().into_goal(),
-            substs,
-            once_cut,
-        )
-    } else {
-        solve(ctx, &args[0], substs, once_cut)
-    }
-    .map_cut(|| {
-        if next_cut {
-            Response::Cut
-        } else {
-            Response::Fail
-        }
-    })
+fn solve_once(
+    ctx: &mut Context,
+    args: &[Rc<Term>],
+    substs: &[Var],
+    next: &mut dyn Solver,
+) -> Response {
+    solve::call(
+        ctx,
+        &Term::new_compound(
+            ",".to_string(),
+            stream::Span::default(),
+            vec![
+                args[0].clone(),
+                Term::new_atom("!".to_string(), stream::Span::default()),
+            ],
+        ),
+        substs,
+        next,
+    )
 }
 
 fn solve_repeat(
     ctx: &mut Context,
-    args: &[Term],
+    args: &[Rc<Term>],
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
     loop {
-        let r = solve(ctx, &args[0], substs, next);
-        match r {
+        match next.solve(ctx, substs) {
             Response::Fail => {}
-            _ => break r,
+            r => break r,
         }
     }
 }
 
 fn solve_unify(
     ctx: &mut Context,
-    args: &[Term],
+    args: &[Rc<Term>],
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
-    solve::unify(
-        deref_var(&args[0], substs),
-        deref_var(&args[1], substs),
-        substs.to_vec(),
-    )
-    .map_or_else(|r| r, |substs| next.solve(ctx, &substs))
+    solve::unify(&args[0], &args[1], substs.to_vec())
+        .map_or_else(|r| r, |substs| next.solve(ctx, &substs))
 }
 
-fn not_impl(_: &mut Context, _: &[Term], _: &[Var], _: &mut dyn Solver) -> Response {
+fn not_impl(_: &mut Context, _: &[Rc<Term>], _: &[Var], _: &mut dyn Solver) -> Response {
     todo!()
 }
 
 type SolveFn =
-    fn(ctx: &mut Context, args: &[Term], substs: &[Var], next: &mut dyn Solver) -> Response;
+    fn(ctx: &mut Context, args: &[Rc<Term>], substs: &[Var], next: &mut dyn Solver) -> Response;
 
 static BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "true/0" => solve_true,
