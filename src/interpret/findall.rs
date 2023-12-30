@@ -58,41 +58,6 @@ pub(super) fn solve_findall(
     })
 }
 
-fn clear_variable_set(t: &Rc<Term>, substs: &[Var], free_vars: &mut BitSet) {
-    match &t.kind {
-        TermKind::Var(idx) => {
-            if let Some(t) = substs[*idx] {
-                clear_variable_set(t, substs, free_vars);
-            } else {
-                free_vars.remove(*idx);
-            }
-        }
-        TermKind::Compound(c) => {
-            for t in c.args.iter() {
-                clear_variable_set(t, substs, free_vars);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn iterate_goal<'a>(t: &'a Rc<Term>, substs: &[Var<'a>], free_vars: &mut BitSet) -> &'a Rc<Term> {
-    match &t.kind {
-        TermKind::Var(idx) => {
-            if let Some(t) = substs[*idx] {
-                iterate_goal(t, substs, free_vars)
-            } else {
-                t
-            }
-        }
-        TermKind::Compound(c) if c.functor == "^" && c.args.len() == 2 => {
-            clear_variable_set(&c.args[0], substs, free_vars);
-            iterate_goal(&c.args[1], substs, free_vars)
-        }
-        _ => t,
-    }
-}
-
 fn deref_var<'a>(mut t: &'a Rc<Term>, substs: &[Var<'a>]) -> &'a Rc<Term> {
     match &t.kind {
         TermKind::Var(idx) => {
@@ -106,26 +71,69 @@ fn deref_var<'a>(mut t: &'a Rc<Term>, substs: &[Var<'a>]) -> &'a Rc<Term> {
     }
 }
 
+fn variable_set(t: &Rc<Term>, substs: &[Var], free_vars: &mut BitSet) {
+    match &t.kind {
+        TermKind::Var(idx) => {
+            if let Some(t) = substs[*idx] {
+                variable_set(t, substs, free_vars);
+            } else {
+                free_vars.insert(*idx);
+            }
+        }
+        TermKind::Compound(c) => {
+            for t in c.args.iter() {
+                variable_set(t, substs, free_vars);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn existential_split<'a>(t: &'a Rc<Term>, substs: &'a [Var], free_vars: &mut BitSet) -> &'a Rc<Term>{
+    match &t.kind {
+        TermKind::Var(idx) => {
+            if let Some(t) = substs[*idx] {
+                existential_split(t, substs, free_vars)
+            } else {
+                t
+            }
+        }
+        TermKind::Compound(c) if c.functor == "^" && c.args.len() == 2 => {
+            variable_set(&c.args[0], substs, free_vars);
+            existential_split(&c.args[1], substs, free_vars)
+        }
+        _ => t,
+    }
+}
+
+fn split_free_vars<'a>(t: &'a Rc<Term>,v:&'a Rc<Term>, substs: &'a [Var]) -> (&'a Rc<Term>, BitSet) {
+    let mut free_vars = BitSet::with_capacity(substs.len());
+    variable_set(t,substs,&mut free_vars);
+
+    let mut other_vars = BitSet::with_capacity(substs.len());
+    variable_set(v,substs,&mut other_vars);
+
+    let goal = existential_split(t, substs, &mut other_vars);
+    free_vars.difference_with(&other_vars);
+
+    (goal,free_vars)
+}
+
 pub(super) fn solve_setof(
     ctx: &mut Context,
     args: &[Rc<Term>],
     substs: &[Var],
     next: &mut dyn Solver,
 ) -> Response {
+
     // Find the free variables of the iterated goal of arg[1] wrt arg[0]
-    let mut free_vars = BitSet::with_capacity(substs.len());
-    for (idx, v) in substs.iter().enumerate() {
-        if v.is_none() {
-            free_vars.insert(idx);
-        }
-    }
-    clear_variable_set(&args[0], substs, &mut free_vars);
+    let (goal,free_vars) = split_free_vars(&args[1], &args[0], substs);
 
     let mut new_substs = substs.to_vec();
     let mut solutions = Vec::new();
     solve::call(
         ctx,
-        iterate_goal(&args[1], substs, &mut free_vars),
+        goal,
         substs,
         &mut Continuation::new(|_, inner_substs| {
             // Accumulate the current values of the free variables
