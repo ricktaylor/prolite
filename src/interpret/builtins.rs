@@ -3,7 +3,7 @@ use std::todo;
 use phf::phf_map;
 
 use super::*;
-use solve::solve;
+use solve::{solve, Continuation, Solver};
 use term::*;
 
 fn solve_true(

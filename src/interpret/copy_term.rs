@@ -1,4 +1,5 @@
 use super::*;
+use solve::Solver;
 use term::*;
 
 struct Substitutions<'a> {

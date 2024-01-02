@@ -1,6 +1,7 @@
 use bit_set::BitSet;
 
 use super::*;
+use solve::{Continuation, Solver};
 use term::*;
 
 fn renamed_copy<'a>(t: &'a Rc<Term>, substs: &[Var<'a>], new_substs: &mut Vec<Var>) -> Rc<Term> {
@@ -89,7 +90,11 @@ fn variable_set(t: &Rc<Term>, substs: &[Var], free_vars: &mut BitSet) {
     }
 }
 
-fn existential_split<'a>(t: &'a Rc<Term>, substs: &'a [Var], free_vars: &mut BitSet) -> &'a Rc<Term>{
+fn existential_split<'a>(
+    t: &'a Rc<Term>,
+    substs: &'a [Var],
+    free_vars: &mut BitSet,
+) -> &'a Rc<Term> {
     match &t.kind {
         TermKind::Var(idx) => {
             if let Some(t) = substs[*idx] {
@@ -106,17 +111,21 @@ fn existential_split<'a>(t: &'a Rc<Term>, substs: &'a [Var], free_vars: &mut Bit
     }
 }
 
-fn split_free_vars<'a>(t: &'a Rc<Term>,v:&'a Rc<Term>, substs: &'a [Var]) -> (&'a Rc<Term>, BitSet) {
+fn split_free_vars<'a>(
+    t: &'a Rc<Term>,
+    v: &'a Rc<Term>,
+    substs: &'a [Var],
+) -> (&'a Rc<Term>, BitSet) {
     let mut free_vars = BitSet::with_capacity(substs.len());
-    variable_set(t,substs,&mut free_vars);
+    variable_set(t, substs, &mut free_vars);
 
     let mut other_vars = BitSet::with_capacity(substs.len());
-    variable_set(v,substs,&mut other_vars);
+    variable_set(v, substs, &mut other_vars);
 
     let goal = existential_split(t, substs, &mut other_vars);
     free_vars.difference_with(&other_vars);
 
-    (goal,free_vars)
+    (goal, free_vars)
 }
 
 pub(super) fn solve_setof(
@@ -127,7 +136,7 @@ pub(super) fn solve_setof(
 ) -> Response {
 
     // Find the free variables of the iterated goal of arg[1] wrt arg[0]
-    let (goal,free_vars) = split_free_vars(&args[1], &args[0], substs);
+    let (goal, free_vars) = split_free_vars(&args[1], &args[0], substs);
 
     let mut new_substs = substs.to_vec();
     let mut solutions = Vec::new();

@@ -127,6 +127,32 @@ pub(super) fn unify<'a>(
     Ok(substs)
 }
 
+pub(super) trait Solver {
+    fn solve(&mut self, ctx: &mut Context, substs: &[Var]) -> Response;
+}
+
+pub(super) struct Continuation<F: FnMut(&mut Context, &[Var]) -> Response> {
+    solve: F,
+}
+
+impl<F> Solver for Continuation<F>
+where
+    F: FnMut(&mut Context, &[Var]) -> Response,
+{
+    fn solve(&mut self, ctx: &mut Context, substs: &[Var]) -> Response {
+        (self.solve)(ctx, substs)
+    }
+}
+
+impl<F> Continuation<F>
+where
+    F: FnMut(&mut Context, &[Var]) -> Response,
+{
+    pub fn new(f: F) -> Self {
+        Self { solve: f }
+    }
+}
+
 struct CallbackSolver<F: FnMut(&[Var]) -> bool> {
     callback: F,
 }

@@ -1,4 +1,5 @@
 use super::*;
+use solve::{Continuation, Solver};
 use term::*;
 
 fn unknown_predicate(ctx: &mut Context) -> Response {

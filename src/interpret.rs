@@ -42,32 +42,6 @@ pub(super) struct Context {
     pub procedures: HashMap<String, Procedure>,
 }
 
-trait Solver {
-    fn solve(&mut self, ctx: &mut Context, substs: &[Var]) -> Response;
-}
-
-struct Continuation<F: FnMut(&mut Context, &[Var]) -> Response> {
-    solve: F,
-}
-
-impl<F> Solver for Continuation<F>
-where
-    F: FnMut(&mut Context, &[Var]) -> Response,
-{
-    fn solve(&mut self, ctx: &mut Context, substs: &[Var]) -> Response {
-        (self.solve)(ctx, substs)
-    }
-}
-
-impl<F> Continuation<F>
-where
-    F: FnMut(&mut Context, &[Var]) -> Response,
-{
-    fn new(f: F) -> Self {
-        Self { solve: f }
-    }
-}
-
 #[cfg(test)]
 use super::consult;
 
