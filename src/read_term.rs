@@ -10,7 +10,7 @@ use super::{flags, operators};
 use std::collections::HashMap;
 use std::default::Default;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct Context {
     pub flags: flags::Flags,
     pub operators: operators::OperatorTable,

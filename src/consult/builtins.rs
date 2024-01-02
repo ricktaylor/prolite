@@ -1,6 +1,5 @@
 use phf::phf_map;
 
-#[derive(Clone)]
 pub enum BuiltinType {
     Control,
     Builtin,

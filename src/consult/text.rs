@@ -11,14 +11,14 @@ use operators::Operator;
 use read_term::parser;
 use read_term::term::{Compound, Term, TermKind, VarInfo};
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug)]
 pub(crate) struct Flags {
     pub dynamic: bool,
     multifile: bool,
     discontiguous: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct Clause {
     pub var_info: Vec<VarInfo>,
     pub head: Rc<Term>,

@@ -1,20 +1,20 @@
 use super::stream::Span;
 use std::rc::Rc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct VarInfo {
     pub name: String,
     pub refcount: usize,
     pub anon: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct Compound {
     pub functor: String,
     pub args: Vec<Rc<Term>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) enum TermKind {
     Integer(i64),
     Float(f64),
@@ -23,7 +23,7 @@ pub(crate) enum TermKind {
     Compound(Compound),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct Term {
     pub kind: TermKind,
     pub location: Option<Span>,

@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Position {
     pub source: String,
     pub line: usize,
@@ -15,7 +15,7 @@ impl Default for Position {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone)]
 pub struct Span {
     pub start: Position,
     pub end: Option<Position>,
