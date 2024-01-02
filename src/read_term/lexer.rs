@@ -26,7 +26,7 @@ pub(crate) enum TokenKind {
 #[derive(Debug)]
 pub(crate) struct Token {
     pub kind: TokenKind,
-    pub location: Span,
+    pub location: Option<Span>,
 }
 
 enum Char {
@@ -57,16 +57,27 @@ fn map_char(c: char) -> Char {
     }
 }
 
-fn next_char_raw(stream: &mut dyn ReadStream) -> Result<(Option<char>, Span), Box<Error>> {
+fn new_span(start: Option<Position>, end: Option<Position>) -> Option<Span> {
+    match (start, end) {
+        (Some(start), _) => Some(Span { start, end }),
+        (None, Some(end)) => Some(Span {
+            start: end,
+            end: None,
+        }),
+        _ => None,
+    }
+}
+
+fn next_char_raw(stream: &mut dyn ReadStream) -> Result<(Option<char>, Option<Span>), Box<Error>> {
     let p = stream.position();
     match stream.get().map_err(|e| {
         Box::new(Error {
             kind: ErrorKind::StreamError(e),
-            location: Span::new(stream.position(), None),
+            location: new_span(stream.position(), None),
         })
     })? {
-        Some(c) => Ok((Some(c), Span::new(p, Some(stream.position())))),
-        None => Ok((None, Span::new(p, None))),
+        Some(c) => Ok((Some(c), new_span(p, stream.position()))),
+        None => Ok((None, new_span(p, None))),
     }
 }
 
@@ -74,12 +85,12 @@ fn peek_char_raw(stream: &mut dyn ReadStream) -> Result<Option<char>, Box<Error>
     stream.peek().map_err(|e| {
         Box::new(Error {
             kind: ErrorKind::StreamError(e),
-            location: Span::new(stream.position(), None),
+            location: new_span(stream.position(), None),
         })
     })
 }
 
-fn eat_char(stream: &mut dyn ReadStream) -> Result<Position, Box<Error>> {
+fn eat_char(stream: &mut dyn ReadStream) -> Result<Option<Position>, Box<Error>> {
     next_char_raw(stream)?;
     Ok(stream.position())
 }
@@ -96,7 +107,10 @@ fn convert_char(ctx: &Context, c: Option<char>) -> Char {
     })
 }
 
-fn next_char(ctx: &Context, stream: &mut dyn ReadStream) -> Result<(Char, Span), Box<Error>> {
+fn next_char(
+    ctx: &Context,
+    stream: &mut dyn ReadStream,
+) -> Result<(Char, Option<Span>), Box<Error>> {
     let (c, l) = next_char_raw(stream)?;
     Ok((convert_char(ctx, c), l))
 }
@@ -108,7 +122,7 @@ fn peek_char(ctx: &Context, stream: &mut dyn ReadStream) -> Result<Char, Box<Err
 fn multiline_comment(
     ctx: &Context,
     stream: &mut dyn ReadStream,
-) -> Result<(Char, Span), Box<Error>> {
+) -> Result<(Char, Option<Span>), Box<Error>> {
     loop {
         match next_char(ctx, stream)? {
             (Char::Eof, location) => break Ok((Char::Eof, location)),
@@ -122,12 +136,25 @@ fn multiline_comment(
     }
 }
 
+fn location_inc(location: &mut Option<Span>, p: Option<Position>) {
+    match (location, p) {
+        (Some(location), Some(_)) => location.end = p,
+        (None, Some(p)) => {
+            *location = Some(Span {
+                start: p,
+                end: None,
+            })
+        }
+        _ => {}
+    }
+}
+
 fn integral(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     max: char,
     radix: u32,
-    mut location: Span,
+    mut location: Option<Span>,
 ) -> Result<Token, Box<Error>> {
     let mut t = String::new();
     loop {
@@ -136,7 +163,7 @@ fn integral(
             Char::SmallLetter(c @ 'a'..='f') if radix == 16 => t.push(c),
             _ => break,
         }
-        location.inc(eat_char(stream)?);
+        location_inc(&mut location, eat_char(stream)?);
     }
 
     if t.is_empty() {
@@ -157,7 +184,7 @@ fn numeric(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     c: char,
-    mut location: Span,
+    mut location: Option<Span>,
 ) -> Result<Token, Box<Error>> {
     let mut t = c.to_string();
     loop {
@@ -170,7 +197,7 @@ fn numeric(
                 })
             }
         }
-        location.inc(eat_char(stream)?);
+        location_inc(&mut location, eat_char(stream)?);
     }
 }
 
@@ -178,8 +205,8 @@ fn alpha_numeric(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     c: char,
-    mut location: Span,
-) -> Result<(String, Span), Box<Error>> {
+    mut location: Option<Span>,
+) -> Result<(String, Option<Span>), Box<Error>> {
     let mut t = c.to_string();
     loop {
         match peek_char(ctx, stream)? {
@@ -187,16 +214,25 @@ fn alpha_numeric(
             Char::SmallLetter(c) | Char::CapitalLetter(c) | Char::Digit(c) => t.push(c),
             _ => break Ok((t, location)),
         }
-        location.inc(eat_char(stream)?);
+        location_inc(&mut location, eat_char(stream)?);
     }
+}
+
+pub(super) fn location_join(location: &mut Option<Span>, l: Option<Span>) -> Option<Span> {
+    match (location, l) {
+        (Some(location), Some(l)) => location.end = l.end.or(Some(l.start)),
+        (None, Some(_)) => *location = l,
+        _ => {}
+    }
+    *location
 }
 
 fn char_code(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     init_c: char,
-    mut location: Span,
-) -> Result<(char, Span), Box<Error>> {
+    mut location: Option<Span>,
+) -> Result<(char, Option<Span>), Box<Error>> {
     let mut o = String::new();
     if init_c != 'x' {
         o.push(init_c);
@@ -204,14 +240,16 @@ fn char_code(
 
     loop {
         match next_char_raw(stream)? {
-            (None, l) => return Error::new(ErrorKind::Missing('\\'), location.join(l)),
+            (None, l) => {
+                return Error::new(ErrorKind::Missing('\\'), location_join(&mut location, l))
+            }
             (Some('\\'), l) => match u32::from_str_radix(&o, if init_c == 'x' { 16 } else { 8 }) {
                 Ok(u) => match char::from_u32(u) {
                     None => {
                         o.push('\\');
                         break;
                     }
-                    Some(c) => return Ok((c, location.join(l))),
+                    Some(c) => return Ok((c, location_join(&mut location, l))),
                 },
                 Err(_) => {
                     o.push('\\');
@@ -226,7 +264,7 @@ fn char_code(
             (Some(c @ '0'..='7'), _) => o.push(c),
             (Some(c), l) => {
                 o.push(c);
-                location.append(l);
+                location_join(&mut location, l);
                 if ctx.greedy {
                     loop {
                         match next_char_raw(stream) {
@@ -256,12 +294,12 @@ fn char_code(
 fn quoted_inner<const Q: char>(
     ctx: &Context,
     stream: &mut dyn ReadStream,
-    mut location: Span,
-) -> Result<(String, Span), Box<Error>> {
+    mut location: Option<Span>,
+) -> Result<(String, Option<Span>), Box<Error>> {
     let mut t = String::new();
     loop {
         match next_char_raw(stream)? {
-            (None, l) => return Error::new(ErrorKind::Missing(Q), location.join(l)),
+            (None, l) => return Error::new(ErrorKind::Missing(Q), location_join(&mut location, l)),
             (Some('\\'), l) => match next_char_raw(stream)? {
                 (Some('\n'), _) => {}
                 (Some('\\'), _) => t.push('\\'),
@@ -277,16 +315,19 @@ fn quoted_inner<const Q: char>(
                 (Some(c @ '0'..='7'), _) | (Some(c @ 'x'), _) => {
                     let (c, l) = char_code(ctx, stream, c, l)?;
                     t.push(c);
-                    location.append(l);
+                    location_join(&mut location, l);
                 }
                 (Some(c), l) => {
                     return Error::new(
                         ErrorKind::BadEscape(String::from_iter(vec!['\\', c])),
-                        location.join(l),
+                        location_join(&mut location, l),
                     )
                 }
                 (None, l) => {
-                    return Error::new(ErrorKind::BadEscape('\\'.to_string()), location.join(l))
+                    return Error::new(
+                        ErrorKind::BadEscape('\\'.to_string()),
+                        location_join(&mut location, l),
+                    )
                 }
             },
             (Some(c), l) if c == Q => match peek_char_raw(stream)? {
@@ -294,7 +335,7 @@ fn quoted_inner<const Q: char>(
                     t.push(c);
                     eat_char(stream)?;
                 }
-                _ => return Ok((t, location.join(l))),
+                _ => return Ok((t, location_join(&mut location, l))),
             },
             (Some(c), _) => t.push(c),
         }
@@ -304,8 +345,8 @@ fn quoted_inner<const Q: char>(
 fn quoted<const Q: char>(
     ctx: &Context,
     stream: &mut dyn ReadStream,
-    location: Span,
-) -> Result<(String, Span), Box<Error>> {
+    location: Option<Span>,
+) -> Result<(String, Option<Span>), Box<Error>> {
     let r = quoted_inner::<Q>(ctx, stream, location);
     if r.is_err() && ctx.greedy {
         loop {
@@ -322,10 +363,10 @@ fn exponent(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     c: char,
-    mut location: Span,
+    mut location: Option<Span>,
 ) -> Result<Token, Box<Error>> {
     let mut t = String::from_iter(vec!['.', c]);
-    location.inc(eat_char(stream)?);
+    location_inc(&mut location, eat_char(stream)?);
 
     loop {
         match peek_char(ctx, stream)? {
@@ -347,7 +388,7 @@ fn exponent(
                 })
             }
         }
-        location.inc(eat_char(stream)?);
+        location_inc(&mut location, eat_char(stream)?);
     }
 
     match next_char(ctx, stream)? {
@@ -355,7 +396,7 @@ fn exponent(
         (Char::Graphic('-'), _) => t.push('-'),
         (Char::Underscore, l) => {
             t.push('_');
-            return Error::new(ErrorKind::BadFloat(t), location.join(l));
+            return Error::new(ErrorKind::BadFloat(t), location_join(&mut location, l));
         }
         (Char::Digit(c), l)
         | (Char::Meta(c), l)
@@ -365,9 +406,9 @@ fn exponent(
         | (Char::Solo(c), l)
         | (Char::Layout(c), l) => {
             t.push(c);
-            return Error::new(ErrorKind::BadFloat(t), location.join(l));
+            return Error::new(ErrorKind::BadFloat(t), location_join(&mut location, l));
         }
-        (_, l) => return Error::new(ErrorKind::BadFloat(t), location.join(l)),
+        (_, l) => return Error::new(ErrorKind::BadFloat(t), location_join(&mut location, l)),
     }
 
     loop {
@@ -380,7 +421,7 @@ fn exponent(
                 })
             }
         }
-        location.inc(eat_char(stream)?);
+        location_inc(&mut location, eat_char(stream)?);
     }
 }
 
@@ -388,7 +429,7 @@ fn graphic(
     ctx: &Context,
     stream: &mut dyn ReadStream,
     c: char,
-    mut location: Span,
+    mut location: Option<Span>,
 ) -> Result<Token, Box<Error>> {
     let mut t = c.to_string();
     loop {
@@ -402,7 +443,7 @@ fn graphic(
                 })
             }
         }
-        location.inc(eat_char(stream)?);
+        location_inc(&mut location, eat_char(stream)?);
     }
 }
 
@@ -535,53 +576,54 @@ pub(super) fn next(
 
             // integer (* 6.4 *)
             // float number (* 6.4 *)
-            (Char::Digit('0'), location) => match peek_char(ctx, stream)? {
+            (Char::Digit('0'), ref mut location) => match peek_char(ctx, stream)? {
                 Char::Meta('\'') => {
                     eat_char(stream)?;
                     return match next_char_raw(stream)? {
-                        (None, l) => {
-                            Error::new(ErrorKind::BadEscape("0\'".to_string()), location.join(l))
-                        }
+                        (None, l) => Error::new(
+                            ErrorKind::BadEscape("0\'".to_string()),
+                            location_join(location, l),
+                        ),
                         (Some('\''), _) => match next_char_raw(stream)? {
                             (None, l) => Error::new(
                                 ErrorKind::BadEscape("0\'\'".to_string()),
-                                location.join(l),
+                                location_join(location, l),
                             ),
                             (Some('\''), l) => Ok(Token {
                                 kind: TokenKind::Int("39".to_string(), 10),
-                                location: location.join(l),
+                                location: location_join(location, l),
                             }),
                             (Some(c), l) => Error::new(
                                 ErrorKind::BadEscape(String::from_iter(vec!['0', '\'', '\'', c])),
-                                location.join(l),
+                                location_join(location, l),
                             ),
                         },
                         (Some(c), l) => Ok(Token {
                             kind: TokenKind::Int((c as u32).to_string(), 10),
-                            location: location.join(l),
+                            location: location_join(location, l),
                         }),
                     };
                 }
                 Char::SmallLetter('b') => {
                     eat_char(stream)?;
-                    return integral(ctx, stream, '1', 2, location);
+                    return integral(ctx, stream, '1', 2, *location);
                 }
                 Char::SmallLetter('o') => {
                     eat_char(stream)?;
-                    return integral(ctx, stream, '7', 8, location);
+                    return integral(ctx, stream, '7', 8, *location);
                 }
                 Char::SmallLetter('x') => {
                     eat_char(stream)?;
-                    return integral(ctx, stream, '9', 16, location);
+                    return integral(ctx, stream, '9', 16, *location);
                 }
                 Char::Digit(c) => {
                     eat_char(stream)?;
-                    return numeric(ctx, stream, c, location);
+                    return numeric(ctx, stream, c, *location);
                 }
                 _ => {
                     return Ok(Token {
                         kind: TokenKind::Int("0".to_string(), 10),
-                        location,
+                        location: *location,
                     })
                 }
             },

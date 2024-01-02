@@ -4,7 +4,7 @@ pub struct Utf8Reader<R: std::io::Read> {
     reader: R,
     next_char: Option<char>,
     next_byte: Option<u8>,
-    position: stream::Position,
+    position: Option<stream::Position>,
 }
 
 impl<R: std::io::Read> Utf8Reader<R> {
@@ -15,10 +15,10 @@ impl<R: std::io::Read> Utf8Reader<R> {
             reader,
             next_char: None,
             next_byte: None,
-            position: stream::Position {
+            position: Some(stream::Position {
                 source: source.to_string(),
                 ..stream::Position::default()
-            },
+            }),
         }
     }
 
@@ -53,9 +53,12 @@ impl<R: std::io::Read> Utf8Reader<R> {
 impl<R: std::io::Read> stream::ReadStream for Utf8Reader<R> {
     fn get(&mut self) -> Result<Option<char>, std::io::Error> {
         let r = self.peek()?;
-        match r {
-            Some('\n') => self.position.linefeed(),
-            Some(_) => self.position.inc(),
+        match (r, self.position) {
+            (Some('\n'), Some(ref mut p)) => {
+                p.line += 1;
+                p.column = 1;
+            }
+            (Some(_), Some(ref mut p)) => p.column += 1,
             _ => {}
         }
         self.next_byte = None;
@@ -109,7 +112,7 @@ impl<R: std::io::Read> stream::ReadStream for Utf8Reader<R> {
         Ok(self.next_char)
     }
 
-    fn position(&self) -> stream::Position {
+    fn position(&self) -> Option<stream::Position> {
         self.position.clone()
     }
 }

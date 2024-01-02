@@ -26,18 +26,22 @@ pub(crate) enum TermKind {
 #[derive(Debug, Clone)]
 pub(crate) struct Term {
     pub kind: TermKind,
-    pub location: Span,
+    pub location: Option<Span>,
 }
 
 impl Term {
-    pub(crate) fn new_atom(s: String, location: Span) -> Rc<Term> {
+    pub(crate) fn new_atom(s: String, location: Option<Span>) -> Rc<Term> {
         Rc::new(Term {
             kind: TermKind::Atom(s),
             location,
         })
     }
 
-    pub(crate) fn new_compound(functor: String, location: Span, args: Vec<Rc<Term>>) -> Rc<Term> {
+    pub(crate) fn new_compound(
+        functor: String,
+        location: Option<Span>,
+        args: Vec<Rc<Term>>,
+    ) -> Rc<Term> {
         Rc::new(Term {
             kind: TermKind::Compound(Compound { functor, args }),
             location,

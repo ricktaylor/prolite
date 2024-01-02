@@ -19,11 +19,11 @@ pub(crate) enum ErrorKind {
 #[derive(Debug)]
 pub(crate) struct Error {
     pub kind: ErrorKind,
-    pub location: Span,
+    pub location: Option<Span>,
 }
 
 impl Error {
-    pub(super) fn new<T>(kind: ErrorKind, location: Span) -> Result<T, Box<Error>> {
+    pub(super) fn new<T>(kind: ErrorKind, location: Option<Span>) -> Result<T, Box<Error>> {
         Err(Box::new(Self { kind, location }))
     }
 }

@@ -71,7 +71,7 @@ impl<'a> Context<'a> {
             .open(source)
             .map_err(|e| {
                 Box::new(Error::StreamResolver(
-                    Term::new_atom(source.to_string(), stream::Span::default()),
+                    Term::new_atom(source.to_string(), None),
                     e,
                 ))
             })
