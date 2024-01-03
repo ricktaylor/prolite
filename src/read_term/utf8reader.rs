@@ -17,7 +17,8 @@ impl<R: std::io::Read> Utf8Reader<R> {
             next_byte: None,
             position: Some(stream::Position {
                 source: source.to_string(),
-                ..stream::Position::default()
+                line: 1,
+                column: 1,
             }),
         }
     }

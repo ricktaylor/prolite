@@ -5,17 +5,7 @@ pub struct Position {
     pub column: usize,
 }
 
-impl Default for Position {
-    fn default() -> Self {
-        Self {
-            source: String::new(),
-            line: 1,
-            column: 1,
-        }
-    }
-}
-
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Span {
     pub start: Position,
     pub end: Option<Position>,
