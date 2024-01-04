@@ -90,8 +90,8 @@ fn parse_list(
         return Error::new(ErrorKind::ExpectedChar(']'), next.location);
     }
 
-    Ok(terms.into_iter().rev().fold(list, |list, t| {
-        Term::new_compound(".".to_string(), t.location.clone(), vec![t, list])
+    Ok(terms.iter().rev().fold(list, |list, t| {
+        Term::new_compound(".".to_string(), t.location.clone(), vec![t.clone(), list])
     }))
 }
 
@@ -187,7 +187,7 @@ fn next_term(
                 TokenKind::Exponent(t) => Ok((
                     parse_float(
                         &(s + &t),
-                        lexer::location_join(&mut token.location, next.location),
+                        lexer::location_join(token.location, next.location),
                     )?,
                     lexer::next(ctx, stream, false)?,
                     0,
@@ -219,7 +219,7 @@ fn next_term(
                         TokenKind::Exponent(u) => Ok((
                             parse_float(
                                 &(s + &t + &u),
-                                lexer::location_join(&mut token.location, next2.location),
+                                lexer::location_join(token.location, next2.location),
                             )?,
                             lexer::next(ctx, stream, false)?,
                             0,
@@ -228,7 +228,7 @@ fn next_term(
                             parse_integer(
                                 &(s + &t),
                                 r,
-                                lexer::location_join(&mut token.location, next.location),
+                                lexer::location_join(token.location, next.location),
                             )?,
                             next2,
                             0,
@@ -333,13 +333,13 @@ fn next_term(
                         var_info,
                         stream,
                         "[]".to_string(),
-                        lexer::location_join(&mut token.location, next2.location),
+                        lexer::location_join(token.location, next2.location),
                     )
                 } else {
                     Ok((
                         Term::new_atom(
                             "[]".to_string(),
-                            lexer::location_join(&mut token.location, next.location),
+                            lexer::location_join(token.location, next.location),
                         ),
                         next2,
                         0,
@@ -364,13 +364,13 @@ fn next_term(
                         var_info,
                         stream,
                         "{}".to_string(),
-                        lexer::location_join(&mut token.location, next2.location),
+                        lexer::location_join(token.location, next2.location),
                     )
                 } else {
                     Ok((
                         Term::new_atom(
                             "{}".to_string(),
-                            lexer::location_join(&mut token.location, next.location),
+                            lexer::location_join(token.location, next.location),
                         ),
                         next2,
                         0,
@@ -382,7 +382,7 @@ fn next_term(
                     Ok((
                         Term::new_compound(
                             "{}".to_string(),
-                            lexer::location_join(&mut token.location, next.location),
+                            lexer::location_join(token.location, next.location),
                             vec![term],
                         ),
                         lexer::next(ctx, stream, false)?,

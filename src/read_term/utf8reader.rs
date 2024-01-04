@@ -54,12 +54,12 @@ impl<R: std::io::Read> Utf8Reader<R> {
 impl<R: std::io::Read> stream::ReadStream for Utf8Reader<R> {
     fn get(&mut self) -> Result<Option<char>, std::io::Error> {
         let r = self.peek()?;
-        match (r, self.position) {
-            (Some('\n'), Some(ref mut p)) => {
+        match (r, &mut self.position) {
+            (Some('\n'), Some(p)) => {
                 p.line += 1;
                 p.column = 1;
             }
-            (Some(_), Some(ref mut p)) => p.column += 1,
+            (Some(_), Some(p)) => p.column += 1,
             _ => {}
         }
         self.next_byte = None;
