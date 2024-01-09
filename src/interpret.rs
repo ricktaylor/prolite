@@ -1,7 +1,8 @@
 mod builtins;
-mod copy_term;
 mod findall;
+mod setof;
 mod solve;
+mod term;
 mod user_defined;
 mod write;
 
@@ -9,13 +10,13 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::consult::text::*;
-use super::read_term::*;
+use super::read_term::term as read_term;
 
 #[derive(Debug)]
 pub(crate) enum Response {
     Fail,
     Cut,
-    Throw(Rc<term::Term>),
+    Throw(Rc<read_term::Term>),
     Halt(isize),
 }
 
@@ -35,9 +36,6 @@ impl Response {
     }
 }
 
-type Var<'a> = Option<&'a Rc<term::Term>>;
-
-#[derive(Default)]
 pub(super) struct Context {
     pub procedures: HashMap<String, Procedure>,
 }
