@@ -56,7 +56,7 @@ impl StreamResolver for FSResolver {
 }
 
 fn error(e: &error::Error) -> bool {
-    println!("{:?}", e);
+    println!("ERROR: {:?}", e);
     true
 }
 

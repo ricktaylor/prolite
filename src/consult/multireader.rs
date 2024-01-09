@@ -46,6 +46,6 @@ impl ReadStream for MultiReader {
     }
 
     fn position(&self) -> Option<stream::Position> {
-        self.streams.first().map_or(None, |s| s.position())
+        self.streams.first().and_then(|s| s.position())
     }
 }

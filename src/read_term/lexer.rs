@@ -220,10 +220,13 @@ fn alpha_numeric(
 
 pub(super) fn location_join(location: Option<Span>, l: Option<Span>) -> Option<Span> {
     match (location, l) {
-        (Some(location), Some(l)) => Some(Span{start: location.start, end : l.end.or(Some(l.start))}),
-        (Some(location),None) => Some(location),
+        (Some(location), Some(l)) => Some(Span {
+            start: location.start,
+            end: l.end.or(Some(l.start)),
+        }),
+        (Some(location), None) => Some(location),
         (None, Some(l)) => Some(l),
-        _ => None
+        _ => None,
     }
 }
 
@@ -240,9 +243,7 @@ fn char_code(
 
     loop {
         match next_char_raw(stream)? {
-            (None, l) => {
-                return Error::new(ErrorKind::Missing('\\'), location_join(location, l))
-            }
+            (None, l) => return Error::new(ErrorKind::Missing('\\'), location_join(location, l)),
             (Some('\\'), l) => match u32::from_str_radix(&o, if init_c == 'x' { 16 } else { 8 }) {
                 Ok(u) => match char::from_u32(u) {
                     None => {
@@ -576,7 +577,7 @@ pub(super) fn next(
 
             // integer (* 6.4 *)
             // float number (* 6.4 *)
-            (Char::Digit('0'), mut location) => match peek_char(ctx, stream)? {
+            (Char::Digit('0'), location) => match peek_char(ctx, stream)? {
                 Char::Meta('\'') => {
                     eat_char(stream)?;
                     return match next_char_raw(stream)? {

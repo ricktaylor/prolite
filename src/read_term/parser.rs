@@ -176,7 +176,7 @@ fn next_term(
     ctx: &Context,
     var_info: &mut Vec<VarInfo>,
     stream: &mut dyn ReadStream,
-    mut token: Token,
+    token: Token,
     max_precedence: u16,
 ) -> Result<(Rc<Term>, Token, u16), Box<Error>> {
     match token.kind {
