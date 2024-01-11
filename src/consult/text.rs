@@ -20,7 +20,6 @@ pub(crate) struct Flags {
 
 #[derive(Debug)]
 pub(crate) struct Clause {
-    pub var_info: Vec<VarInfo>,
     pub head: Rc<Term>,
     pub body: Option<Rc<Term>>,
 }
@@ -29,7 +28,7 @@ pub(crate) struct Clause {
 pub(crate) struct Procedure {
     pub flags: Flags,
     pub predicates: Vec<Rc<Clause>>,
-    source_text: String,
+    pub source_text: Option<String>,
 }
 
 #[derive(Default)]
@@ -105,9 +104,9 @@ impl<'a> Context<'a> {
                             directive(self, var_info, &c.args[0])
                         }
                         TermKind::Compound(c) if c.functor == ":-" && c.args.len() == 2 => {
-                            assert(self, var_info, &c.args[0], Some(&c.args[1]))
+                            assert(self, &c.args[0], Some(&c.args[1]))
                         }
-                        _ => assert(self, var_info, &t, None),
+                        _ => assert(self, &t, None),
                     };
 
                     if let Err(e) = r {
@@ -136,12 +135,7 @@ impl<'a> Context<'a> {
     }
 }
 
-fn assert(
-    ctx: &mut Context,
-    var_info: Vec<VarInfo>,
-    head: &Rc<Term>,
-    body: Option<&Rc<Term>>,
-) -> Result<(), Box<Error>> {
+fn assert(ctx: &mut Context, head: &Rc<Term>, body: Option<&Rc<Term>>) -> Result<(), Box<Error>> {
     let pi = match &head.kind {
         TermKind::Atom(s) => format!("{}/0", s),
         TermKind::Compound(c) => format!("{}/{}", c.functor, c.args.len()),
@@ -161,12 +155,16 @@ fn assert(
 
     if let Some(p) = p {
         if let Some(first) = p.predicates.first() {
-            if !p.flags.multifile && ctx.current_text != p.source_text {
-                return Error::new(Error::NotMultifile(
-                    head.clone(),
-                    first.head.location.clone(),
-                    p.source_text.clone(),
-                ));
+            if !p.flags.multifile {
+                if let Some(s) = &p.source_text {
+                    if ctx.current_text != *s {
+                        return Error::new(Error::NotMultifile(
+                            head.clone(),
+                            first.head.location.clone(),
+                            s.clone(),
+                        ));
+                    }
+                }
             }
 
             if !p.flags.discontiguous
@@ -183,7 +181,6 @@ fn assert(
             }
         }
         p.predicates.push(Rc::new(Clause {
-            var_info,
             head: head.clone(),
             body: body.cloned(),
         }));
@@ -191,9 +188,8 @@ fn assert(
         ctx.text.procedures.insert(
             pi.clone(),
             Procedure {
-                source_text: ctx.current_text.clone(),
+                source_text: Some(ctx.current_text.clone()),
                 predicates: vec![Rc::new(Clause {
-                    var_info,
                     head: head.clone(),
                     body: body.cloned(),
                 })],
@@ -271,16 +267,14 @@ fn directive(ctx: &mut Context, var_info: Vec<VarInfo>, term: &Rc<Term>) -> Resu
         TermKind::Compound(c) if !ctx.context.flags.strict_iso => {
             if c.functor == "directive" {
                 directive_expand(ctx, c, declare_directive)
+            } else if ctx
+                .directives
+                .get(&format!("{}/{}", c.functor, c.args.len()))
+                .is_some()
+            {
+                directive_eval(ctx, &c.args[0])
             } else {
-                if ctx
-                    .directives
-                    .get(&format!("{}/{}", c.functor, c.args.len()))
-                    .is_some()
-                {
-                    directive_eval(ctx, &c.args[0])
-                } else {
-                    Error::new(Error::UnknownDirective(c.args[0].clone()))
-                }
+                Error::new(Error::UnknownDirective(c.args[0].clone()))
             }
         }
         _ => Error::new(Error::UnknownDirective(term.clone())),
@@ -628,7 +622,7 @@ fn lookup_procedure<'a>(
 
     Ok((
         ctx.text.procedures.entry(pi).or_insert_with(|| Procedure {
-            source_text: ctx.current_text.clone(),
+            source_text: Some(ctx.current_text.clone()),
             ..Default::default()
         }),
         false,
@@ -699,7 +693,7 @@ fn declare_directive(ctx: &mut Context, term: &Rc<Term>) -> Result<(), Box<Error
     }
 
     let p = ctx.directives.entry(pi).or_insert_with(|| Procedure {
-        source_text: ctx.current_text.clone(),
+        source_text: Some(ctx.current_text.clone()),
         ..Procedure::default()
     });
     p.flags.dynamic = true;

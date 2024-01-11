@@ -116,7 +116,10 @@ fn solve_throw_var_check(frame: &Frame, ball: usize) -> Result<Rc<read_term::Ter
 }
 
 fn solve_throw(frame: Frame, args: &[usize], _: &mut dyn Solver) -> Response {
-    solve_throw_var_check(&frame, args[0]).map_or_else(|r| r, |ball| Response::Throw(ball.clone()))
+    match solve_throw_var_check(&frame, args[0]) {
+        Err(r) => r,
+        Ok(ball) => Response::Throw(ball),
+    }
 }
 
 fn solve_not_provable(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
@@ -161,6 +164,14 @@ fn solve_copy_term(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> R
             Response::Fail
         }
     })
+}
+
+fn solve_asserta(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    user_defined::assert(frame, args[0], false, next)
+}
+
+fn solve_assertz(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    user_defined::assert(frame, args[0], true, next)
 }
 
 fn not_impl(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
@@ -209,8 +220,8 @@ const BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     ">=/2" => not_impl,
     "clause/2" => not_impl,
     "current_predicate/1" => not_impl,
-    "asserta/1" => not_impl,
-    "assertz/1" => not_impl,
+    "asserta/1" => solve_asserta,
+    "assertz/1" => solve_assertz,
     "retract/1" => not_impl,
     "abolish/1" => not_impl,
     "findall/3" => findall::solve_findall,
@@ -256,7 +267,7 @@ const BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "read/2" => not_impl,
     "write_term/3" => not_impl,
     "write_term/2" => not_impl,
-    "write/1" => write::solve_write,
+    "write/1" => write::solve_write1,
     "write/2" => not_impl,
     "writeq/1" => not_impl,
     "writeq/2" => not_impl,

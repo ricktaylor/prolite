@@ -5,7 +5,7 @@ pub enum BuiltinType {
     Builtin,
 }
 
-static BUILTINS: phf::Map<&'static str, BuiltinType> = phf_map! {
+const BUILTINS: phf::Map<&'static str, BuiltinType> = phf_map! {
     "true/0" => BuiltinType::Control,
     "fail/0" => BuiltinType::Control,
     "call/1" => BuiltinType::Control,

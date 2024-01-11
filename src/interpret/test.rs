@@ -1,6 +1,6 @@
 use super::*;
 
-fn print_result() -> bool {
+fn print_result(_: &[read_term::VarInfo]) -> bool {
     true
 }
 

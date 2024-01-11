@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use super::*;
-use solve::Frame;
 
 #[derive(Debug)]
 pub(super) struct Compound {
@@ -11,8 +10,12 @@ pub(super) struct Compound {
 
 impl Compound {
     pub fn functor(&self) -> &String {
+        &self.as_compound().functor
+    }
+
+    pub fn as_compound(&self) -> &read_term::Compound {
         if let read_term::TermKind::Compound(c) = &self.compound.kind {
-            &c.functor
+            c
         } else {
             panic!("Compound isn't an instantiated compound ?!?!")
         }

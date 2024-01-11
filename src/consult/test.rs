@@ -46,7 +46,7 @@ impl StreamResolver for FSResolver {
                     .into_os_string()
                     .into_string()
                     .unwrap();
-                println!("Opened {}", n);
+                eprintln!("Consulting {}", n);
 
                 let r = Box::new(read_term::utf8reader::Utf8Reader::new(f, &n));
                 Ok((n, r))
@@ -56,7 +56,7 @@ impl StreamResolver for FSResolver {
 }
 
 fn error(e: &error::Error) -> bool {
-    println!("ERROR: {:?}", e);
+    eprintln!("ERROR: {:?}", e);
     true
 }
 

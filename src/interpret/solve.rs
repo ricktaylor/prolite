@@ -30,10 +30,10 @@ impl<'a> Frame<'a> {
     }
 
     pub fn new_term(&mut self, term: &Rc<read_term::Term>) -> usize {
-        self.new_term_inner(term, &mut HashMap::new())
+        self.new_term_indexed(term, &mut HashMap::new())
     }
 
-    fn new_term_inner(
+    pub fn new_term_indexed(
         &mut self,
         term: &Rc<read_term::Term>,
         var_index: &mut HashMap<usize, usize>,
@@ -41,12 +41,12 @@ impl<'a> Frame<'a> {
         let t = match &term.kind {
             read_term::TermKind::Var(v) => Term::Var(self.add_var(*v, var_index)),
             read_term::TermKind::Compound(c) => Term::Compound(Compound {
-                compound: term.clone(),
                 args: c
                     .args
                     .iter()
-                    .map(|arg| self.new_term_inner(arg, var_index))
+                    .map(|arg| self.new_term_indexed(arg, var_index))
                     .collect(),
+                compound: term.clone(),
             }),
             _ => Term::Term(term.clone()),
         };
@@ -58,7 +58,7 @@ impl<'a> Frame<'a> {
         self.cache.len() - 1
     }
 
-    pub fn get_term(&'a self, idx: usize) -> &'a Term {
+    pub fn get_term(&self, idx: usize) -> &Term {
         &self.cache[idx]
     }
 
@@ -84,7 +84,11 @@ impl<'a> Frame<'a> {
         f(Frame::new(self.ctx, self.cache, self.substs))
     }
 
-    pub fn context(&'a self) -> &'a Context {
+    pub fn get_context(&self) -> &Context {
+        self.ctx
+    }
+
+    pub fn get_context_mut(&mut self) -> &mut Context {
         self.ctx
     }
 
@@ -108,6 +112,7 @@ impl<'a> Frame<'a> {
                 if let Some(a) = self.substs[*idx] {
                     self.unify_fold(a, b)
                 } else {
+                    eprintln!("assign _{} -> {}", *idx, write::write_term(self, b));
                     let i = *idx;
                     self.substs[i] = Some(b);
                     Ok(())
@@ -117,6 +122,7 @@ impl<'a> Frame<'a> {
                 if let Some(b) = self.substs[*idx] {
                     self.unify_fold(a, b)
                 } else {
+                    eprintln!("assign _{} -> {}", *idx, write::write_term(self, a));
                     let i = *idx;
                     self.substs[i] = Some(a);
                     Ok(())
@@ -256,13 +262,12 @@ impl<'a> Drop for Frame<'a> {
 }
 
 pub(super) fn solve(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
+    eprintln!("solving {}", write::write_term(&frame,goal));
+
     match frame.get_term(goal) {
         Term::Term(t) => {
             if let read_term::TermKind::Atom(s) = &t.kind {
-                let pi = format!("{}/0", s);
-                println!("solving {}", pi);
-
-                match is_builtin(&pi) {
+                match is_builtin(&format!("{}/0", s)) {
                     Some(f) => (f)(frame, &mut [], next),
                     None => user_defined::solve(frame, goal, next),
                 }
@@ -281,10 +286,7 @@ pub(super) fn solve(frame: Frame, goal: usize, next: &mut dyn Solver) -> Respons
             }
         }
         Term::Compound(c) => {
-            let pi = format!("{}/{}", c.functor(), c.args.len());
-            println!("solving {}", pi);
-
-            match is_builtin(&pi) {
+            match is_builtin(&format!("{}/{}", c.functor(), c.args.len())) {
                 Some(f) => {
                     let args = c.args.to_vec();
                     (f)(frame, &args, next)
@@ -353,16 +355,17 @@ where
     }
 }
 
-struct CallbackSolver<F: FnMut() -> bool> {
+struct CallbackSolver<'a, F: FnMut(&'a [read_term::VarInfo]) -> bool> {
     callback: F,
+    var_info: &'a [read_term::VarInfo],
 }
 
-impl<F> Solver for CallbackSolver<F>
+impl<'a, F> Solver for CallbackSolver<'a, F>
 where
-    F: FnMut() -> bool,
+    F: FnMut(&'a [read_term::VarInfo]) -> bool,
 {
     fn solve(&mut self, _: Frame) -> Response {
-        if (self.callback)() {
+        if (self.callback)(self.var_info) {
             Response::Fail
         } else {
             Response::Cut
@@ -370,7 +373,7 @@ where
     }
 }
 
-pub(crate) fn eval<F: FnMut() -> bool>(
+pub(crate) fn eval<F: FnMut(&[read_term::VarInfo]) -> bool>(
     ctx: &mut Context,
     goal: &Rc<read_term::Term>,
     var_info: &[read_term::VarInfo],
@@ -380,5 +383,5 @@ pub(crate) fn eval<F: FnMut() -> bool>(
     let mut substs = Vec::new();
     let mut frame = solve::Frame::new(ctx, &mut cache, &mut substs);
     let goal = frame.new_term(goal);
-    solve(frame, goal, &mut CallbackSolver { callback })
+    solve(frame, goal, &mut CallbackSolver { callback, var_info })
 }
