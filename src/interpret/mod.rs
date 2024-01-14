@@ -1,5 +1,6 @@
 mod builtins;
 mod findall;
+mod flags;
 mod setof;
 mod solve;
 mod term;
@@ -9,6 +10,7 @@ mod write;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use super::*;
 use super::consult::text::*;
 use super::read_term::term as read_term;
 
@@ -38,6 +40,9 @@ impl Response {
 
 pub(super) struct Context {
     pub procedures: HashMap<String, Procedure>,
+    pub flags: crate::flags::Flags,
+    pub operators: operators::OperatorTable,
+    pub char_conversion: HashMap<char, char>,
 }
 
 #[cfg(test)]

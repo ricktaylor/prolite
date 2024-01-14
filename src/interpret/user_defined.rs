@@ -125,21 +125,21 @@ pub(super) fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Res
 
             for clause in predicates {
                 match frame.sub_frame(|mut frame| {
+                    let mut index = HashMap::new();
 
-                    let mut index =  HashMap::new();
+                    // TODO:  We could merge new_term_indexed and unify here to one walk of the term tree
                     let head = frame.new_term_indexed(&clause.head, &mut index);
-
                     if frame.unify(goal, head) {
                         if let Some(body) = &clause.body {
                             let body = frame.new_term_indexed(body, &mut index);
-                            solve::solve(frame,body,next)
+                            solve::solve(frame, body, next)
                         } else {
                             next.solve(frame)
                         }
                     } else {
                         Response::Fail
                     }
-                }){
+                }) {
                     Response::Fail => {}
                     Response::Cut => return Response::Fail,
                     r => return r,

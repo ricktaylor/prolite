@@ -29,7 +29,6 @@ fn findall_list(
     next: &mut dyn Solver,
 ) -> Response {
     let mut solutions = Vec::new();
-
     match frame.sub_frame(|frame| {
         solve::call(
             frame,

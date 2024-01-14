@@ -3,24 +3,22 @@ use solve::{Frame, Solver};
 
 fn write_list(frame: &Frame, head: usize, tail: usize) -> String {
     match frame.get_term(tail) {
-        term::Term::Term(t) => {
-            match &t.kind {
-                read_term::TermKind::Atom(a) if a == "[]" => write_term(frame,head),
-                _ => panic!("malformed list!")
-            }
-        }
-        term::Term::Var(idx) => {
-            match frame.get_var(*idx) {
-                Some(t) => write_list(frame,head,t),
-                None => format!("{}|_{}",write_term(frame,head),*idx)
-            }
-        }
-        term::Term::Compound(c) => {
-            match c.functor().as_str() {
-                "." => format!("{},{}",write_term(frame,head),write_list(frame,c.args[0],c.args[1])),
-                _ => panic!("malformed list!")
-            }
-        }
+        term::Term::Term(t) => match &t.kind {
+            read_term::TermKind::Atom(a) if a == "[]" => write_term(frame, head),
+            _ => panic!("malformed list!"),
+        },
+        term::Term::Var(idx) => match frame.get_var(*idx) {
+            Some(t) => write_list(frame, head, t),
+            None => format!("{}|_{}", write_term(frame, head), *idx),
+        },
+        term::Term::Compound(c) => match c.functor().as_str() {
+            "." => format!(
+                "{},{}",
+                write_term(frame, head),
+                write_list(frame, c.args[0], c.args[1])
+            ),
+            _ => panic!("malformed list!"),
+        },
     }
 }
 
@@ -39,23 +37,21 @@ pub(super) fn write_term(frame: &Frame, goal: usize) -> String {
                 format!("_{}", *idx)
             }
         }
-        term::Term::Compound(c) => {
-            match c.functor().as_str() {
-                "." => {
-                    format!("[{}]",write_list(frame,c.args[0],c.args[1]))
-                }
-                s => {
-                    let mut s = s.to_string() + "(";
-                    for (i, a) in c.args.iter().enumerate() {
-                        if i != 0 {
-                            s += ",";
-                        }
-                        s += &write_term(frame, *a);
-                    }
-                    s + ")"
-                }
+        term::Term::Compound(c) => match c.functor().as_str() {
+            "." => {
+                format!("[{}]", write_list(frame, c.args[0], c.args[1]))
             }
-        }
+            s => {
+                let mut s = s.to_string() + "(";
+                for (i, a) in c.args.iter().enumerate() {
+                    if i != 0 {
+                        s += ",";
+                    }
+                    s += &write_term(frame, *a);
+                }
+                s + ")"
+            }
+        },
     }
 }
 

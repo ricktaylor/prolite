@@ -32,7 +32,7 @@ fn find_free_vars(
         Term::Var(idx) => {
             if let Some(t) = frame.get_var(*idx) {
                 find_free_vars(frame, t, free_vars, other_vars);
-            } else if other_vars.get(&t).is_none() {
+            } else if other_vars.get(idx).is_none() {
                 free_vars.insert(*idx);
             }
         }
@@ -65,39 +65,71 @@ fn existential_split(frame: &Frame, t: usize, other_vars: &mut HashSet<usize>) -
 fn split_free_vars(frame: &Frame, t: usize, v: usize, free_vars: &mut HashSet<usize>) -> usize {
     let mut other_vars = HashSet::new();
     add_vars(frame, v, &mut other_vars);
+
+    eprintln!("template vars: {:?}", &other_vars);
+
     let goal = existential_split(frame, t, &mut other_vars);
+
+    eprintln!("with existential vars: {:?}", &other_vars);
+
     find_free_vars(frame, goal, free_vars, &other_vars);
     goal
 }
 
-pub(super) fn solve_setof(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    // Find the free variables of the iterated goal of arg[1] wrt arg[0]
-    let mut free_vars = HashSet::new();
-    let goal = split_free_vars(&frame, args[1], args[0], &mut free_vars);
-
-    //let mut solutions = Vec::new();
-    //let mut substs = Vec::new();
+fn setof_empty(
+    mut frame: Frame,
+    witness: usize,
+    goal: usize,
+    instances: usize,
+    next: &mut dyn Solver,
+) -> Response {
+    /* We cannot short-cut like we do with findall/3 as the
+     * standard specifies that findall(W,Goal,S) is run before unification with Instances
+     * This allows for Goal with side-effects
+     */
+    let mut solutions = Vec::new();
     frame
         .sub_frame(|frame| {
             solve::call(
                 frame,
                 goal,
-                &mut Continuation::new(|frame| {
-                    // Accumulate the current values of the free variables
-                    //let free_values = free_vars.iter().map(|&idx| idx.substs[idx.index]).collect();
-
-                    //let template = args[0].copy(&mut substs);
-
-                    //MUCH MORE HERE!
-
-                    //solutions.push((free_values, template));
+                &mut Continuation::new(|mut frame| {
+                    solutions.push(frame.copy_term(witness));
                     Response::Fail
                 }),
             )
         })
         .map_failed(|| {
-            //while !solutions.is_empty() {}
-
-            Response::Fail
+            if solutions.is_empty() {
+                Response::Fail
+            } else {
+                let list = frame.as_list(&solutions);
+                solve::unify(frame, list, instances, next)
+            }
         })
+}
+
+fn setof_freevars(
+    _frame: Frame,
+    _witness: usize,
+    _goal: usize,
+    _free_vars: HashSet<usize>,
+    _instances: usize,
+    _next: &mut dyn Solver,
+) -> Response {
+    todo!()
+}
+
+pub(super) fn solve_setof(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    // Find the free variables of the iterated goal of arg[1] wrt arg[0]
+    let mut free_vars = HashSet::new();
+    let goal = split_free_vars(&frame, args[1], args[0], &mut free_vars);
+
+    eprintln!("free vars: {:?}", &free_vars);
+
+    if free_vars.is_empty() {
+        setof_empty(frame, args[0], goal, args[2], next)
+    } else {
+        setof_freevars(frame, args[0], goal, free_vars, args[2], next)
+    }
 }

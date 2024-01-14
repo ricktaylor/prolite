@@ -9,6 +9,9 @@ fn test_consult(s: &str) {
 
     let ctx = &mut Context {
         procedures: text.procedures,
+        char_conversion: text.char_conversion,
+        flags: text.flags,
+        operators: text.operators,
     };
     for (t, v) in text.initialization {
         solve::eval(ctx, &t, &v, print_result);

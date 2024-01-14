@@ -174,6 +174,10 @@ fn solve_assertz(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respons
     user_defined::assert(frame, args[0], true, next)
 }
 
+fn solve_current_char_conversion(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    flags::solve_current_char_conversion(frame, args[0], args[1], next)
+}
+
 fn not_impl(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
     todo!()
 }
@@ -276,7 +280,7 @@ const BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "op/3" => not_impl,
     "current_op/3" => not_impl,
     "char_conversion/2" => not_impl,
-    "current_char_conversion/2" => not_impl,
+    "current_char_conversion/2" => solve_current_char_conversion,
     "\\+/1" => solve_not_provable,
     "once/1" => not_impl,
     "repeat/0" => solve_repeat,

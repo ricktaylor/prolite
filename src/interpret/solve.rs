@@ -262,7 +262,7 @@ impl<'a> Drop for Frame<'a> {
 }
 
 pub(super) fn solve(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
-    eprintln!("solving {}", write::write_term(&frame,goal));
+    eprintln!("solving {}", write::write_term(&frame, goal));
 
     match frame.get_term(goal) {
         Term::Term(t) => {
@@ -285,16 +285,13 @@ pub(super) fn solve(frame: Frame, goal: usize, next: &mut dyn Solver) -> Respons
                 ))
             }
         }
-        Term::Compound(c) => {
-            match is_builtin(&format!("{}/{}", c.functor(), c.args.len())) {
-                Some(f) => {
-                    let args = c.args.to_vec();
-                    (f)(frame, &args, next)
-                }
-                None => user_defined::solve(frame, goal, next),
+        Term::Compound(c) => match is_builtin(&format!("{}/{}", c.functor(), c.args.len())) {
+            Some(f) => {
+                let args = c.args.to_vec();
+                (f)(frame, &args, next)
             }
-        }
-        _ => todo!(),
+            None => user_defined::solve(frame, goal, next),
+        },
     }
 }
 

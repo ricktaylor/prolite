@@ -3,13 +3,20 @@ use std::rc::Rc;
 use term::*;
 
 pub(crate) fn read_term(s: &str) -> (Rc<Term>, Vec<VarInfo>) {
-    let mut stream = utf8reader::Utf8Reader::new(s.as_bytes(), format!("{{{}}}", s).as_str());
     let mut var_info = Vec::new();
-
     (
-        parser::next(&Context::default(), &mut var_info, &mut stream)
-            .unwrap()
-            .unwrap(),
+        parser::next(
+            Context {
+                flags: &mut flags::Flags::default(),
+                operators: &mut &operators::Operator::default_table(),
+                char_conversion: &mut HashMap::new(),
+                greedy: false,
+            },
+            &mut var_info,
+            &mut utf8reader::Utf8Reader::new(s.as_bytes(), format!("{{{}}}", s).as_str()),
+        )
+        .unwrap()
+        .unwrap(),
         var_info,
     )
 }
