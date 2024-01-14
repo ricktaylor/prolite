@@ -1,4 +1,4 @@
-use std::todo;
+use std::collections::HashSet;
 
 use super::*;
 use builtins::*;
@@ -10,7 +10,7 @@ pub(super) struct Frame<'a> {
     cache_base: usize,
     substs: &'a mut Vec<Option<usize>>,
     substs_base: usize,
-    undo: Vec<usize>,
+    undo: HashSet<usize>,
 }
 
 impl<'a> Frame<'a> {
@@ -25,7 +25,7 @@ impl<'a> Frame<'a> {
             cache,
             substs_base: substs.len(),
             substs,
-            undo: Vec::new(),
+            undo: HashSet::new(),
         }
     }
 
@@ -114,6 +114,9 @@ impl<'a> Frame<'a> {
                 } else {
                     eprintln!("assign _{} -> {}", *idx, write::write_term(self, b));
                     let i = *idx;
+                    if i < self.substs_base {
+                        self.undo.insert(i);
+                    }
                     self.substs[i] = Some(b);
                     Ok(())
                 }
@@ -124,6 +127,9 @@ impl<'a> Frame<'a> {
                 } else {
                     eprintln!("assign _{} -> {}", *idx, write::write_term(self, a));
                     let i = *idx;
+                    if i < self.substs_base {
+                        self.undo.insert(i);
+                    }
                     self.substs[i] = Some(a);
                     Ok(())
                 }
@@ -252,9 +258,7 @@ impl<'a> Frame<'a> {
 impl<'a> Drop for Frame<'a> {
     fn drop(&mut self) {
         for v in self.undo.iter() {
-            if *v > self.substs_base {
-                self.substs[*v] = None;
-            }
+            self.substs[*v] = None;
         }
         self.substs.truncate(self.substs_base);
         self.cache.truncate(self.cache_base);
