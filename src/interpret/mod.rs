@@ -4,21 +4,24 @@ mod flags;
 mod setof;
 mod solve;
 mod term;
+mod throw;
 mod user_defined;
 mod write;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::*;
 use super::consult::text::*;
+use super::read_term::stream;
 use super::read_term::term as read_term;
+use super::*;
 
 #[derive(Debug)]
 pub(crate) enum Response {
     Fail,
     Cut,
     Throw(Rc<read_term::Term>),
+    Callable,
     Halt(isize),
 }
 

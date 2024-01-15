@@ -2,8 +2,72 @@ use super::*;
 use solve::{Frame, Solver};
 use term::*;
 
-fn unknown_predicate(_frame: Frame) -> Response {
-    todo!()
+fn pi_term(term: &Rc<read_term::Term>) -> Rc<read_term::Term> {
+    let (functor, arity) = match &term.kind {
+        read_term::TermKind::Atom(s) => (
+            read_term::Term::new_atom(s.clone(), None),
+            read_term::Term::new_integer(0, None),
+        ),
+        read_term::TermKind::Compound(c) => (
+            read_term::Term::new_atom(c.functor.clone(), None),
+            read_term::Term::new_integer(c.args.len() as i64, None),
+        ),
+        _ => unreachable!(),
+    };
+    read_term::Term::new_compound("/".to_string(), None, vec![functor, arity])
+}
+
+fn existence_error(frame: &Frame, goal: usize) -> Response {
+    // existence_error(procedure,pi)
+    let (location, pi) = match frame.get_term(goal) {
+        Term::Term(t) => (t.location.clone(), pi_term(t)),
+        Term::Compound(c) => (c.compound.location.clone(), pi_term(&c.compound)),
+        _ => unreachable!(),
+    };
+    throw::error(
+        read_term::Term::new_compound(
+            "existence_error".to_string(),
+            None,
+            vec![read_term::Term::new_atom("procedure".to_string(), None), pi],
+        ),
+        location,
+    )
+}
+
+pub(super) fn solve(mut frame: Frame, pi: &str, goal: usize, next: &mut dyn Solver) -> Response {
+    let predicates = match frame.get_context().procedures.get(pi) {
+        None => {
+            match frame.get_context().flags.unknown {
+                crate::flags::UnknownFlag::Error => return existence_error(&frame, goal),
+                crate::flags::UnknownFlag::Warning => todo!(), // Some kind of warning?
+                _ => {}
+            }
+            return Response::Fail;
+        }
+        Some(p) => p.predicates.to_vec(),
+    };
+    for clause in predicates {
+        match frame.sub_frame(|mut frame| {
+            let mut index = HashMap::new();
+
+            // TODO:  We could merge new_term_indexed and unify here to one walk of the term tree
+            let head = frame.new_term_indexed(&clause.head, &mut index);
+            if frame.unify(goal, head) {
+                if let Some(body) = &clause.body {
+                    let body = frame.new_term_indexed(body, &mut index);
+                    solve::solve(frame, body, next)
+                } else {
+                    next.solve(frame)
+                }
+            } else {
+                Response::Fail
+            }
+        }) {
+            Response::Fail => {}
+            r => return r,
+        }
+    }
+    Response::Fail
 }
 
 fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
@@ -18,6 +82,7 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
                     },
                 ))
             } else {
+                // type_error(callable,term)
                 todo!()
             }
         }
@@ -30,7 +95,14 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
                         read_term::TermKind::Compound(c) => {
                             format!("{}/{}", c.functor, c.args.len())
                         }
-                        _ => todo!(),
+                        read_term::TermKind::Var(idx) => {
+                            // instantiation_error
+                            todo!()
+                        }
+                        _ => {
+                            // type_error(callable,c1.args[0])
+                            todo!()
+                        }
                     },
                     Clause {
                         head: c1.args[0].clone(),
@@ -51,10 +123,27 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
             if let Some(goal) = frame.get_var(*idx) {
                 unpack_pi(frame, goal)
             } else {
+                // instantiation_error
                 todo!()
             }
         }
     }
+}
+
+fn permission_error(term: &Rc<read_term::Term>) -> Response {
+    // permission_error(modify,static_procedure,pi)
+    throw::error(
+        read_term::Term::new_compound(
+            "permission_error".to_string(),
+            None,
+            vec![
+                read_term::Term::new_atom("modify".to_string(), None),
+                read_term::Term::new_atom("static_procedure".to_string(), None),
+                pi_term(term),
+            ],
+        ),
+        term.location.clone(),
+    )
 }
 
 pub(super) fn assert(mut frame: Frame, goal: usize, is_z: bool, next: &mut dyn Solver) -> Response {
@@ -62,11 +151,15 @@ pub(super) fn assert(mut frame: Frame, goal: usize, is_z: bool, next: &mut dyn S
         |r| r,
         |(pi, clause)| {
             if builtins::is_builtin(&pi).is_some() || pi.starts_with("call/") {
-                todo!()
+                return permission_error(&clause.head);
             }
 
             let procedures = &mut frame.get_context_mut().procedures;
             if let Some(p) = procedures.get_mut(&pi) {
+                if !p.flags.dynamic {
+                    return permission_error(&clause.head);
+                }
+
                 if is_z {
                     p.predicates.push(Rc::new(clause));
                 } else {
@@ -84,69 +177,4 @@ pub(super) fn assert(mut frame: Frame, goal: usize, is_z: bool, next: &mut dyn S
             next.solve(frame)
         },
     )
-}
-
-pub(super) fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
-    match frame.get_term(goal) {
-        Term::Term(t) => {
-            let predicates = if let read_term::TermKind::Atom(s) = &t.kind {
-                match frame.get_context().procedures.get(&format!("{}/0", s)) {
-                    None => return unknown_predicate(frame),
-                    Some(p) => p.predicates.to_vec(),
-                }
-            } else {
-                todo!()
-            };
-
-            for clause in predicates {
-                match frame.sub_frame(|mut frame| {
-                    if let Some(body) = &clause.body {
-                        let goal = frame.new_term(body);
-                        solve::solve(frame, goal, next)
-                    } else {
-                        next.solve(frame)
-                    }
-                }) {
-                    Response::Fail => {}
-                    Response::Cut => return Response::Fail,
-                    r => return r,
-                }
-            }
-        }
-        Term::Compound(c) => {
-            let predicates = match frame.get_context().procedures.get(&format!(
-                "{}/{}",
-                c.functor(),
-                c.args.len()
-            )) {
-                None => return unknown_predicate(frame),
-                Some(p) => p.predicates.to_vec(),
-            };
-
-            for clause in predicates {
-                match frame.sub_frame(|mut frame| {
-                    let mut index = HashMap::new();
-
-                    // TODO:  We could merge new_term_indexed and unify here to one walk of the term tree
-                    let head = frame.new_term_indexed(&clause.head, &mut index);
-                    if frame.unify(goal, head) {
-                        if let Some(body) = &clause.body {
-                            let body = frame.new_term_indexed(body, &mut index);
-                            solve::solve(frame, body, next)
-                        } else {
-                            next.solve(frame)
-                        }
-                    } else {
-                        Response::Fail
-                    }
-                }) {
-                    Response::Fail => {}
-                    Response::Cut => return Response::Fail,
-                    r => return r,
-                }
-            }
-        }
-        _ => {}
-    }
-    Response::Fail
 }

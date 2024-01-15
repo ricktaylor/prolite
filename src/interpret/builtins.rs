@@ -1,5 +1,3 @@
-use std::todo;
-
 use phf::phf_map;
 
 use super::*;
@@ -31,19 +29,30 @@ fn solve_and(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
 }
 
 fn solve_or(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    if let Term::Compound(c) = frame.get_term(args[0]) {
+        if c.functor() == "->" && c.args.len() == 2 {
+            let if_term = c.args[0];
+            let then_term = c.args[1];
+            return solve_if_then_else(frame, if_term, then_term, Some(args[1]), next);
+        }
+    }
+
     frame
         .sub_frame(|frame| solve(frame, args[0], next))
         .map_failed(|| frame.sub_frame(|frame| solve(frame, args[1], next)))
 }
 
 fn solve_if(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    let (if_term, then_term, else_term) = match frame.get_term(args[1]) {
-        Term::Compound(c) if c.functor() == ";" && c.args.len() == 2 => {
-            (args[0], c.args[0], Some(c.args[1]))
-        }
-        _ => (args[0], args[1], None),
-    };
+    solve_if_then_else(frame, args[0], args[1], None, next)
+}
 
+fn solve_if_then_else(
+    mut frame: Frame,
+    if_term: usize,
+    then_term: usize,
+    else_term: Option<usize>,
+    next: &mut dyn Solver,
+) -> Response {
     let mut if_true = false;
     let mut then_cut = false;
     frame
@@ -99,26 +108,6 @@ fn solve_catch(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respo
             }
         }),
         r => r,
-    }
-}
-
-fn solve_throw_var_check(frame: &Frame, ball: usize) -> Result<Rc<read_term::Term>, Response> {
-    match frame.get_term(ball) {
-        Term::Term(t) => Ok(t.clone()),
-        Term::Var(v) => todo!(),
-        Term::Compound(c) => {
-            for a in c.args.iter() {
-                solve_throw_var_check(frame, *a)?;
-            }
-            Ok(c.compound.clone())
-        }
-    }
-}
-
-fn solve_throw(frame: Frame, args: &[usize], _: &mut dyn Solver) -> Response {
-    match solve_throw_var_check(&frame, args[0]) {
-        Err(r) => r,
-        Ok(ball) => Response::Throw(ball),
     }
 }
 
@@ -193,7 +182,7 @@ const BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     ";/2" => solve_or,
     "->/2" => solve_if,
     "catch/3" => solve_catch,
-    "throw/1" => solve_throw,
+    "throw/1" => throw::solve,
     "=/2" => solve_unify,
     "unify_with_occurs_check/2" => not_impl,
     "\\=/2" => not_impl,
@@ -228,9 +217,9 @@ const BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "assertz/1" => solve_assertz,
     "retract/1" => not_impl,
     "abolish/1" => not_impl,
-    "findall/3" => findall::solve_findall,
+    "findall/3" => findall::solve,
     "bagof/3" => not_impl,
-    "setof/3" => setof::solve_setof,
+    "setof/3" => setof::solve,
     "current_input/1" => not_impl,
     "current_output/1" => not_impl,
     "set_input/1" => not_impl,

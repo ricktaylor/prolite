@@ -12,10 +12,7 @@ use stream::ReadStream;
 
 fn parse_integer(s: &str, radix: u32, location: Option<Span>) -> Result<Rc<Term>, Box<Error>> {
     match i64::from_str_radix(s, radix) {
-        Ok(i) => Ok(Rc::new(Term {
-            kind: TermKind::Integer(i),
-            location,
-        })),
+        Ok(i) => Ok(Term::new_integer(i, location)),
         Err(e) => Error::new(ErrorKind::ParseIntError(e), location),
     }
 }
@@ -118,13 +115,7 @@ fn parse_quoted(
                 Term::new_compound(
                     ".".to_string(),
                     location.clone(),
-                    vec![
-                        Rc::new(Term {
-                            kind: TermKind::Integer(c as i64),
-                            location: location.clone(),
-                        }),
-                        list,
-                    ],
+                    vec![Term::new_integer(c as i64, location.clone()), list],
                 )
             },
         )),

@@ -2,7 +2,7 @@ use super::*;
 use solve::{Continuation, Frame, Solver};
 use term::*;
 
-fn findall_var(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+fn solve_var(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     let mut solutions = Vec::new();
     frame
         .sub_frame(|frame| {
@@ -21,7 +21,7 @@ fn findall_var(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respo
         })
 }
 
-fn findall_list(
+fn solve_list(
     mut frame: Frame,
     args: &[usize],
     mut head: usize,
@@ -74,7 +74,7 @@ fn findall_list(
     }
 }
 
-fn findall_none(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+fn solve_none(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     match frame.sub_frame(|frame| {
         solve::call(
             frame,
@@ -91,18 +91,18 @@ fn findall_none(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Resp
     }
 }
 
-pub(super) fn solve_findall(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+pub(super) fn solve(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     match frame.get_term(args[2]) {
-        Term::Var(_) => return findall_var(frame, args, next),
+        Term::Var(_) => return solve_var(frame, args, next),
         Term::Compound(c) if c.functor() == "." && c.args.len() == 2 => {
             let head = c.args[0];
             let tail = c.args[1];
-            return findall_list(frame, args, head, tail, next);
+            return solve_list(frame, args, head, tail, next);
         }
         Term::Term(t) => {
             if let read_term::TermKind::Atom(s) = &t.kind {
                 if s == "[]" {
-                    return findall_none(frame, args, next);
+                    return solve_none(frame, args, next);
                 }
             }
         }

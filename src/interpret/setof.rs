@@ -76,7 +76,7 @@ fn split_free_vars(frame: &Frame, t: usize, v: usize, free_vars: &mut HashSet<us
     goal
 }
 
-fn setof_empty(
+fn solve_empty(
     mut frame: Frame,
     witness: usize,
     goal: usize,
@@ -109,7 +109,7 @@ fn setof_empty(
         })
 }
 
-fn setof_freevars(
+fn solve_freevars(
     _frame: Frame,
     _witness: usize,
     _goal: usize,
@@ -120,7 +120,7 @@ fn setof_freevars(
     todo!()
 }
 
-pub(super) fn solve_setof(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+pub(super) fn solve(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     // Find the free variables of the iterated goal of arg[1] wrt arg[0]
     let mut free_vars = HashSet::new();
     let goal = split_free_vars(&frame, args[1], args[0], &mut free_vars);
@@ -128,8 +128,8 @@ pub(super) fn solve_setof(frame: Frame, args: &[usize], next: &mut dyn Solver) -
     eprintln!("free vars: {:?}", &free_vars);
 
     if free_vars.is_empty() {
-        setof_empty(frame, args[0], goal, args[2], next)
+        solve_empty(frame, args[0], goal, args[2], next)
     } else {
-        setof_freevars(frame, args[0], goal, free_vars, args[2], next)
+        solve_freevars(frame, args[0], goal, free_vars, args[2], next)
     }
 }

@@ -47,4 +47,11 @@ impl Term {
             location,
         })
     }
+
+    pub(crate) fn new_integer(i: i64, location: Option<Span>) -> Rc<Term> {
+        Rc::new(Term {
+            kind: TermKind::Integer(i),
+            location,
+        })
+    }
 }

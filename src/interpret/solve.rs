@@ -112,7 +112,7 @@ impl<'a> Frame<'a> {
                 if let Some(a) = self.substs[*idx] {
                     self.unify_fold(a, b)
                 } else {
-                    eprintln!("assign _{} -> {}", *idx, write::write_term(self, b));
+                    //eprintln!("assign _{} -> {}", *idx, write::write_term(self, b));
                     let i = *idx;
                     if i < self.substs_base {
                         self.undo.insert(i);
@@ -125,7 +125,7 @@ impl<'a> Frame<'a> {
                 if let Some(b) = self.substs[*idx] {
                     self.unify_fold(a, b)
                 } else {
-                    eprintln!("assign _{} -> {}", *idx, write::write_term(self, a));
+                    //eprintln!("assign _{} -> {}", *idx, write::write_term(self, a));
                     let i = *idx;
                     if i < self.substs_base {
                         self.undo.insert(i);
@@ -266,36 +266,38 @@ impl<'a> Drop for Frame<'a> {
 }
 
 pub(super) fn solve(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
-    eprintln!("solving {}", write::write_term(&frame, goal));
+    //eprintln!("solving {}", write::write_term(&frame, goal));
 
     match frame.get_term(goal) {
         Term::Term(t) => {
             if let read_term::TermKind::Atom(s) = &t.kind {
-                match is_builtin(&format!("{}/0", s)) {
+                let pi = format!("{}/0", s);
+                match is_builtin(&pi) {
                     Some(f) => (f)(frame, &mut [], next),
-                    None => user_defined::solve(frame, goal, next),
+                    None => user_defined::solve(frame, &pi, goal, next),
                 }
             } else {
-                todo!()
+                Response::Callable
             }
         }
         Term::Var(idx) => {
             if let Some(goal) = frame.get_var(*idx) {
                 call(frame, goal, next)
             } else {
-                Response::Throw(read_term::Term::new_atom(
-                    "existence_error".to_string(),
-                    None,
-                ))
+                // instantiation error
+                todo!()
             }
         }
-        Term::Compound(c) => match is_builtin(&format!("{}/{}", c.functor(), c.args.len())) {
-            Some(f) => {
-                let args = c.args.to_vec();
-                (f)(frame, &args, next)
+        Term::Compound(c) => {
+            let pi = format!("{}/{}", c.functor(), c.args.len());
+            match is_builtin(&pi) {
+                Some(f) => {
+                    let args = c.args.to_vec();
+                    (f)(frame, &args, next)
+                }
+                None => user_defined::solve(frame, &pi, goal, next),
             }
-            None => user_defined::solve(frame, goal, next),
-        },
+        }
     }
 }
 
@@ -313,9 +315,10 @@ pub(super) fn call(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response
         }),
     ) {
         Response::Cut if !next_cut => Response::Fail,
-        /*Response::Throw(_) => {
-            // Catch callable error!
-        }*/
+        Response::Callable => {
+            // Mutate to type_error(callable,goal)
+            todo!()
+        }
         r => r,
     }
 }
@@ -356,17 +359,16 @@ where
     }
 }
 
-struct CallbackSolver<'a, F: FnMut(&'a [read_term::VarInfo]) -> bool> {
+struct CallbackSolver<F: FnMut() -> bool> {
     callback: F,
-    var_info: &'a [read_term::VarInfo],
 }
 
-impl<'a, F> Solver for CallbackSolver<'a, F>
+impl<F> Solver for CallbackSolver<F>
 where
-    F: FnMut(&'a [read_term::VarInfo]) -> bool,
+    F: FnMut() -> bool,
 {
     fn solve(&mut self, _: Frame) -> Response {
-        if (self.callback)(self.var_info) {
+        if (self.callback)() {
             Response::Fail
         } else {
             Response::Cut
@@ -374,15 +376,14 @@ where
     }
 }
 
-pub(crate) fn eval<F: FnMut(&[read_term::VarInfo]) -> bool>(
+pub(crate) fn eval<F: FnMut() -> bool>(
     ctx: &mut Context,
     goal: &Rc<read_term::Term>,
-    var_info: &[read_term::VarInfo],
     callback: F,
 ) -> Response {
     let mut cache = Vec::new();
     let mut substs = Vec::new();
     let mut frame = solve::Frame::new(ctx, &mut cache, &mut substs);
     let goal = frame.new_term(goal);
-    solve(frame, goal, &mut CallbackSolver { callback, var_info })
+    call(frame, goal, &mut CallbackSolver { callback })
 }
