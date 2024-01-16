@@ -103,8 +103,14 @@ fn solve_empty(
             if solutions.is_empty() {
                 Response::Fail
             } else {
-                let list = frame.as_list(&solutions);
-                solve::unify(frame, list, instances, next)
+                frame.sub_frame(|mut frame| {
+                    let list = frame.as_list(&solutions);
+                    if frame.unify(list, instances) {
+                        next.solve(frame)
+                    } else {
+                        Response::Fail
+                    }
+                })
             }
         })
 }

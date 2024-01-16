@@ -2,26 +2,11 @@ use super::*;
 use solve::{Frame, Solver};
 use term::*;
 
-fn pi_term(term: &Rc<read_term::Term>) -> Rc<read_term::Term> {
-    let (functor, arity) = match &term.kind {
-        read_term::TermKind::Atom(s) => (
-            read_term::Term::new_atom(s.clone(), None),
-            read_term::Term::new_integer(0, None),
-        ),
-        read_term::TermKind::Compound(c) => (
-            read_term::Term::new_atom(c.functor.clone(), None),
-            read_term::Term::new_integer(c.args.len() as i64, None),
-        ),
-        _ => unreachable!(),
-    };
-    read_term::Term::new_compound("/".to_string(), None, vec![functor, arity])
-}
-
 fn existence_error(frame: &Frame, goal: usize) -> Response {
     // existence_error(procedure,pi)
     let pi = match frame.get_term(goal) {
-        Term::Term(t) => pi_term(t),
-        Term::Compound(c) => pi_term(&c.compound),
+        Term::Term(t) => t.as_pi(),
+        Term::Compound(c) => c.compound.as_pi(),
         _ => unreachable!(),
     };
     throw::error(
@@ -96,8 +81,11 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
                             format!("{}/{}", c.functor, c.args.len())
                         }
                         read_term::TermKind::Var(idx) => {
-                            // instantiation_error
-                            todo!()
+                            if let Some(goal) = frame.get_var(*idx) {
+                                return unpack_pi(frame, goal);
+                            } else {
+                                return Err(throw::instantiation_error(frame));
+                            }
                         }
                         _ => {
                             // type_error(callable,c1.args[0])
@@ -123,8 +111,7 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
             if let Some(goal) = frame.get_var(*idx) {
                 unpack_pi(frame, goal)
             } else {
-                // instantiation_error
-                todo!()
+                Err(throw::instantiation_error(frame))
             }
         }
     }
@@ -139,7 +126,7 @@ fn permission_error(frame: Frame, term: &Rc<read_term::Term>) -> Response {
             vec![
                 read_term::Term::new_atom("modify".to_string(), None),
                 read_term::Term::new_atom("static_procedure".to_string(), None),
-                pi_term(term),
+                term.as_pi(),
             ],
         ),
         frame.get_location().clone(),

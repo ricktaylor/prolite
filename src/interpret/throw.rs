@@ -2,6 +2,13 @@ use super::*;
 use solve::{Frame, Solver};
 use term::*;
 
+pub(super) fn instantiation_error(frame: &Frame) -> Response {
+    error(
+        read_term::Term::new_atom("instantiation_error".to_string(), None),
+        frame.get_location().clone(),
+    )
+}
+
 pub(super) fn error(culprit: Rc<read_term::Term>, location: Option<stream::Span>) -> Response {
     let mut args = vec![culprit];
     if let Some(location) = &location {
@@ -23,10 +30,7 @@ pub(super) fn error(culprit: Rc<read_term::Term>, location: Option<stream::Span>
 fn var_check(frame: &Frame, ball: usize) -> Result<Rc<read_term::Term>, Response> {
     match frame.get_term(ball) {
         Term::Term(t) => Ok(t.clone()),
-        Term::Var(v) => {
-            // instantiation_error
-            todo!()
-        }
+        Term::Var(_) => Err(throw::instantiation_error(frame)),
         Term::Compound(c) => {
             for a in c.args.iter() {
                 var_check(frame, *a)?;

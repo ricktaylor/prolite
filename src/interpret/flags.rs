@@ -36,9 +36,15 @@ pub(super) fn solve_current_char_conversion(
                                 .char_conversion
                                 .get(&s1.chars().next().unwrap())
                             {
-                                let t =
-                                    frame.new_term(&read_term::Term::new_atom(c.to_string(), None));
-                                solve::unify(frame, t, b, next)
+                                let s = c.to_string();
+                                frame.sub_frame(|mut frame| {
+                                    let t = frame.new_term(&read_term::Term::new_atom(s, None));
+                                    if frame.unify(t, b) {
+                                        next.solve(frame)
+                                    } else {
+                                        Response::Fail
+                                    }
+                                })
                             } else {
                                 Response::Fail
                             }
@@ -69,7 +75,11 @@ pub(super) fn solve_current_char_conversion(
                                 match frame.sub_frame(|mut frame| {
                                     let t = frame
                                         .new_term(&read_term::Term::new_atom(c.to_string(), None));
-                                    solve::unify(frame, a, t, next)
+                                    if frame.unify(a, t) {
+                                        next.solve(frame)
+                                    } else {
+                                        Response::Fail
+                                    }
                                 }) {
                                     Response::Fail => {}
                                     r => return r,
@@ -89,18 +99,19 @@ pub(super) fn solve_current_char_conversion(
                                 match frame.sub_frame(|mut frame| {
                                     let k = frame
                                         .new_term(&read_term::Term::new_atom(k.to_string(), None));
-                                    solve::unify(
-                                        frame,
-                                        a,
-                                        k,
-                                        &mut Continuation::new(|mut frame| {
-                                            let v = frame.new_term(&read_term::Term::new_atom(
-                                                v.to_string(),
-                                                None,
-                                            ));
-                                            solve::unify(frame, b, v, next)
-                                        }),
-                                    )
+                                    if frame.unify(a, k) {
+                                        let v = frame.new_term(&read_term::Term::new_atom(
+                                            v.to_string(),
+                                            None,
+                                        ));
+                                        if frame.unify(b, v) {
+                                            next.solve(frame)
+                                        } else {
+                                            Response::Fail
+                                        }
+                                    } else {
+                                        Response::Fail
+                                    }
                                 }) {
                                     Response::Fail => {}
                                     r => return r,

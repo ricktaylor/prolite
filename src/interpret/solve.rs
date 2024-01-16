@@ -289,7 +289,6 @@ pub(super) fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Res
             if let read_term::TermKind::Atom(s) = &t.kind {
                 let pi = format!("{}/0", s);
                 let location = t.location.clone();
-
                 frame.set_location(location);
 
                 match get_builtin(&pi) {
@@ -304,8 +303,7 @@ pub(super) fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Res
             if let Some(goal) = frame.get_var(*idx) {
                 call(frame, goal, next)
             } else {
-                // instantiation error
-                todo!()
+                throw::instantiation_error(&frame)
             }
         }
         Term::Compound(c) => {
@@ -346,14 +344,6 @@ pub(super) fn call(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response
             todo!()
         }
         r => r,
-    }
-}
-
-pub(super) fn unify(mut frame: Frame, a: usize, b: usize, next: &mut dyn Solver) -> Response {
-    if frame.unify(a, b) {
-        next.solve(frame)
-    } else {
-        Response::Fail
     }
 }
 

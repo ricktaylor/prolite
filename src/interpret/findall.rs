@@ -16,8 +16,14 @@ fn solve_var(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respons
             )
         })
         .map_failed(|| {
-            let list = frame.as_list(&solutions);
-            solve::unify(frame, list, args[2], next)
+            frame.sub_frame(|mut frame| {
+                let list = frame.as_list(&solutions);
+                if frame.unify(list, args[2]) {
+                    next.solve(frame)
+                } else {
+                    Response::Fail
+                }
+            })
         })
 }
 
@@ -65,10 +71,14 @@ fn solve_list(
             }),
         )
     }) {
-        Response::Fail => {
+        Response::Fail => frame.sub_frame(|mut frame| {
             let list = frame.as_list(&solutions);
-            solve::unify(frame, list, tail, next)
-        }
+            if frame.unify(list, tail) {
+                next.solve(frame)
+            } else {
+                Response::Fail
+            }
+        }),
         Response::Cut => Response::Fail,
         r => r,
     }

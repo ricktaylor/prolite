@@ -42,7 +42,7 @@ fn solve_or(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response
         .map_failed(|| frame.sub_frame(|frame| solve(frame, args[1], next)))
 }
 
-fn solve_if(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+fn solve_if(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     solve_if_then_else(frame, args[0], args[1], None, next)
 }
 
@@ -99,14 +99,14 @@ fn solve_catch(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respo
             }),
         )
     }) {
-        Response::Throw(ball) if !next_throw => {
+        Response::Throw(ball) if !next_throw => frame.sub_frame(|mut frame| {
             let a = frame.new_term(&ball);
             if frame.unify(a, args[1]) {
                 solve::call(frame, args[2], next)
             } else {
                 Response::Throw(ball)
             }
-        }
+        }),
         r => r,
     }
 }
@@ -141,16 +141,24 @@ fn solve_repeat(mut frame: Frame, _: &[usize], next: &mut dyn Solver) -> Respons
     }
 }
 
-fn solve_unify(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    solve::unify(frame, args[0], args[1], next)
+fn solve_unify(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    frame.sub_frame(|mut frame| {
+        if frame.unify(args[0], args[1]) {
+            next.solve(frame)
+        } else {
+            Response::Fail
+        }
+    })
 }
 
 fn solve_copy_term(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    if frame.unify_copy(args[0], args[1]) {
-        next.solve(frame)
-    } else {
-        Response::Fail
-    }
+    frame.sub_frame(|mut frame| {
+        if frame.unify_copy(args[0], args[1]) {
+            next.solve(frame)
+        } else {
+            Response::Fail
+        }
+    })
 }
 
 fn solve_asserta(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
@@ -167,7 +175,10 @@ fn solve_current_char_conversion(frame: Frame, args: &[usize], next: &mut dyn So
 
 fn not_impl(frame: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
     if let Some(location) = frame.get_location() {
-        eprintln!("unimplemented at: {}:{}:{}",location.start.source, location.start.line, location.start.column);
+        eprintln!(
+            "unimplemented builtin at: {}:{}:{}",
+            location.start.source, location.start.line, location.start.column
+        );
     }
 
     todo!()

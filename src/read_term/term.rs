@@ -54,4 +54,16 @@ impl Term {
             location,
         })
     }
+
+    pub(crate) fn as_pi(&self) -> Rc<Term> {
+        let (functor, arity) = match &self.kind {
+            TermKind::Atom(s) => (Term::new_atom(s.clone(), None), Term::new_integer(0, None)),
+            TermKind::Compound(c) => (
+                Term::new_atom(c.functor.clone(), None),
+                Term::new_integer(c.args.len() as i64, None),
+            ),
+            _ => panic!("Invalid PI request"),
+        };
+        Term::new_compound("/".to_string(), None, vec![functor, arity])
+    }
 }

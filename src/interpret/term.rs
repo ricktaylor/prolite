@@ -17,7 +17,7 @@ impl Compound {
         if let read_term::TermKind::Compound(c) = &self.compound.kind {
             c
         } else {
-            panic!("Compound isn't an instantiated compound ?!?!")
+            unreachable!()
         }
     }
 }
