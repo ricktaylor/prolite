@@ -55,6 +55,13 @@ impl Term {
         })
     }
 
+    pub(crate) fn new_float(d: f64, location: Option<Span>) -> Rc<Term> {
+        Rc::new(Term {
+            kind: TermKind::Float(d),
+            location,
+        })
+    }
+
     pub(crate) fn as_pi(&self) -> Rc<Term> {
         let (functor, arity) = match &self.kind {
             TermKind::Atom(s) => (Term::new_atom(s.clone(), None), Term::new_integer(0, None)),

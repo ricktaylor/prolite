@@ -19,10 +19,7 @@ fn parse_integer(s: &str, radix: u32, location: Option<Span>) -> Result<Rc<Term>
 
 fn parse_float(s: &str, location: Option<Span>) -> Result<Rc<Term>, Box<Error>> {
     match f64::from_str(s) {
-        Ok(f) => Ok(Rc::new(Term {
-            kind: TermKind::Float(f),
-            location,
-        })),
+        Ok(f) => Ok(Term::new_float(f, location)),
         Err(e) => Error::new(ErrorKind::ParseFloatError(e), location),
     }
 }
