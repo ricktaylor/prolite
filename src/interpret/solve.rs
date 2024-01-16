@@ -156,18 +156,24 @@ impl<'a> Frame<'a> {
                 {
                     Ok(())
                 }
-                (read_term::TermKind::Integer(i1), read_term::TermKind::Float(f))
-                    if *i1 as f64 == *f =>
-                {
-                    Ok(())
+                (read_term::TermKind::Integer(i), read_term::TermKind::Float(f)) => {
+                    let f1 = *i as f64;
+                    if f1 == *f && *i == f1 as i64 {
+                        Ok(())
+                    } else {
+                        Err(Response::Fail)
+                    }
                 }
                 (read_term::TermKind::Float(f1), read_term::TermKind::Float(f2)) if *f1 == *f2 => {
                     Ok(())
                 }
-                (read_term::TermKind::Float(f1), read_term::TermKind::Integer(i))
-                    if *f1 == *i as f64 =>
-                {
-                    Ok(())
+                (read_term::TermKind::Float(f), read_term::TermKind::Integer(i)) => {
+                    let f1 = *i as f64;
+                    if f1 == *f && *i == f1 as i64 {
+                        Ok(())
+                    } else {
+                        Err(Response::Fail)
+                    }
                 }
                 (read_term::TermKind::Atom(s1), read_term::TermKind::Atom(s2)) if *s1 == *s2 => {
                     Ok(())
