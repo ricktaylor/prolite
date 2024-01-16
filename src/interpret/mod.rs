@@ -1,3 +1,4 @@
+mod arithmetic;
 mod builtins;
 mod findall;
 mod flags;
