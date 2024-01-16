@@ -30,11 +30,7 @@ fn compare_with_overflow(frame: &Frame, i: &i64) -> Result<f64, Response> {
     }
 }
 
-fn compare(
-    frame: &mut Frame,
-    t1: usize,
-    t2: usize,
-) -> Result<Option<core::cmp::Ordering>, Response> {
+fn compare(frame: &Frame, t1: usize, t2: usize) -> Result<Option<core::cmp::Ordering>, Response> {
     match (frame.get_term(t1), frame.get_term(t2)) {
         (Term::Var(idx), _) => {
             if let Some(t1) = frame.get_var(*idx) {
@@ -72,32 +68,32 @@ fn compare(
     }
 }
 
-pub(super) fn solve_eq(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match compare(&mut frame, args[0], args[1]) {
+pub(super) fn solve_eq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match compare(&frame, args[0], args[1]) {
         Ok(Some(core::cmp::Ordering::Equal)) => next.solve(frame),
         Ok(_) => Response::Fail,
         Err(r) => r,
     }
 }
 
-pub(super) fn solve_neq(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match compare(&mut frame, args[0], args[1]) {
+pub(super) fn solve_neq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match compare(&frame, args[0], args[1]) {
         Ok(Some(core::cmp::Ordering::Equal)) => Response::Fail,
         Ok(_) => next.solve(frame),
         Err(r) => r,
     }
 }
 
-pub(super) fn solve_lss(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match compare(&mut frame, args[0], args[1]) {
+pub(super) fn solve_lss(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match compare(&frame, args[0], args[1]) {
         Ok(Some(core::cmp::Ordering::Less)) => next.solve(frame),
         Ok(_) => Response::Fail,
         Err(r) => r,
     }
 }
 
-pub(super) fn solve_leq(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match compare(&mut frame, args[0], args[1]) {
+pub(super) fn solve_leq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match compare(&frame, args[0], args[1]) {
         Ok(Some(core::cmp::Ordering::Less)) | Ok(Some(core::cmp::Ordering::Equal)) => {
             next.solve(frame)
         }
@@ -106,16 +102,16 @@ pub(super) fn solve_leq(mut frame: Frame, args: &[usize], next: &mut dyn Solver)
     }
 }
 
-pub(super) fn solve_gtr(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match compare(&mut frame, args[0], args[1]) {
+pub(super) fn solve_gtr(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match compare(&frame, args[0], args[1]) {
         Ok(Some(core::cmp::Ordering::Greater)) => next.solve(frame),
         Ok(_) => Response::Fail,
         Err(r) => r,
     }
 }
 
-pub(super) fn solve_geq(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match compare(&mut frame, args[0], args[1]) {
+pub(super) fn solve_geq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match compare(&frame, args[0], args[1]) {
         Ok(Some(core::cmp::Ordering::Greater)) | Ok(Some(core::cmp::Ordering::Equal)) => {
             next.solve(frame)
         }
@@ -161,9 +157,7 @@ fn eval(frame: &Frame, expr: usize) -> Result<Value, Response> {
             read_term::TermKind::Integer(i) => Ok(Value::Integer(*i)),
             read_term::TermKind::Float(d) => Ok(Value::Float(*d)),
             read_term::TermKind::Atom(s) => match get_builtin(&format!("{}/0", s)) {
-                Some(f) => {
-                    (f)(&[],&t.location)
-                }
+                Some(f) => (f)(&[], &t.location),
                 None => Err(throw_evaluable(t)),
             },
             _ => unreachable!(),
@@ -181,7 +175,7 @@ fn eval(frame: &Frame, expr: usize) -> Result<Value, Response> {
                 for a in c.args.iter() {
                     args.push(eval(frame, *a)?);
                 }
-                (f)(&args,&c.compound.location)
+                (f)(&args, &c.compound.location)
             }
             None => Err(throw_evaluable(&c.compound)),
         },
@@ -189,7 +183,7 @@ fn eval(frame: &Frame, expr: usize) -> Result<Value, Response> {
 }
 
 pub(super) fn solve_is(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match eval(&mut frame, args[1]) {
+    match eval(&frame, args[1]) {
         Err(r) => r,
         Ok(Value::Integer(i)) => frame.sub_frame(|mut frame| {
             let expr = frame.new_term(&read_term::Term::new_integer(i, None));
