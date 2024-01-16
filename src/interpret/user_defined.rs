@@ -19,9 +19,9 @@ fn pi_term(term: &Rc<read_term::Term>) -> Rc<read_term::Term> {
 
 fn existence_error(frame: &Frame, goal: usize) -> Response {
     // existence_error(procedure,pi)
-    let (location, pi) = match frame.get_term(goal) {
-        Term::Term(t) => (t.location.clone(), pi_term(t)),
-        Term::Compound(c) => (c.compound.location.clone(), pi_term(&c.compound)),
+    let pi = match frame.get_term(goal) {
+        Term::Term(t) => pi_term(t),
+        Term::Compound(c) => pi_term(&c.compound),
         _ => unreachable!(),
     };
     throw::error(
@@ -30,7 +30,7 @@ fn existence_error(frame: &Frame, goal: usize) -> Response {
             None,
             vec![read_term::Term::new_atom("procedure".to_string(), None), pi],
         ),
-        location,
+        frame.get_location().clone(),
     )
 }
 
@@ -130,7 +130,7 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
     }
 }
 
-fn permission_error(term: &Rc<read_term::Term>) -> Response {
+fn permission_error(frame: Frame, term: &Rc<read_term::Term>) -> Response {
     // permission_error(modify,static_procedure,pi)
     throw::error(
         read_term::Term::new_compound(
@@ -142,7 +142,7 @@ fn permission_error(term: &Rc<read_term::Term>) -> Response {
                 pi_term(term),
             ],
         ),
-        term.location.clone(),
+        frame.get_location().clone(),
     )
 }
 
@@ -150,14 +150,14 @@ pub(super) fn assert(mut frame: Frame, goal: usize, is_z: bool, next: &mut dyn S
     unpack_pi(&frame, goal).map_or_else(
         |r| r,
         |(pi, clause)| {
-            if builtins::is_builtin(&pi).is_some() || pi.starts_with("call/") {
-                return permission_error(&clause.head);
+            if builtins::get_builtin(&pi).is_some() || pi.starts_with("call/") {
+                return permission_error(frame, &clause.head);
             }
 
             let procedures = &mut frame.get_context_mut().procedures;
             if let Some(p) = procedures.get_mut(&pi) {
                 if !p.flags.dynamic {
-                    return permission_error(&clause.head);
+                    return permission_error(frame, &clause.head);
                 }
 
                 if is_z {

@@ -11,6 +11,7 @@ pub(super) struct Frame<'a> {
     substs: &'a mut Vec<Option<usize>>,
     substs_base: usize,
     undo: HashSet<usize>,
+    location: Option<stream::Span>,
 }
 
 impl<'a> Frame<'a> {
@@ -18,6 +19,7 @@ impl<'a> Frame<'a> {
         ctx: &'a mut Context,
         cache: &'a mut Vec<Term>,
         substs: &'a mut Vec<Option<usize>>,
+        location: Option<stream::Span>,
     ) -> Self {
         Self {
             ctx,
@@ -26,6 +28,7 @@ impl<'a> Frame<'a> {
             substs_base: substs.len(),
             substs,
             undo: HashSet::new(),
+            location,
         }
     }
 
@@ -81,7 +84,20 @@ impl<'a> Frame<'a> {
     where
         F: FnOnce(Frame) -> R,
     {
-        f(Frame::new(self.ctx, self.cache, self.substs))
+        f(Frame::new(
+            self.ctx,
+            self.cache,
+            self.substs,
+            self.location.clone(),
+        ))
+    }
+
+    pub fn get_location(&self) -> &Option<stream::Span> {
+        &self.location
+    }
+
+    pub fn set_location(&mut self, location: Option<stream::Span>) {
+        self.location = location;
     }
 
     pub fn get_context(&self) -> &Context {
@@ -265,14 +281,18 @@ impl<'a> Drop for Frame<'a> {
     }
 }
 
-pub(super) fn solve(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
+pub(super) fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
     //eprintln!("solving {}", write::write_term(&frame, goal));
 
     match frame.get_term(goal) {
         Term::Term(t) => {
             if let read_term::TermKind::Atom(s) = &t.kind {
                 let pi = format!("{}/0", s);
-                match is_builtin(&pi) {
+                let location = t.location.clone();
+
+                frame.set_location(location);
+
+                match get_builtin(&pi) {
                     Some(f) => (f)(frame, &mut [], next),
                     None => user_defined::solve(frame, &pi, goal, next),
                 }
@@ -290,12 +310,18 @@ pub(super) fn solve(frame: Frame, goal: usize, next: &mut dyn Solver) -> Respons
         }
         Term::Compound(c) => {
             let pi = format!("{}/{}", c.functor(), c.args.len());
-            match is_builtin(&pi) {
+            let location = c.compound.location.clone();
+
+            match get_builtin(&pi) {
                 Some(f) => {
                     let args = c.args.to_vec();
+                    frame.set_location(location);
                     (f)(frame, &args, next)
                 }
-                None => user_defined::solve(frame, &pi, goal, next),
+                None => {
+                    frame.set_location(location);
+                    user_defined::solve(frame, &pi, goal, next)
+                }
             }
         }
     }
@@ -324,13 +350,11 @@ pub(super) fn call(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response
 }
 
 pub(super) fn unify(mut frame: Frame, a: usize, b: usize, next: &mut dyn Solver) -> Response {
-    frame.sub_frame(|mut frame| {
-        if frame.unify(a, b) {
-            next.solve(frame)
-        } else {
-            Response::Fail
-        }
-    })
+    if frame.unify(a, b) {
+        next.solve(frame)
+    } else {
+        Response::Fail
+    }
 }
 
 pub(super) trait Solver {
@@ -383,7 +407,7 @@ pub(crate) fn eval<F: FnMut() -> bool>(
 ) -> Response {
     let mut cache = Vec::new();
     let mut substs = Vec::new();
-    let mut frame = solve::Frame::new(ctx, &mut cache, &mut substs);
+    let mut frame = solve::Frame::new(ctx, &mut cache, &mut substs, goal.location.clone());
     let goal = frame.new_term(goal);
     call(frame, goal, &mut CallbackSolver { callback })
 }

@@ -99,14 +99,14 @@ fn solve_catch(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respo
             }),
         )
     }) {
-        Response::Throw(ball) if !next_throw => frame.sub_frame(|mut frame| {
+        Response::Throw(ball) if !next_throw => {
             let a = frame.new_term(&ball);
             if frame.unify(a, args[1]) {
                 solve::call(frame, args[2], next)
             } else {
                 Response::Throw(ball)
             }
-        }),
+        }
         r => r,
     }
 }
@@ -146,13 +146,11 @@ fn solve_unify(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response 
 }
 
 fn solve_copy_term(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    frame.sub_frame(|mut frame| {
-        if frame.unify_copy(args[0], args[1]) {
-            next.solve(frame)
-        } else {
-            Response::Fail
-        }
-    })
+    if frame.unify_copy(args[0], args[1]) {
+        next.solve(frame)
+    } else {
+        Response::Fail
+    }
 }
 
 fn solve_asserta(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
@@ -167,7 +165,11 @@ fn solve_current_char_conversion(frame: Frame, args: &[usize], next: &mut dyn So
     flags::solve_current_char_conversion(frame, args[0], args[1], next)
 }
 
-fn not_impl(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
+fn not_impl(frame: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
+    if let Some(location) = frame.get_location() {
+        eprintln!("unimplemented at: {}:{}:{}",location.start.source, location.start.line, location.start.column);
+    }
+
     todo!()
 }
 
@@ -287,6 +289,6 @@ const BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
     "halt/1" => not_impl,
 };
 
-pub(super) fn is_builtin(pi: &str) -> Option<&SolveFn> {
+pub(super) fn get_builtin(pi: &str) -> Option<&SolveFn> {
     BUILTINS.get(pi)
 }
