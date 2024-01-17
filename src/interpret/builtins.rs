@@ -180,7 +180,6 @@ fn not_impl(frame: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
             location.start.source, location.start.line, location.start.column
         );
     }
-
     todo!()
 }
 

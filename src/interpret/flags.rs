@@ -9,10 +9,10 @@ pub(super) fn solve_current_char_conversion(
     next: &mut dyn Solver,
 ) -> Response {
     match frame.get_term(a) {
-        Term::Term(t) => match &t.kind {
+        Term::Atomic(t) => match &t.kind {
             read_term::TermKind::Atom(s1) if s1.len() == 1 => {
                 match frame.get_term(b) {
-                    Term::Term(b) => match &b.kind {
+                    Term::Atomic(b) => match &b.kind {
                         read_term::TermKind::Atom(s2) if s2.len() == 1 => {
                             if let Some(c) = frame
                                 .get_context()
@@ -60,7 +60,7 @@ pub(super) fn solve_current_char_conversion(
                 solve_current_char_conversion(frame, a, b, next)
             } else {
                 match frame.get_term(b) {
-                    Term::Term(t) => match &t.kind {
+                    Term::Atomic(t) => match &t.kind {
                         read_term::TermKind::Atom(s) if s.len() == 1 => {
                             // Reverse the map!
                             let c = s.chars().next().unwrap();

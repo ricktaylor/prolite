@@ -5,7 +5,7 @@ use term::*;
 fn existence_error(frame: &Frame, goal: usize) -> Response {
     // existence_error(procedure,pi)
     let pi = match frame.get_term(goal) {
-        Term::Term(t) => t.as_pi(),
+        Term::Atomic(t) => t.as_pi(),
         Term::Compound(c) => c.compound.as_pi(),
         _ => unreachable!(),
     };
@@ -57,7 +57,7 @@ pub(super) fn solve(mut frame: Frame, pi: &str, goal: usize, next: &mut dyn Solv
 
 fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
     match frame.get_term(term) {
-        Term::Term(t) => {
+        Term::Atomic(t) => {
             if let read_term::TermKind::Atom(s) = &t.kind {
                 Ok((
                     format!("{}/0", s),

@@ -4,7 +4,7 @@ use solve::{Frame, Solver};
 
 fn write_list(frame: &Frame, head: usize, tail: usize) -> String {
     match frame.get_term(tail) {
-        Term::Term(t) => match &t.kind {
+        Term::Atomic(t) => match &t.kind {
             read_term::TermKind::Atom(a) if a == "[]" => write_term(frame, head),
             _ => panic!("malformed list!"),
         },
@@ -25,7 +25,7 @@ fn write_list(frame: &Frame, head: usize, tail: usize) -> String {
 
 pub(super) fn write_term(frame: &Frame, goal: usize) -> String {
     match frame.get_term(goal) {
-        Term::Term(t) => match &t.kind {
+        Term::Atomic(t) => match &t.kind {
             read_term::TermKind::Integer(i) => format!("{}", i),
             read_term::TermKind::Float(f) => format!("{}", f),
             read_term::TermKind::Atom(s) => s.clone(),

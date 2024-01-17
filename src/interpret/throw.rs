@@ -29,7 +29,7 @@ pub(super) fn error(culprit: Rc<read_term::Term>, location: Option<stream::Span>
 
 fn var_check(frame: &Frame, ball: usize) -> Result<Rc<read_term::Term>, Response> {
     match frame.get_term(ball) {
-        Term::Term(t) => Ok(t.clone()),
+        Term::Atomic(t) => Ok(t.clone()),
         Term::Var(_) => Err(throw::instantiation_error(frame)),
         Term::Compound(c) => {
             for a in c.args.iter() {

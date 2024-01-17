@@ -45,7 +45,7 @@ fn solve_list(
                         solutions.push(frame.copy_term(args[0]));
                         return Response::Fail;
                     }
-                    Term::Term(t) => {
+                    Term::Atomic(t) => {
                         if let read_term::TermKind::Atom(s) = &t.kind {
                             if s == "[]" {
                                 // No more matches expected!
@@ -109,7 +109,7 @@ pub(super) fn solve(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> 
             let tail = c.args[1];
             return solve_list(frame, args, head, tail, next);
         }
-        Term::Term(t) => {
+        Term::Atomic(t) => {
             if let read_term::TermKind::Atom(s) = &t.kind {
                 if s == "[]" {
                     return solve_none(frame, args, next);

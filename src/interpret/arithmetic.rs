@@ -46,7 +46,7 @@ fn compare(frame: &Frame, t1: usize, t2: usize) -> Result<Option<core::cmp::Orde
                 Err(throw::instantiation_error(frame))
             }
         }
-        (Term::Term(t1), Term::Term(t2)) => match (&t1.kind, &t2.kind) {
+        (Term::Atomic(t1), Term::Atomic(t2)) => match (&t1.kind, &t2.kind) {
             (read_term::TermKind::Atom(_), _) => Err(throw_evaluable(t1)),
             (_, read_term::TermKind::Atom(_)) => Err(throw_evaluable(t2)),
             (read_term::TermKind::Integer(i1), read_term::TermKind::Integer(i2)) => {
@@ -153,7 +153,7 @@ impl Value {
 
 fn eval(frame: &Frame, expr: usize) -> Result<Value, Response> {
     match frame.get_term(expr) {
-        Term::Term(t) => match &t.kind {
+        Term::Atomic(t) => match &t.kind {
             read_term::TermKind::Integer(i) => Ok(Value::Integer(*i)),
             read_term::TermKind::Float(d) => Ok(Value::Float(*d)),
             read_term::TermKind::Atom(s) => match get_builtin(&format!("{}/0", s)) {

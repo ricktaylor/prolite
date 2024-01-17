@@ -51,7 +51,7 @@ impl<'a> Frame<'a> {
                     .collect(),
                 compound: term.clone(),
             }),
-            _ => Term::Term(term.clone()),
+            _ => Term::Atomic(term.clone()),
         };
         self.add_term(t)
     }
@@ -150,7 +150,7 @@ impl<'a> Frame<'a> {
                     Ok(())
                 }
             }
-            (Term::Term(t1), Term::Term(t2)) => match (&t1.kind, &t2.kind) {
+            (Term::Atomic(t1), Term::Atomic(t2)) => match (&t1.kind, &t2.kind) {
                 (read_term::TermKind::Integer(i1), read_term::TermKind::Integer(i2))
                     if *i1 == *i2 =>
                 {
@@ -256,7 +256,7 @@ impl<'a> Frame<'a> {
                         None,
                         vec![
                             match self.get_term(*t) {
-                                Term::Term(t2) => t2.clone(),
+                                Term::Atomic(t2) => t2.clone(),
                                 Term::Var(idx) => Rc::new(read_term::Term {
                                     kind: read_term::TermKind::Var(*idx),
                                     location: None,
@@ -264,9 +264,9 @@ impl<'a> Frame<'a> {
                                 Term::Compound(c) => c.compound.clone(),
                             },
                             match self.get_term(list) {
-                                Term::Term(t1) => t1.clone(),
+                                Term::Atomic(t1) => t1.clone(),
                                 Term::Compound(c) => c.compound.clone(),
-                                _ => panic!("Var in list!"),
+                                _ => unreachable!(),
                             },
                         ],
                     ),
@@ -291,7 +291,7 @@ pub(super) fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Res
     //eprintln!("solving {}", write::write_term(&frame, goal));
 
     match frame.get_term(goal) {
-        Term::Term(t) => {
+        Term::Atomic(t) => {
             if let read_term::TermKind::Atom(s) = &t.kind {
                 let pi = format!("{}/0", s);
                 let location = t.location.clone();

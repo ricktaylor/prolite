@@ -22,10 +22,9 @@ impl Compound {
     }
 }
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub(super) enum Term {
-    Term(Rc<read_term::Term>),
+    Atomic(Rc<read_term::Term>),
     Var(usize),
     Compound(Compound),
 }
@@ -33,7 +32,7 @@ pub(super) enum Term {
 impl Term {
     pub fn get_location(&self) -> &Option<stream::Span> {
         match self {
-            Term::Term(t) => &t.location,
+            Term::Atomic(t) => &t.location,
             Term::Compound(c) => &c.compound.location,
             Term::Var(_) => panic!("Should have been caught earlier"),
         }
