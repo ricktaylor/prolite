@@ -2,14 +2,14 @@ use super::*;
 use solve::{Frame, Solver};
 use term::*;
 
-pub(super) fn instantiation_error(frame: &Frame) -> Response {
+pub fn instantiation_error(frame: &Frame) -> Response {
     error(
         read_term::Term::new_atom("instantiation_error".to_string(), None),
         frame.get_location().clone(),
     )
 }
 
-pub(super) fn error(culprit: Rc<read_term::Term>, location: Option<stream::Span>) -> Response {
+pub fn error(culprit: Rc<read_term::Term>, location: Option<stream::Span>) -> Response {
     let mut args = vec![culprit];
     if let Some(location) = &location {
         args.push(read_term::Term::new_atom(
@@ -19,6 +19,8 @@ pub(super) fn error(culprit: Rc<read_term::Term>, location: Option<stream::Span>
             ),
             None,
         ))
+    } else {
+        args.push(read_term::Term::new_atom("unknown".to_string(), None));
     }
     Response::Throw(read_term::Term::new_compound(
         "error".to_string(),
@@ -40,7 +42,7 @@ fn var_check(frame: &Frame, ball: usize) -> Result<Rc<read_term::Term>, Response
     }
 }
 
-pub(super) fn solve(frame: Frame, args: &[usize], _: &mut dyn Solver) -> Response {
+pub fn solve(frame: Frame, args: &[usize], _: &mut dyn Solver) -> Response {
     match var_check(&frame, args[0]) {
         Err(r) => r,
         Ok(ball) => Response::Throw(ball),

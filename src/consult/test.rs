@@ -60,7 +60,7 @@ fn error(e: &error::Error) -> bool {
     true
 }
 
-pub(crate) fn consult(source: &str) -> Option<Text> {
+pub fn consult(source: &str) -> Option<Text> {
     let p = Path::new(source);
     let mut res = FSResolver::new(p.parent().unwrap().to_str().unwrap()).unwrap();
     text::consult(

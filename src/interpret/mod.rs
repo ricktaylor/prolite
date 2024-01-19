@@ -6,6 +6,7 @@ mod setof;
 mod solve;
 mod term;
 mod throw;
+mod univ;
 mod user_defined;
 mod write;
 
@@ -22,7 +23,6 @@ pub(crate) enum Response {
     Fail,
     Cut,
     Throw(Rc<read_term::Term>),
-    Callable,
     Halt(isize),
 }
 
@@ -42,7 +42,7 @@ impl Response {
     }
 }
 
-pub(super) struct Context {
+pub struct Context {
     pub procedures: HashMap<String, Procedure>,
     pub flags: crate::flags::Flags,
     pub operators: operators::OperatorTable,

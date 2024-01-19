@@ -2,18 +2,18 @@ use super::*;
 use error::*;
 use stream::ReadStream;
 
-pub(super) struct MultiReader {
+pub struct MultiReader {
     streams: Vec<Box<dyn ReadStream>>,
 }
 
 impl MultiReader {
-    pub(super) fn new(stream: Box<dyn ReadStream>) -> Self {
+    pub fn new(stream: Box<dyn ReadStream>) -> Self {
         Self {
             streams: vec![stream],
         }
     }
 
-    pub(super) fn include(&mut self, stream: Box<dyn ReadStream>) -> Result<(), Box<Error>> {
+    pub fn include(&mut self, stream: Box<dyn ReadStream>) -> Result<(), Box<Error>> {
         if let Some(p1) = stream.position() {
             if self.streams.iter().any(|s| {
                 if let Some(p2) = s.position() {

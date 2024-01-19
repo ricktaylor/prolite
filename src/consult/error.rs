@@ -30,7 +30,7 @@ pub(crate) enum Error {
 }
 
 impl Error {
-    pub(super) fn new<T>(e: Error) -> Result<T, Box<Error>> {
+    pub fn new<T>(e: Error) -> Result<T, Box<Error>> {
         Err(Box::new(e))
     }
 }

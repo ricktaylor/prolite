@@ -92,7 +92,7 @@ fn pi_from_term(term: &Rc<Term>) -> Result<String, Box<Error>> {
 }
 
 impl Text {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             procedures: HashMap::new(),
             initialization: Vec::new(),
@@ -102,7 +102,7 @@ impl Text {
         }
     }
 
-    pub fn load(
+    fn load(
         &mut self,
         resolver: &mut dyn StreamResolver,
         source: &str,
@@ -749,7 +749,7 @@ impl Text {
     }
 }
 
-pub(super) fn consult(
+pub fn consult(
     resolver: &mut dyn StreamResolver,
     source: &str,
     sink: Option<ErrorSinkFn>,

@@ -23,7 +23,7 @@ pub(crate) struct Error {
 }
 
 impl Error {
-    pub(super) fn new<T>(kind: ErrorKind, location: Option<Span>) -> Result<T, Box<Error>> {
+    pub fn new<T>(kind: ErrorKind, location: Option<Span>) -> Result<T, Box<Error>> {
         Err(Box::new(Self { kind, location }))
     }
 }

@@ -17,7 +17,7 @@ fn solve_var(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respons
         })
         .map_failed(|| {
             frame.sub_frame(|mut frame| {
-                let list = frame.as_list(&solutions);
+                let list = frame.list_from_slice(&solutions);
                 if frame.unify(list, args[2]) {
                     next.solve(frame)
                 } else {
@@ -72,7 +72,7 @@ fn solve_list(
         )
     }) {
         Response::Fail => frame.sub_frame(|mut frame| {
-            let list = frame.as_list(&solutions);
+            let list = frame.list_from_slice(&solutions);
             if frame.unify(list, tail) {
                 next.solve(frame)
             } else {
@@ -101,7 +101,7 @@ fn solve_none(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respon
     }
 }
 
-pub(super) fn solve(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+pub fn solve(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     match frame.get_term(args[2]) {
         Term::Var(_) => return solve_var(frame, args, next),
         Term::Compound(c) if c.functor() == "." && c.args.len() == 2 => {

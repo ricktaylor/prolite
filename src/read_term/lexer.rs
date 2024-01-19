@@ -3,7 +3,7 @@ use error::*;
 use stream::{Position, ReadStream, Span};
 
 #[derive(Debug)]
-pub(crate) enum TokenKind {
+pub enum TokenKind {
     Eof,
     Name(String),
     Var(String),
@@ -24,7 +24,7 @@ pub(crate) enum TokenKind {
 }
 
 #[derive(Debug)]
-pub(crate) struct Token {
+pub struct Token {
     pub kind: TokenKind,
     pub location: Option<Span>,
 }
@@ -218,7 +218,7 @@ fn alpha_numeric(
     }
 }
 
-pub(super) fn location_join(location: Option<Span>, l: Option<Span>) -> Option<Span> {
+pub fn location_join(location: Option<Span>, l: Option<Span>) -> Option<Span> {
     match (location, l) {
         (Some(location), Some(l)) => Some(Span {
             start: location.start,
@@ -448,11 +448,7 @@ fn graphic(
     }
 }
 
-pub(super) fn next(
-    ctx: &Context,
-    stream: &mut dyn ReadStream,
-    exp: bool,
-) -> Result<Token, Box<Error>> {
+pub fn next(ctx: &Context, stream: &mut dyn ReadStream, exp: bool) -> Result<Token, Box<Error>> {
     let mut c = next_char(ctx, stream)?;
     match c {
         // open ct (* 6.4 *)

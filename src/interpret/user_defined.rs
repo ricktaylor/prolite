@@ -19,7 +19,7 @@ fn existence_error(frame: &Frame, goal: usize) -> Response {
     )
 }
 
-pub(super) fn solve(mut frame: Frame, pi: &str, goal: usize, next: &mut dyn Solver) -> Response {
+pub fn solve(mut frame: Frame, pi: &str, goal: usize, next: &mut dyn Solver) -> Response {
     let predicates = match frame.get_context().procedures.get(pi) {
         None => {
             match frame.get_context().flags.unknown {
@@ -36,10 +36,10 @@ pub(super) fn solve(mut frame: Frame, pi: &str, goal: usize, next: &mut dyn Solv
             let mut index = HashMap::new();
 
             // TODO:  We could merge new_term_indexed and unify here to one walk of the term tree
-            let head = frame.new_term_indexed(&clause.head, &mut index);
+            let head = frame.new_term_indexed(clause.head.clone(), &mut index);
             if frame.unify(goal, head) {
                 if let Some(body) = &clause.body {
-                    let body = frame.new_term_indexed(body, &mut index);
+                    let body = frame.new_term_indexed(body.clone(), &mut index);
                     solve::solve(frame, body, next)
                 } else {
                     next.solve(frame)
@@ -75,22 +75,19 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
             let c1 = c.as_compound();
             if c1.functor == ":-" && c1.args.len() == 2 {
                 Ok((
-                    match &c1.args[0].kind {
-                        read_term::TermKind::Atom(s) => format!("{}/0", *s),
-                        read_term::TermKind::Compound(c) => {
-                            format!("{}/{}", c.functor, c.args.len())
-                        }
-                        read_term::TermKind::Var(idx) => {
-                            if let Some(goal) = frame.get_var(*idx) {
-                                return unpack_pi(frame, goal);
+                    match frame.get_term(c.args[0]) {
+                        Term::Atomic(t) => {
+                            if let read_term::TermKind::Atom(s) = &t.kind {
+                                format!("{}/0", s)
                             } else {
-                                return Err(throw::instantiation_error(frame));
+                                // type_error(callable,term)
+                                todo!()
                             }
                         }
-                        _ => {
-                            // type_error(callable,c1.args[0])
-                            todo!()
+                        Term::Var(_) => {
+                            return Err(throw::instantiation_error(frame));
                         }
+                        Term::Compound(c) => format!("{}/{}", c.functor(), c.args.len()),
                     },
                     Clause {
                         head: c1.args[0].clone(),
@@ -107,13 +104,7 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
                 ))
             }
         }
-        Term::Var(idx) => {
-            if let Some(goal) = frame.get_var(*idx) {
-                unpack_pi(frame, goal)
-            } else {
-                Err(throw::instantiation_error(frame))
-            }
-        }
+        Term::Var(_) => Err(throw::instantiation_error(frame)),
     }
 }
 
@@ -133,7 +124,7 @@ fn permission_error(frame: Frame, term: &Rc<read_term::Term>) -> Response {
     )
 }
 
-pub(super) fn assert(mut frame: Frame, goal: usize, is_z: bool, next: &mut dyn Solver) -> Response {
+pub fn assert(mut frame: Frame, goal: usize, is_z: bool, next: &mut dyn Solver) -> Response {
     unpack_pi(&frame, goal).map_or_else(
         |r| r,
         |(pi, clause)| {

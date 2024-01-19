@@ -10,7 +10,7 @@ use super::{flags, operators};
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub(super) struct Context<'a> {
+pub struct Context<'a> {
     pub flags: &'a flags::Flags,
     pub operators: &'a operators::OperatorTable,
     pub char_conversion: &'a HashMap<char, char>,
@@ -18,4 +18,4 @@ pub(super) struct Context<'a> {
 }
 
 #[cfg(test)]
-pub(super) mod test;
+pub mod test;

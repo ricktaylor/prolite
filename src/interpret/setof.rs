@@ -7,11 +7,7 @@ use term::*;
 fn add_vars(frame: &Frame, t: usize, vars: &mut HashSet<usize>) {
     match frame.get_term(t) {
         Term::Var(idx) => {
-            if let Some(t) = frame.get_var(*idx) {
-                add_vars(frame, t, vars)
-            } else {
-                vars.insert(*idx);
-            }
+            vars.insert(*idx);
         }
         Term::Compound(c) => {
             for a in c.args.iter() {
@@ -30,9 +26,7 @@ fn find_free_vars(
 ) {
     match frame.get_term(t) {
         Term::Var(idx) => {
-            if let Some(t) = frame.get_var(*idx) {
-                find_free_vars(frame, t, free_vars, other_vars);
-            } else if other_vars.get(idx).is_none() {
+            if other_vars.get(idx).is_none() {
                 free_vars.insert(*idx);
             }
         }
@@ -50,13 +44,6 @@ fn existential_split(frame: &Frame, t: usize, other_vars: &mut HashSet<usize>) -
         Term::Compound(c) if c.functor() == "^" && c.args.len() == 2 => {
             add_vars(frame, c.args[0], other_vars);
             existential_split(frame, c.args[1], other_vars)
-        }
-        Term::Var(idx) => {
-            if let Some(t) = frame.get_var(*idx) {
-                existential_split(frame, t, other_vars)
-            } else {
-                t
-            }
         }
         _ => t,
     }
@@ -104,7 +91,7 @@ fn solve_empty(
                 Response::Fail
             } else {
                 frame.sub_frame(|mut frame| {
-                    let list = frame.as_list(&solutions);
+                    let list = frame.list_from_slice(&solutions);
                     if frame.unify(list, instances) {
                         next.solve(frame)
                     } else {
@@ -126,7 +113,7 @@ fn solve_freevars(
     todo!()
 }
 
-pub(super) fn solve(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+pub fn solve(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     // Find the free variables of the iterated goal of arg[1] wrt arg[0]
     let mut free_vars = HashSet::new();
     let goal = split_free_vars(&frame, args[1], args[0], &mut free_vars);

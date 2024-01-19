@@ -1,3 +1,5 @@
+use std::thread;
+
 use super::*;
 
 fn print_result(t: &Rc<read_term::Term>, _: &[read_term::VarInfo]) -> bool {
@@ -21,16 +23,20 @@ fn test_consult(s: &str) {
         operators: text.operators,
     };
     for (t, v) in text.initialization {
-        solve::eval(ctx, &t, || print_result(&t, &v));
+        solve::eval(ctx, t.clone(), || print_result(&t, &v));
     }
     solve::eval(
         ctx,
-        &read_term::Term::new_atom("validate".to_string(), None),
+        read_term::Term::new_atom("validate".to_string(), None),
         || true,
     );
 }
 
 #[test]
 fn test() {
-    test_consult("./test/vanilla/vanilla.pl");
+    let child = thread::Builder::new().stack_size(16*1024*1024).spawn(move || {
+        test_consult("./test/vanilla/vanilla.pl");
+    }).unwrap();
+
+    child.join().unwrap();
 }

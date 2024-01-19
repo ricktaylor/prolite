@@ -8,10 +8,7 @@ fn write_list(frame: &Frame, head: usize, tail: usize) -> String {
             read_term::TermKind::Atom(a) if a == "[]" => write_term(frame, head),
             _ => panic!("malformed list!"),
         },
-        Term::Var(idx) => match frame.get_var(*idx) {
-            Some(t) => write_list(frame, head, t),
-            None => format!("{}|_{}", write_term(frame, head), *idx),
-        },
+        Term::Var(idx) => format!("{}|_{}", write_term(frame, head), *idx),
         Term::Compound(c) => match c.functor().as_str() {
             "." => format!(
                 "{},{}",
@@ -23,7 +20,7 @@ fn write_list(frame: &Frame, head: usize, tail: usize) -> String {
     }
 }
 
-pub(super) fn write_term(frame: &Frame, goal: usize) -> String {
+pub fn write_term(frame: &Frame, goal: usize) -> String {
     match frame.get_term(goal) {
         Term::Atomic(t) => match &t.kind {
             read_term::TermKind::Integer(i) => format!("{}", i),
@@ -31,13 +28,7 @@ pub(super) fn write_term(frame: &Frame, goal: usize) -> String {
             read_term::TermKind::Atom(s) => s.clone(),
             _ => unreachable!(),
         },
-        Term::Var(idx) => {
-            if let Some(t) = frame.get_var(*idx) {
-                write_term(frame, t)
-            } else {
-                format!("_{}", *idx)
-            }
-        }
+        Term::Var(idx) => format!("_{}", *idx),
         Term::Compound(c) => match c.functor().as_str() {
             "." => {
                 format!("[{}]", write_list(frame, c.args[0], c.args[1]))
@@ -56,12 +47,12 @@ pub(super) fn write_term(frame: &Frame, goal: usize) -> String {
     }
 }
 
-pub(super) fn solve_write1(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+pub fn solve_write1(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     print!("{}", write_term(&frame, args[0]));
     next.solve(frame)
 }
 
-pub(super) fn solve_nl(frame: Frame, _: &[usize], next: &mut dyn Solver) -> Response {
+pub fn solve_nl(frame: Frame, _: &[usize], next: &mut dyn Solver) -> Response {
     println!();
     next.solve(frame)
 }

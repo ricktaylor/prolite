@@ -3,7 +3,7 @@ use std::rc::Rc;
 use super::*;
 
 #[derive(Debug)]
-pub(super) struct Compound {
+pub struct Compound {
     pub compound: Rc<read_term::Term>,
     pub args: Vec<usize>,
 }
@@ -23,7 +23,7 @@ impl Compound {
 }
 
 #[derive(Debug)]
-pub(super) enum Term {
+pub enum Term {
     Atomic(Rc<read_term::Term>),
     Var(usize),
     Compound(Compound),

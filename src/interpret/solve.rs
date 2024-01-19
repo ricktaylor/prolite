@@ -1,10 +1,11 @@
+use core::panic;
 use std::collections::HashSet;
 
 use super::*;
 use builtins::*;
 use term::*;
 
-pub(super) struct Frame<'a> {
+pub struct Frame<'a> {
     ctx: &'a mut Context,
     cache: &'a mut Vec<Term>,
     cache_base: usize,
@@ -15,7 +16,7 @@ pub(super) struct Frame<'a> {
 }
 
 impl<'a> Frame<'a> {
-    pub fn new(
+    fn new(
         ctx: &'a mut Context,
         cache: &'a mut Vec<Term>,
         substs: &'a mut Vec<Option<usize>>,
@@ -32,13 +33,13 @@ impl<'a> Frame<'a> {
         }
     }
 
-    pub fn new_term(&mut self, term: &Rc<read_term::Term>) -> usize {
+    pub fn new_term(&mut self, term: Rc<read_term::Term>) -> usize {
         self.new_term_indexed(term, &mut HashMap::new())
     }
 
     pub fn new_term_indexed(
         &mut self,
-        term: &Rc<read_term::Term>,
+        term: Rc<read_term::Term>,
         var_index: &mut HashMap<usize, usize>,
     ) -> usize {
         let t = match &term.kind {
@@ -47,11 +48,11 @@ impl<'a> Frame<'a> {
                 args: c
                     .args
                     .iter()
-                    .map(|arg| self.new_term_indexed(arg, var_index))
+                    .map(|arg| self.new_term_indexed(arg.clone(), var_index))
                     .collect(),
-                compound: term.clone(),
+                compound: term,
             }),
-            _ => Term::Atomic(term.clone()),
+            _ => Term::Atomic(term),
         };
         self.add_term(t)
     }
@@ -61,8 +62,25 @@ impl<'a> Frame<'a> {
         self.cache.len() - 1
     }
 
-    pub fn get_term(&self, idx: usize) -> &Term {
-        &self.cache[idx]
+    pub fn get_term_shallow(&self, term: usize) -> &Term {
+        &self.cache[term]
+    }
+
+    fn deref(&self, term: usize) -> usize {
+        match self.get_term_shallow(term) {
+            Term::Var(idx) => {
+                if let Some(term) = self.get_var(*idx) {
+                    self.deref(term)
+                } else {
+                    term
+                }
+            }
+            _ => term,
+        }
+    }
+
+    pub fn get_term(&self, term: usize) -> &Term {
+        self.get_term_shallow(self.deref(term))
     }
 
     pub fn get_var(&self, idx: usize) -> Option<usize> {
@@ -96,10 +114,6 @@ impl<'a> Frame<'a> {
         &self.location
     }
 
-    pub fn set_location(&mut self, location: Option<stream::Span>) {
-        self.location = location;
-    }
-
     pub fn get_context(&self) -> &Context {
         self.ctx
     }
@@ -125,30 +139,22 @@ impl<'a> Frame<'a> {
                     .try_fold((), |_, (a, b)| self.unify_fold(*a, *b))
             }
             (Term::Var(idx), _) => {
-                if let Some(a) = self.substs[*idx] {
-                    self.unify_fold(a, b)
-                } else {
-                    //eprintln!("assign _{} -> {}", *idx, write::write_term(self, b));
-                    let i = *idx;
-                    if i < self.substs_base {
-                        self.undo.insert(i);
-                    }
-                    self.substs[i] = Some(b);
-                    Ok(())
+                //eprintln!("assign _{} -> {}", *idx, write::write_term(self, b));
+                let i = *idx;
+                if i < self.substs_base {
+                    self.undo.insert(i);
                 }
+                self.substs[i] = Some(b);
+                Ok(())
             }
             (_, Term::Var(idx)) => {
-                if let Some(b) = self.substs[*idx] {
-                    self.unify_fold(a, b)
-                } else {
-                    //eprintln!("assign _{} -> {}", *idx, write::write_term(self, a));
-                    let i = *idx;
-                    if i < self.substs_base {
-                        self.undo.insert(i);
-                    }
-                    self.substs[i] = Some(a);
-                    Ok(())
+                //eprintln!("assign _{} -> {}", *idx, write::write_term(self, a));
+                let i = *idx;
+                if i < self.substs_base {
+                    self.undo.insert(i);
                 }
+                self.substs[i] = Some(a);
+                Ok(())
             }
             (Term::Atomic(t1), Term::Atomic(t2)) => match (&t1.kind, &t2.kind) {
                 (read_term::TermKind::Integer(i1), read_term::TermKind::Integer(i2))
@@ -205,13 +211,9 @@ impl<'a> Frame<'a> {
                     .zip(&args2)
                     .try_fold((), |_, (a, b)| self.unify_copy_inner(*a, *b, var_index))
             }
-            (Term::Var(idx), _) => {
-                if let Some(a) = self.substs[*idx] {
-                    self.unify_copy_inner(a, b, var_index)
-                } else {
-                    let a = self.copy_term_inner(a, var_index);
-                    self.unify_fold(a, b)
-                }
+            (Term::Var(_), _) => {
+                let a = self.copy_term_inner(a, var_index);
+                self.unify_fold(a, b)
             }
             _ => self.unify_fold(a, b),
         }
@@ -235,27 +237,24 @@ impl<'a> Frame<'a> {
                 self.add_term(t)
             }
             Term::Var(idx) => {
-                if let Some(t) = self.substs[*idx] {
-                    self.copy_term_inner(t, var_index)
-                } else {
-                    let t = Term::Var(self.add_var(*idx, var_index));
-                    self.add_term(t)
-                }
+                let t = Term::Var(self.add_var(*idx, var_index));
+                self.add_term(t)
             }
             _ => t,
         }
     }
 
-    pub fn as_list(&mut self, list: &[usize]) -> usize {
+    pub fn list_from_slice(&mut self, list: &[usize]) -> usize {
         list.iter().rev().fold(
-            self.new_term(&read_term::Term::new_atom("[]".to_string(), None)),
+            self.new_term(read_term::Term::new_atom("[]".to_string(), None)),
             |list, t| {
+                let t = self.deref(*t);
                 self.add_term(Term::Compound(Compound {
                     compound: read_term::Term::new_compound(
                         ".".to_string(),
                         None,
                         vec![
-                            match self.get_term(*t) {
+                            match self.get_term(t) {
                                 Term::Atomic(t2) => t2.clone(),
                                 Term::Var(idx) => Rc::new(read_term::Term {
                                     kind: read_term::TermKind::Var(*idx),
@@ -270,10 +269,92 @@ impl<'a> Frame<'a> {
                             },
                         ],
                     ),
-                    args: vec![*t, list],
+                    args: vec![t, list],
                 }))
             },
         )
+    }
+
+    pub fn term_from_slice(&mut self, list: &[usize]) -> usize {
+        if list.len() == 1 {
+            return self.deref(list[0]);
+        }
+
+        let (functor, location) = match self.get_term(list[0]) {
+            Term::Atomic(t) => match &t.kind {
+                read_term::TermKind::Atom(s) => (s, &t.location),
+                _ => panic!("Frame::term_from_slice passed nonsense!"),
+            },
+            _ => panic!("Frame::term_from_slice passed nonsense!"),
+        };
+
+        let mut r_args = Vec::new();
+        let mut t_args = Vec::new();
+        for a in &list[1..] {
+            let a = self.deref(*a);
+            r_args.push(match self.get_term(a) {
+                Term::Atomic(t) => t.clone(),
+                Term::Var(idx) => Rc::new(read_term::Term {
+                    kind: read_term::TermKind::Var(*idx),
+                    location: None,
+                }),
+                Term::Compound(c) => c.compound.clone(),
+            });
+            t_args.push(a);
+        }
+
+        self.add_term(Term::Compound(Compound {
+            compound: read_term::Term::new_compound(functor.clone(), location.clone(), r_args),
+            args: t_args,
+        }))
+    }
+
+    fn solve(mut self, deep: bool, goal: usize, next: &mut dyn Solver) -> Response {
+        match if deep {
+            self.get_term(goal)
+        } else {
+            self.get_term_shallow(goal)
+        } {
+            Term::Atomic(t) => {
+                if let read_term::TermKind::Atom(s) = &t.kind {
+                    let pi = format!("{}/0", s);
+                    self.location = t.location.clone();
+                    match get_builtin(&pi) {
+                        Some((f, _)) => (f)(self, &[], next),
+                        None => user_defined::solve(self, &pi, goal, next),
+                    }
+                } else {
+                    throw::error(
+                        read_term::Term::new_compound(
+                            "type_error".to_string(),
+                            None,
+                            vec![
+                                read_term::Term::new_atom("callable".to_string(), None),
+                                t.clone(),
+                            ],
+                        ),
+                        t.location.clone(),
+                    )
+                }
+            }
+            Term::Var(idx) if !deep => {
+                if let Some(goal) = self.get_var(*idx) {
+                    call(self, goal, next)
+                } else {
+                    throw::instantiation_error(&self)
+                }
+            }
+            Term::Var(_) => throw::instantiation_error(&self),
+            Term::Compound(c) => {
+                let pi = &format!("{}/{}", c.functor(), c.args.len());
+                let args = c.args.to_vec();
+                self.location = c.compound.location.clone();
+                match get_builtin(&pi) {
+                    Some((f, _)) => (f)(self, &args, next),
+                    None => user_defined::solve(self, &pi, goal, next),
+                }
+            }
+        }
     }
 }
 
@@ -287,77 +368,38 @@ impl<'a> Drop for Frame<'a> {
     }
 }
 
-pub(super) fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
-    //eprintln!("solving {}", write::write_term(&frame, goal));
-
-    match frame.get_term(goal) {
-        Term::Atomic(t) => {
-            if let read_term::TermKind::Atom(s) = &t.kind {
-                let pi = format!("{}/0", s);
-                let location = t.location.clone();
-                frame.set_location(location);
-
-                match get_builtin(&pi) {
-                    Some(f) => (f)(frame, &mut [], next),
-                    None => user_defined::solve(frame, &pi, goal, next),
-                }
-            } else {
-                Response::Callable
-            }
-        }
-        Term::Var(idx) => {
-            if let Some(goal) = frame.get_var(*idx) {
-                call(frame, goal, next)
-            } else {
-                throw::instantiation_error(&frame)
-            }
-        }
-        Term::Compound(c) => {
-            let pi = format!("{}/{}", c.functor(), c.args.len());
-            let location = c.compound.location.clone();
-
-            match get_builtin(&pi) {
-                Some(f) => {
-                    let args = c.args.to_vec();
-                    frame.set_location(location);
-                    (f)(frame, &args, next)
-                }
-                None => {
-                    frame.set_location(location);
-                    user_defined::solve(frame, &pi, goal, next)
-                }
-            }
-        }
-    }
+pub fn solve(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
+    frame.solve(false, goal, next)
 }
 
-pub(super) fn call(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
+pub fn call(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
     // call/1 is "not transparent" to cut, so use a continuation to record the response from next
     let mut next_cut = false;
-    match solve(
-        frame,
-        goal,
-        &mut Continuation::new(|frame| {
-            next.solve(frame).map_cut(|| {
-                next_cut = true;
+    frame
+        .solve(
+            true,
+            goal,
+            &mut Continuation::new(|frame| {
+                next.solve(frame).map_cut(|| {
+                    next_cut = true;
+                    Response::Cut
+                })
+            }),
+        )
+        .map_cut(|| {
+            if !next_cut {
+                Response::Fail
+            } else {
                 Response::Cut
-            })
-        }),
-    ) {
-        Response::Cut if !next_cut => Response::Fail,
-        Response::Callable => {
-            // Mutate to type_error(callable,goal)
-            todo!()
-        }
-        r => r,
-    }
+            }
+        })
 }
 
-pub(super) trait Solver {
+pub trait Solver {
     fn solve(&mut self, frame: Frame) -> Response;
 }
 
-pub(super) struct Continuation<F: FnMut(Frame) -> Response> {
+pub struct Continuation<F: FnMut(Frame) -> Response> {
     solve: F,
 }
 
@@ -398,7 +440,7 @@ where
 
 pub(crate) fn eval<F: FnMut() -> bool>(
     ctx: &mut Context,
-    goal: &Rc<read_term::Term>,
+    goal: Rc<read_term::Term>,
     callback: F,
 ) -> Response {
     let mut cache = Vec::new();
