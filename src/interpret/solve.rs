@@ -62,12 +62,8 @@ impl<'a> Frame<'a> {
         self.cache.len() - 1
     }
 
-    pub fn get_term_shallow(&self, term: usize) -> &Term {
-        &self.cache[term]
-    }
-
     fn deref(&self, term: usize) -> usize {
-        match self.get_term_shallow(term) {
+        match &self.cache[term] {
             Term::Var(idx) => {
                 if let Some(term) = self.get_var(*idx) {
                     self.deref(term)
@@ -80,7 +76,7 @@ impl<'a> Frame<'a> {
     }
 
     pub fn get_term(&self, term: usize) -> &Term {
-        self.get_term_shallow(self.deref(term))
+        &self.cache[self.deref(term)]
     }
 
     pub fn get_var(&self, idx: usize) -> Option<usize> {
@@ -308,54 +304,6 @@ impl<'a> Frame<'a> {
             args: t_args,
         }))
     }
-
-    fn solve(mut self, deep: bool, goal: usize, next: &mut dyn Solver) -> Response {
-        match if deep {
-            self.get_term(goal)
-        } else {
-            self.get_term_shallow(goal)
-        } {
-            Term::Atomic(t) => {
-                if let read_term::TermKind::Atom(s) = &t.kind {
-                    let pi = format!("{}/0", s);
-                    self.location = t.location.clone();
-                    match get_builtin(&pi) {
-                        Some((f, _)) => (f)(self, &[], next),
-                        None => user_defined::solve(self, &pi, goal, next),
-                    }
-                } else {
-                    throw::error(
-                        read_term::Term::new_compound(
-                            "type_error".to_string(),
-                            None,
-                            vec![
-                                read_term::Term::new_atom("callable".to_string(), None),
-                                t.clone(),
-                            ],
-                        ),
-                        t.location.clone(),
-                    )
-                }
-            }
-            Term::Var(idx) if !deep => {
-                if let Some(goal) = self.get_var(*idx) {
-                    call(self, goal, next)
-                } else {
-                    throw::instantiation_error(&self)
-                }
-            }
-            Term::Var(_) => throw::instantiation_error(&self),
-            Term::Compound(c) => {
-                let pi = format!("{}/{}", c.functor(), c.args.len());
-                let args = c.args.to_vec();
-                self.location = c.compound.location.clone();
-                match get_builtin(&pi) {
-                    Some((f, _)) => (f)(self, &args, next),
-                    None => user_defined::solve(self, &pi, goal, next),
-                }
-            }
-        }
-    }
 }
 
 impl<'a> Drop for Frame<'a> {
@@ -368,31 +316,72 @@ impl<'a> Drop for Frame<'a> {
     }
 }
 
-pub fn solve(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
-    frame.solve(false, goal, next)
+pub fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
+    match &frame.cache[goal] {
+        Term::Atomic(t) => {
+            if let read_term::TermKind::Atom(s) = &t.kind {
+                let pi = format!("{}/0", s);
+                frame.location = t.location.clone();
+                match get_builtin(&pi) {
+                    Some((f, _)) => (f)(frame, &[], next),
+                    None => user_defined::solve(frame, &pi, goal, next),
+                }
+            } else {
+                throw::error(
+                    read_term::Term::new_compound(
+                        "type_error".to_string(),
+                        None,
+                        vec![
+                            read_term::Term::new_atom("callable".to_string(), None),
+                            t.clone(),
+                        ],
+                    ),
+                    t.location.clone(),
+                )
+            }
+        }
+        Term::Var(idx) => {
+            if let Some(goal) = frame.get_var(*idx) {
+                call(frame, goal, next)
+            } else {
+                throw::instantiation_error(&frame)
+            }
+        }
+        Term::Compound(c) => {
+            let pi = format!("{}/{}", c.functor(), c.args.len());
+            let args = c.args.to_vec();
+            frame.location = c.compound.location.clone();
+            match get_builtin(&pi) {
+                Some((f, _)) => (f)(frame, &args, next),
+                None => user_defined::solve(frame, &pi, goal, next),
+            }
+        }
+    }
 }
 
 pub fn call(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
+    // Fully deref goal, as we don't want to trigger a double call
+    let goal = frame.deref(goal);
+
     // call/1 is "not transparent" to cut, so use a continuation to record the response from next
     let mut next_cut = false;
-    frame
-        .solve(
-            true,
-            goal,
-            &mut Continuation::new(|frame| {
-                next.solve(frame).map_cut(|| {
-                    next_cut = true;
-                    Response::Cut
-                })
-            }),
-        )
-        .map_cut(|| {
-            if !next_cut {
-                Response::Fail
-            } else {
+    solve(
+        frame,
+        goal,
+        &mut Continuation::new(|frame| {
+            next.solve(frame).map_cut(|| {
+                next_cut = true;
                 Response::Cut
-            }
-        })
+            })
+        }),
+    )
+    .map_cut(|| {
+        if !next_cut {
+            Response::Fail
+        } else {
+            Response::Cut
+        }
+    })
 }
 
 pub trait Solver {
