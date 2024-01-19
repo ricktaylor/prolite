@@ -17,7 +17,7 @@ fn unpack_list(frame: &Frame, tail: usize, terms: &mut Vec<usize>) -> Result<(),
             read_term::TermKind::Atom(s) if s == "[]" => Ok(()),
             _ => unreachable!(),
         },
-        Term::Var(_) => Err(throw::instantiation_error(&frame)),
+        Term::Var(_) => Err(throw::instantiation_error(frame)),
         Term::Compound(c) if c.functor() == "." && c.args.len() == 2 => {
             terms.push(c.args[0]);
             unpack_list(frame, c.args[1], terms)
@@ -47,7 +47,7 @@ fn univ_var(mut frame: Frame, term: usize, list: usize, next: &mut dyn Solver) -
                             let mut args = vec![c.args[0]];
                             let tail = c.args[1];
                             frame.sub_frame(|mut frame| {
-                                unpack_list(&mut frame, tail, &mut args).map_or_else(
+                                unpack_list(&frame, tail, &mut args).map_or_else(
                                     |r| r,
                                     |_| {
                                         let list = frame.term_from_slice(&args);

@@ -34,9 +34,12 @@ fn test_consult(s: &str) {
 
 #[test]
 fn test() {
-    let child = thread::Builder::new().stack_size(16*1024*1024).spawn(move || {
-        test_consult("./test/vanilla/vanilla.pl");
-    }).unwrap();
+    let child = thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            test_consult("./test/vanilla/vanilla.pl");
+        })
+        .unwrap();
 
     child.join().unwrap();
 }

@@ -346,7 +346,7 @@ impl<'a> Frame<'a> {
             }
             Term::Var(_) => throw::instantiation_error(&self),
             Term::Compound(c) => {
-                let pi = &format!("{}/{}", c.functor(), c.args.len());
+                let pi = format!("{}/{}", c.functor(), c.args.len());
                 let args = c.args.to_vec();
                 self.location = c.compound.location.clone();
                 match get_builtin(&pi) {
