@@ -13,7 +13,7 @@ fn print_result(t: &Rc<read_term::Term>, _: &[read_term::VarInfo]) -> bool {
     false
 }
 
-fn test_consult(s: &str) {
+fn test_consult(s: &str, goal: &str) {
     let text = consult::test::consult(s).unwrap();
 
     let ctx = &mut Context {
@@ -27,7 +27,7 @@ fn test_consult(s: &str) {
     }
     solve::eval(
         ctx,
-        read_term::Term::new_atom("validate".to_string(), None),
+        read_term::Term::new_atom(goal.to_string(), None),
         || true,
     );
 }
@@ -37,7 +37,8 @@ fn test() {
     let child = thread::Builder::new()
         .stack_size(16 * 1024 * 1024)
         .spawn(move || {
-            test_consult("./test/vanilla/vanilla.pl");
+            test_consult("./test/vanilla/vanilla.pl","validate");
+            test_consult("./test/inriasuite/inriasuite.pl","run_all_tests");
         })
         .unwrap();
 
