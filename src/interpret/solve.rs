@@ -323,7 +323,7 @@ pub fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
                 let pi = format!("{}/0", s);
                 frame.location = t.location.clone();
                 match get_builtin(&pi) {
-                    Some((f, _)) => (f)(frame, &[], next),
+                    Some(f) => (f)(frame, &[], next),
                     None => user_defined::solve(frame, &pi, goal, next),
                 }
             } else {
@@ -352,7 +352,7 @@ pub fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
             let args = c.args.to_vec();
             frame.location = c.compound.location.clone();
             match get_builtin(&pi) {
-                Some((f, _)) => (f)(frame, &args, next),
+                Some(f) => (f)(frame, &args, next),
                 None => user_defined::solve(frame, &pi, goal, next),
             }
         }
