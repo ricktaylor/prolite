@@ -1,404 +1,18 @@
-use core::panic;
-use std::collections::HashSet;
-
 use super::*;
-use builtins::*;
-use term::*;
+use frame::Frame;
+use term::TermKind;
 
-pub struct Frame<'a> {
-    ctx: &'a mut Context,
-    cache: &'a mut Vec<Term>,
-    cache_base: usize,
-    substs: &'a mut Vec<Option<usize>>,
-    substs_base: usize,
-    undo: HashSet<usize>,
-    location: Option<stream::Span>,
-}
-
-impl<'a> Frame<'a> {
-    fn new(
-        ctx: &'a mut Context,
-        cache: &'a mut Vec<Term>,
-        substs: &'a mut Vec<Option<usize>>,
-        location: Option<stream::Span>,
-    ) -> Self {
-        Self {
-            ctx,
-            cache_base: cache.len(),
-            cache,
-            substs_base: substs.len(),
-            substs,
-            undo: HashSet::new(),
-            location,
-        }
-    }
-
-    pub fn new_term(&mut self, term: Rc<read_term::Term>) -> usize {
-        self.new_term_indexed(term, &mut HashMap::new())
-    }
-
-    pub fn new_term_indexed(
-        &mut self,
-        term: Rc<read_term::Term>,
-        var_index: &mut HashMap<usize, usize>,
-    ) -> usize {
-        let t = match &term.kind {
-            read_term::TermKind::Var(v) => Term::Var(self.add_var(*v, var_index)),
-            read_term::TermKind::Compound(c) => Term::Compound(Compound {
-                args: c
-                    .args
-                    .iter()
-                    .map(|arg| self.new_term_indexed(arg.clone(), var_index))
-                    .collect(),
-                compound: term,
-            }),
-            _ => Term::Atomic(term),
-        };
-        self.add_term(t)
-    }
-
-    fn add_term(&mut self, t: Term) -> usize {
-        self.cache.push(t);
-        self.cache.len() - 1
-    }
-
-    fn deref(&self, term: usize) -> usize {
-        match &self.cache[term] {
-            Term::Var(idx) => {
-                if let Some(term) = self.get_var(*idx) {
-                    self.deref(term)
-                } else {
-                    term
-                }
-            }
-            _ => term,
-        }
-    }
-
-    pub fn get_term(&self, term: usize) -> &Term {
-        &self.cache[self.deref(term)]
-    }
-
-    pub fn get_var(&self, idx: usize) -> Option<usize> {
-        self.substs[idx]
-    }
-
-    fn add_var(&mut self, idx: usize, var_index: &mut HashMap<usize, usize>) -> usize {
-        if let Some(i) = var_index.get(&idx) {
-            *i
-        } else {
-            let i = self.substs.len();
-            self.substs.push(None);
-            var_index.insert(idx, i);
-            i
-        }
-    }
-
-    pub fn sub_frame<F, R>(&mut self, f: F) -> R
-    where
-        F: FnOnce(Frame) -> R,
-    {
-        f(Frame::new(
-            self.ctx,
-            self.cache,
-            self.substs,
-            self.location.clone(),
-        ))
-    }
-
-    pub fn get_location(&self) -> &Option<stream::Span> {
-        &self.location
-    }
-
-    pub fn get_context(&self) -> &Context {
-        self.ctx
-    }
-
-    pub fn get_context_mut(&mut self) -> &mut Context {
-        self.ctx
-    }
-
-    pub fn unify(&mut self, a: usize, b: usize) -> bool {
-        self.unify_fold(a, b).is_ok()
-    }
-
-    pub fn unify_fold(&mut self, a: usize, b: usize) -> Result<(), Response> {
-        match (self.get_term(a), self.get_term(b)) {
-            (Term::Compound(c1), Term::Compound(c2))
-                if c1.functor() == c2.functor() && c1.args.len() == c2.args.len() =>
-            {
-                let args1 = c1.args.to_vec();
-                let args2 = c2.args.to_vec();
-                args1
-                    .iter()
-                    .zip(&args2)
-                    .try_fold((), |_, (a, b)| self.unify_fold(*a, *b))
-            }
-            (Term::Var(idx), _) => {
-                //eprintln!("assign _{} -> {}", *idx, write::write_term(self, b));
-                let i = *idx;
-                if i < self.substs_base {
-                    self.undo.insert(i);
-                }
-                self.substs[i] = Some(b);
-                Ok(())
-            }
-            (_, Term::Var(idx)) => {
-                //eprintln!("assign _{} -> {}", *idx, write::write_term(self, a));
-                let i = *idx;
-                if i < self.substs_base {
-                    self.undo.insert(i);
-                }
-                self.substs[i] = Some(a);
-                Ok(())
-            }
-            (Term::Atomic(t1), Term::Atomic(t2)) => match (&t1.kind, &t2.kind) {
-                (read_term::TermKind::Integer(i1), read_term::TermKind::Integer(i2))
-                    if *i1 == *i2 =>
-                {
-                    Ok(())
-                }
-                (read_term::TermKind::Integer(i), read_term::TermKind::Float(f)) => {
-                    let f1 = *i as f64;
-                    if f1 == *f && *i == f1 as i64 {
-                        Ok(())
-                    } else {
-                        Err(Response::Fail)
-                    }
-                }
-                (read_term::TermKind::Float(f1), read_term::TermKind::Float(f2)) if *f1 == *f2 => {
-                    Ok(())
-                }
-                (read_term::TermKind::Float(f), read_term::TermKind::Integer(i)) => {
-                    let f1 = *i as f64;
-                    if f1 == *f && *i == f1 as i64 {
-                        Ok(())
-                    } else {
-                        Err(Response::Fail)
-                    }
-                }
-                (read_term::TermKind::Atom(s1), read_term::TermKind::Atom(s2)) if *s1 == *s2 => {
-                    Ok(())
-                }
-                _ => Err(Response::Fail),
-            },
-            _ => Err(Response::Fail),
-        }
-    }
-
-    pub fn unify_copy(&mut self, a: usize, b: usize) -> bool {
-        self.unify_copy_inner(a, b, &mut HashMap::new()).is_ok()
-    }
-
-    fn unify_copy_inner(
-        &mut self,
-        a: usize,
-        b: usize,
-        var_index: &mut HashMap<usize, usize>,
-    ) -> Result<(), Response> {
-        match (self.get_term(a), self.get_term(b)) {
-            (Term::Compound(c1), Term::Compound(c2))
-                if c1.functor() == c2.functor() && c1.args.len() == c2.args.len() =>
-            {
-                let args1 = c1.args.to_vec();
-                let args2 = c2.args.to_vec();
-                args1
-                    .iter()
-                    .zip(&args2)
-                    .try_fold((), |_, (a, b)| self.unify_copy_inner(*a, *b, var_index))
-            }
-            (Term::Var(_), _) => {
-                let a = self.copy_term_inner(a, var_index);
-                self.unify_fold(a, b)
-            }
-            _ => self.unify_fold(a, b),
-        }
-    }
-
-    pub fn copy_term(&mut self, t: usize) -> usize {
-        self.copy_term_inner(t, &mut HashMap::new())
-    }
-
-    fn copy_term_inner(&mut self, t: usize, var_index: &mut HashMap<usize, usize>) -> usize {
-        match self.get_term(t) {
-            Term::Compound(c1) => {
-                let args = c1.args.to_vec();
-                let t = Term::Compound(Compound {
-                    compound: c1.compound.clone(),
-                    args: args
-                        .iter()
-                        .map(|a| self.copy_term_inner(*a, var_index))
-                        .collect(),
-                });
-                self.add_term(t)
-            }
-            Term::Var(idx) => {
-                let t = Term::Var(self.add_var(*idx, var_index));
-                self.add_term(t)
-            }
-            _ => t,
-        }
-    }
-
-    pub fn list_from_slice(&mut self, list: &[usize]) -> usize {
-        list.iter().rev().fold(
-            self.new_term(read_term::Term::new_atom("[]".to_string(), None)),
-            |list, t| {
-                let t = self.deref(*t);
-                self.add_term(Term::Compound(Compound {
-                    compound: read_term::Term::new_compound(
-                        ".".to_string(),
-                        None,
-                        vec![
-                            match self.get_term(t) {
-                                Term::Atomic(t2) => t2.clone(),
-                                Term::Var(idx) => Rc::new(read_term::Term {
-                                    kind: read_term::TermKind::Var(*idx),
-                                    location: None,
-                                }),
-                                Term::Compound(c) => c.compound.clone(),
-                            },
-                            match self.get_term(list) {
-                                Term::Atomic(t1) => t1.clone(),
-                                Term::Compound(c) => c.compound.clone(),
-                                _ => unreachable!(),
-                            },
-                        ],
-                    ),
-                    args: vec![t, list],
-                }))
-            },
-        )
-    }
-
-    pub fn term_from_slice(&mut self, list: &[usize]) -> usize {
-        if list.len() == 1 {
-            return self.deref(list[0]);
-        }
-
-        let (functor, location) = match self.get_term(list[0]) {
-            Term::Atomic(t) => match &t.kind {
-                read_term::TermKind::Atom(s) => (s, &t.location),
-                _ => panic!("Frame::term_from_slice passed nonsense!"),
-            },
-            _ => panic!("Frame::term_from_slice passed nonsense!"),
-        };
-
-        let mut r_args = Vec::new();
-        let mut t_args = Vec::new();
-        for a in &list[1..] {
-            let a = self.deref(*a);
-            r_args.push(match self.get_term(a) {
-                Term::Atomic(t) => t.clone(),
-                Term::Var(idx) => Rc::new(read_term::Term {
-                    kind: read_term::TermKind::Var(*idx),
-                    location: None,
-                }),
-                Term::Compound(c) => c.compound.clone(),
-            });
-            t_args.push(a);
-        }
-
-        self.add_term(Term::Compound(Compound {
-            compound: read_term::Term::new_compound(functor.clone(), location.clone(), r_args),
-            args: t_args,
-        }))
-    }
-}
-
-impl<'a> Drop for Frame<'a> {
-    fn drop(&mut self) {
-        for v in self.undo.iter() {
-            self.substs[*v] = None;
-        }
-        self.substs.truncate(self.substs_base);
-        self.cache.truncate(self.cache_base);
-    }
-}
-
-pub fn solve(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
-    match &frame.cache[goal] {
-        Term::Atomic(t) => {
-            if let read_term::TermKind::Atom(s) = &t.kind {
-                let pi = format!("{}/0", s);
-                frame.location = t.location.clone();
-                match get_builtin(&pi) {
-                    Some(f) => (f)(frame, &[], next),
-                    None => user_defined::solve(frame, &pi, goal, next),
-                }
-            } else {
-                throw::error(
-                    read_term::Term::new_compound(
-                        "type_error".to_string(),
-                        None,
-                        vec![
-                            read_term::Term::new_atom("callable".to_string(), None),
-                            t.clone(),
-                        ],
-                    ),
-                    t.location.clone(),
-                )
-            }
-        }
-        Term::Var(idx) => {
-            if let Some(goal) = frame.get_var(*idx) {
-                call(frame, goal, next)
-            } else {
-                throw::instantiation_error(&frame)
-            }
-        }
-        Term::Compound(c) => {
-            let pi = format!("{}/{}", c.functor(), c.args.len());
-            let args = c.args.to_vec();
-            frame.location = c.compound.location.clone();
-            match get_builtin(&pi) {
-                Some(f) => (f)(frame, &args, next),
-                None => user_defined::solve(frame, &pi, goal, next),
-            }
-        }
-    }
-}
-
-pub fn call(frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
-    // Fully deref goal, as we don't want to trigger a double call
-    let goal = frame.deref(goal);
-
-    // call/1 is "not transparent" to cut, so use a continuation to record the response from next
-    let mut next_cut = false;
-    solve(
-        frame,
-        goal,
-        &mut Continuation::new(|frame| {
-            next.solve(frame).map_cut(|| {
-                next_cut = true;
-                Response::Cut
-            })
-        }),
-    )
-    .map_cut(|| {
-        if !next_cut {
-            Response::Fail
-        } else {
-            Response::Cut
-        }
-    })
-}
+pub type SolveFn = fn(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response;
 
 pub trait Solver {
     fn solve(&mut self, frame: Frame) -> Response;
 }
 
-pub struct Continuation<F: FnMut(Frame) -> Response> {
-    solve: F,
-}
-
-impl<F> Solver for Continuation<F>
+pub struct Continuation<F>
 where
     F: FnMut(Frame) -> Response,
 {
-    fn solve(&mut self, frame: Frame) -> Response {
-        (self.solve)(frame)
-    }
+    solve: F,
 }
 
 impl<F> Continuation<F>
@@ -410,31 +24,365 @@ where
     }
 }
 
-struct CallbackSolver<F: FnMut() -> bool> {
-    callback: F,
+impl<F> Solver for Continuation<F>
+where
+    F: FnMut(Frame) -> Response,
+{
+    fn solve(&mut self, frame: Frame) -> Response {
+        (self.solve)(frame)
+    }
 }
 
-impl<F> Solver for CallbackSolver<F>
-where
-    F: FnMut() -> bool,
-{
-    fn solve(&mut self, _: Frame) -> Response {
-        if (self.callback)() {
-            Response::Fail
+pub trait Control {
+    fn exec(&mut self, frame: Frame, next: &mut dyn Solver) -> Response;
+}
+
+pub type Goal = Box<dyn Control>;
+
+pub type GenerateFn = fn(frame: &Frame, args: &[usize]) -> Option<Goal>;
+
+struct True {}
+
+impl Control for True {
+    fn exec(&mut self, frame: Frame, next: &mut dyn Solver) -> Response {
+        next.solve(frame)
+    }
+}
+
+pub fn generate_true(_: &Frame, _: &[usize]) -> Option<Goal> {
+    Some(Box::new(True {}))
+}
+
+struct Fail {}
+
+impl Control for Fail {
+    fn exec(&mut self, _: Frame, _: &mut dyn Solver) -> Response {
+        Response::Fail
+    }
+}
+
+pub fn generate_fail(_: &Frame, _: &[usize]) -> Option<Goal> {
+    Some(Box::new(Fail {}))
+}
+
+struct Cut {}
+
+impl Control for Cut {
+    fn exec(&mut self, frame: Frame, next: &mut dyn Solver) -> Response {
+        next.solve(frame).map_failed(|| Response::Cut)
+    }
+}
+
+pub fn generate_cut(_: &Frame, _: &[usize]) -> Option<Goal> {
+    Some(Box::new(Cut {}))
+}
+
+struct And {
+    first: Goal,
+    second: Goal,
+}
+
+impl Control for And {
+    fn exec(&mut self, frame: Frame, next: &mut dyn Solver) -> Response {
+        self.first.exec(
+            frame,
+            &mut Continuation::new(|frame| self.second.exec(frame, next)),
+        )
+    }
+}
+
+pub fn generate_and(frame: &Frame, args: &[usize]) -> Option<Goal> {
+    Some(Box::new(And {
+        first: match generate(frame, args[0]) {
+            None => return None,
+            Some(g) => g,
+        },
+        second: match generate(frame, args[1]) {
+            None => return None,
+            Some(g) => g,
+        },
+    }))
+}
+
+struct Or {
+    either: Goal,
+    or: Goal,
+}
+
+impl Control for Or {
+    fn exec(&mut self, mut frame: Frame, next: &mut dyn Solver) -> Response {
+        frame
+            .sub_frame(|frame| self.either.exec(frame, next))
+            .map_failed(|| self.or.exec(frame, next))
+    }
+}
+
+pub fn generate_or(frame: &Frame, args: &[usize]) -> Option<Goal> {
+    let (either, _) = frame.get_term(args[0]);
+    match (&either.kind, &either.source.kind) {
+        (TermKind::Compound(c_args), read_term::TermKind::Compound(c))
+            if c.functor == "->" && c_args.len() == 2 =>
+        {
+            generate_if_then_else(frame, c_args[0], c_args[1], Some(args[1]))
+        }
+        _ => Some(Box::new(Or {
+            either: match generate(frame, args[0]) {
+                None => return None,
+                Some(g) => g,
+            },
+            or: match generate(frame, args[1]) {
+                None => return None,
+                Some(g) => g,
+            },
+        })),
+    }
+}
+
+struct IfThenElse {
+    if_goal: Goal,
+    then_goal: Goal,
+    else_goal: Option<Goal>,
+}
+
+impl Control for IfThenElse {
+    fn exec(&mut self, mut frame: Frame, next: &mut dyn Solver) -> Response {
+        let mut if_true = false;
+        let mut then_cut = false;
+        frame
+            .sub_frame(|frame| {
+                self.if_goal.exec(
+                    frame,
+                    &mut Continuation::new(|frame| {
+                        if_true = true;
+                        self.then_goal
+                            .exec(frame, next)
+                            .map_cut(|| {
+                                then_cut = true;
+                                Response::Cut
+                            })
+                            .map_failed(|| Response::Cut)
+                    }),
+                )
+            })
+            .map_failed(|| match &mut self.else_goal {
+                Some(else_goal) if !if_true => else_goal.exec(frame, next),
+                _ => Response::Fail,
+            })
+    }
+}
+
+pub fn generate_if_then(frame: &Frame, args: &[usize]) -> Option<Goal> {
+    generate_if_then_else(frame, args[0], args[1], None)
+}
+
+fn generate_if_then_else(
+    frame: &Frame,
+    if_term: usize,
+    then_term: usize,
+    else_term: Option<usize>,
+) -> Option<Goal> {
+    Some(Box::new(IfThenElse {
+        if_goal: match generate(frame, if_term) {
+            None => return None,
+            Some(g) => g,
+        },
+        then_goal: match generate(frame, then_term) {
+            None => return None,
+            Some(g) => g,
+        },
+        else_goal: match else_term {
+            None => None,
+            Some(else_term) => match generate(frame, else_term) {
+                None => return None,
+                g => g,
+            },
+        },
+    }))
+}
+
+struct Call {
+    next: Goal,
+}
+
+impl Control for Call {
+    fn exec(&mut self, frame: Frame, next: &mut dyn Solver) -> Response {
+        let mut next_cut = false;
+        self.next
+            .exec(
+                frame,
+                &mut Continuation::new(|frame| {
+                    next.solve(frame).map_cut(|| {
+                        next_cut = true;
+                        Response::Cut
+                    })
+                }),
+            )
+            .map_cut(|| {
+                // call/1 is "not transparent" to cut
+                if !next_cut {
+                    Response::Fail
+                } else {
+                    Response::Cut
+                }
+            })
+    }
+}
+
+pub fn generate_call(frame: &Frame, args: &[usize]) -> Option<Goal> {
+    Some(Box::new(Call {
+        next: match generate(frame, args[0]) {
+            None => return None,
+            Some(g) => g,
+        },
+    }))
+}
+
+struct Builtin {
+    f: SolveFn,
+    args: Vec<usize>,
+}
+
+impl Control for Builtin {
+    fn exec(&mut self, frame: Frame, next: &mut dyn Solver) -> Response {
+        (self.f)(frame, &self.args, next)
+    }
+}
+
+struct Var {
+    term: usize,
+}
+
+impl Control for Var {
+    fn exec(&mut self, frame: Frame, next: &mut dyn Solver) -> Response {
+        let (term, t) = frame.get_term(self.term);
+        if let TermKind::Var(_) = &term.kind {
+            throw::instantiation_error(&term.source)
         } else {
-            Response::Cut
+            call(frame, t, next)
         }
     }
 }
 
+struct UserDefined {
+    pi: String,
+    term: usize,
+}
+
+impl Control for UserDefined {
+    fn exec(&mut self, mut frame: Frame, next: &mut dyn Solver) -> Response {
+        let predicates = match frame.get_context().procedures.get(&self.pi) {
+            None => {
+                return match frame.get_context().flags.unknown {
+                    crate::flags::UnknownFlag::Error => {
+                        let (term, _) = frame.get_term(self.term);
+                        throw::callable(&term.source)
+                    }
+                    //crate::flags::UnknownFlag::Warning => todo!(), // Some kind of warning?
+                    _ => Response::Fail,
+                };
+            }
+            Some(p) => p.predicates.to_vec(),
+        };
+        for clause in predicates {
+            match frame.sub_frame(|mut frame| {
+                // TODO:  We could merge new_term_indexed and unify here to one walk of the term tree
+                let mut index = HashMap::new();
+                let head = frame.new_term_indexed(&clause.head, &mut index);
+                if frame.unify(self.term, head) {
+                    if let Some(body) = &clause.body {
+                        let b = frame.new_term_indexed(body, &mut index);
+                        let goal = generate(&frame, b);
+                        solve(frame, b, goal, next)
+                    } else {
+                        next.solve(frame)
+                    }
+                } else {
+                    Response::Fail
+                }
+            }) {
+                Response::Fail => {}
+                r => return r,
+            }
+        }
+        Response::Fail
+    }
+}
+
+fn generate(frame: &Frame, term: usize) -> Option<Goal> {
+    let (term, t) = frame.get_term(term);
+    match (&term.kind, &term.source.kind) {
+        (TermKind::Atomic, read_term::TermKind::Atom(s)) => {
+            let pi = format!("{}/0", s);
+            match builtins::get_builtin(&pi) {
+                Some(builtins::Builtin::Solve(f)) => Some(Box::new(Builtin {
+                    f: *f,
+                    args: Vec::new(),
+                })),
+                Some(builtins::Builtin::Control(f)) => (f)(frame, &[]),
+                None => Some(Box::new(UserDefined { pi, term: t })),
+            }
+        }
+        (TermKind::Var(_), _) => Some(Box::new(Var { term: t })),
+        (TermKind::Compound(args), read_term::TermKind::Compound(c)) => {
+            let pi = format!("{}/{}", c.functor, args.len());
+            match builtins::get_builtin(&pi) {
+                Some(builtins::Builtin::Solve(f)) => Some(Box::new(Builtin {
+                    f: *f,
+                    args: args.to_vec(),
+                })),
+                Some(builtins::Builtin::Control(f)) => (f)(frame, args),
+                None => Some(Box::new(UserDefined { pi, term: t })),
+            }
+        }
+        _ => None,
+    }
+}
+
+fn solve(frame: Frame, term: usize, goal: Option<Goal>, next: &mut dyn Solver) -> Response {
+    match goal {
+        None => {
+            let (term, _) = frame.get_term(term);
+            return throw::error(
+                read_term::Term::new_compound(
+                    "type_error".to_string(),
+                    None,
+                    vec![
+                        read_term::Term::new_atom("callable".to_string(), None),
+                        term.source.clone(),
+                    ],
+                ),
+                term.source.location.clone(),
+            );
+        }
+        Some(g) => g,
+    }
+    .exec(frame, next)
+}
+
+pub fn call(frame: Frame, term: usize, next: &mut dyn Solver) -> Response {
+    let goal = generate_call(&frame, &[term]);
+    solve(frame, term, goal, next)
+}
+
+// Possibly test only!
 pub(crate) fn eval<F: FnMut() -> bool>(
     ctx: &mut Context,
-    goal: Rc<read_term::Term>,
-    callback: F,
+    goal: &Rc<read_term::Term>,
+    mut callback: F,
 ) -> Response {
     let mut cache = Vec::new();
     let mut substs = Vec::new();
-    let mut frame = solve::Frame::new(ctx, &mut cache, &mut substs, goal.location.clone());
+    let mut frame = Frame::new(ctx, &mut cache, &mut substs);
     let goal = frame.new_term(goal);
-    call(frame, goal, &mut CallbackSolver { callback })
+    call(
+        frame,
+        goal,
+        &mut Continuation::new(|_| {
+            if callback() {
+                Response::Fail
+            } else {
+                Response::Cut
+            }
+        }),
+    )
 }

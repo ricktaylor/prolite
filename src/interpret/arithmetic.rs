@@ -1,17 +1,22 @@
 use phf::phf_map;
 
 use super::*;
-use solve::{Frame, Solver};
-use term::*;
+use frame::Frame;
+use solve::Solver;
+use term::TermKind;
 
 fn throw_evaluable(term: &Rc<read_term::Term>) -> Response {
     throw::error(
-        read_term::Term::new_compound("evaluable".to_string(), None, vec![term.as_pi()]),
+        read_term::Term::new_compound(
+            "evaluable".to_string(),
+            None,
+            vec![term.as_pi().unwrap_or(term.clone())],
+        ),
         term.location.clone(),
     )
 }
 
-fn compare_with_overflow(frame: &Frame, i: &i64) -> Result<f64, Response> {
+fn compare_with_overflow(location: &Option<stream::Span>, i: &i64) -> Result<f64, Response> {
     let f = *i as f64;
     if *i != f as i64 {
         Err(throw::error(
@@ -23,7 +28,7 @@ fn compare_with_overflow(frame: &Frame, i: &i64) -> Result<f64, Response> {
                     None,
                 )],
             ),
-            frame.get_location().clone(),
+            location.clone(),
         ))
     } else {
         Ok(f)
@@ -31,28 +36,45 @@ fn compare_with_overflow(frame: &Frame, i: &i64) -> Result<f64, Response> {
 }
 
 fn compare(frame: &Frame, t1: usize, t2: usize) -> Result<Option<core::cmp::Ordering>, Response> {
-    match (frame.get_term(t1), frame.get_term(t2)) {
-        (Term::Var(_), _) => Err(throw::instantiation_error(frame)),
-        (_, Term::Var(_)) => Err(throw::instantiation_error(frame)),
-        (Term::Atomic(t1), Term::Atomic(t2)) => match (&t1.kind, &t2.kind) {
-            (read_term::TermKind::Atom(_), _) => Err(throw_evaluable(t1)),
-            (_, read_term::TermKind::Atom(_)) => Err(throw_evaluable(t2)),
-            (read_term::TermKind::Integer(i1), read_term::TermKind::Integer(i2)) => {
-                Ok(core::cmp::PartialOrd::partial_cmp(i1, i2))
-            }
-            (read_term::TermKind::Integer(i1), read_term::TermKind::Float(d2)) => Ok(
-                core::cmp::PartialOrd::partial_cmp(&compare_with_overflow(frame, i1)?, d2),
-            ),
-            (read_term::TermKind::Float(d1), read_term::TermKind::Integer(i2)) => Ok(
-                core::cmp::PartialOrd::partial_cmp(d1, &compare_with_overflow(frame, i2)?),
-            ),
-            (read_term::TermKind::Float(d1), read_term::TermKind::Float(d2)) => {
-                Ok(core::cmp::PartialOrd::partial_cmp(d1, d2))
-            }
-            _ => unreachable!(),
-        },
-        (Term::Compound(c), _) => Err(throw_evaluable(&c.compound)),
-        (_, Term::Compound(c)) => Err(throw_evaluable(&c.compound)),
+    let (t1, _) = frame.get_term(t1);
+    let (t2, _) = frame.get_term(t2);
+    match (&t1.kind, &t1.source.kind, &t2.kind, &t2.source.kind) {
+        (
+            TermKind::Atomic,
+            read_term::TermKind::Integer(i1),
+            TermKind::Atomic,
+            read_term::TermKind::Integer(i2),
+        ) => Ok(core::cmp::PartialOrd::partial_cmp(i1, i2)),
+        (
+            TermKind::Atomic,
+            read_term::TermKind::Integer(i1),
+            TermKind::Atomic,
+            read_term::TermKind::Float(d2),
+        ) => Ok(core::cmp::PartialOrd::partial_cmp(
+            &compare_with_overflow(&t1.source.location, i1)?,
+            d2,
+        )),
+        (
+            TermKind::Atomic,
+            read_term::TermKind::Float(d1),
+            TermKind::Atomic,
+            read_term::TermKind::Integer(i2),
+        ) => Ok(core::cmp::PartialOrd::partial_cmp(
+            d1,
+            &compare_with_overflow(&t2.source.location, i2)?,
+        )),
+        (
+            TermKind::Atomic,
+            read_term::TermKind::Float(d1),
+            TermKind::Atomic,
+            read_term::TermKind::Float(d2),
+        ) => Ok(core::cmp::PartialOrd::partial_cmp(d1, d2)),
+        (TermKind::Atomic, _, _, _) => Err(throw_evaluable(&t1.source)),
+        (_, _, TermKind::Atomic, _) => Err(throw_evaluable(&t2.source)),
+        (TermKind::Var(_), _, _, _) => Err(throw::instantiation_error(&t1.source)),
+        (_, _, TermKind::Var(_), _) => Err(throw::instantiation_error(&t2.source)),
+        (TermKind::Compound(_), _, _, _) => Err(throw_evaluable(&t1.source)),
+        (_, _, TermKind::Compound(_), _) => Err(throw_evaluable(&t2.source)),
     }
 }
 
@@ -140,27 +162,32 @@ impl Value {
 }
 
 fn eval(frame: &Frame, expr: usize) -> Result<Value, Response> {
-    match frame.get_term(expr) {
-        Term::Atomic(t) => match &t.kind {
-            read_term::TermKind::Integer(i) => Ok(Value::Integer(*i)),
-            read_term::TermKind::Float(d) => Ok(Value::Float(*d)),
-            read_term::TermKind::Atom(s) => match get_builtin(&format!("{}/0", s)) {
-                Some(f) => (f)(&[], &t.location),
-                None => Err(throw_evaluable(t)),
-            },
-            _ => unreachable!(),
-        },
-        Term::Var(_) => Err(throw::instantiation_error(frame)),
-        Term::Compound(c) => match get_builtin(&format!("{}/{}", c.functor(), c.args.len())) {
-            Some(f) => {
-                let mut args = Vec::new();
-                for a in c.args.iter() {
-                    args.push(eval(frame, *a)?);
-                }
-                (f)(&args, &c.compound.location)
+    let (expr, _) = frame.get_term(expr);
+    match (&expr.kind, &expr.source.kind) {
+        (TermKind::Atomic, read_term::TermKind::Integer(i)) => Ok(Value::Integer(*i)),
+        (TermKind::Atomic, read_term::TermKind::Float(f)) => Ok(Value::Float(*f)),
+        (TermKind::Atomic, read_term::TermKind::Atom(s)) => {
+            match get_builtin(&format!("{}/0", s)) {
+                Some(f) => (f)(&[], &expr.source.location),
+                None => Err(throw_evaluable(&expr.source)),
             }
-            None => Err(throw_evaluable(&c.compound)),
-        },
+        }
+        (TermKind::Var(_), read_term::TermKind::Var(_)) => {
+            Err(throw::instantiation_error(&expr.source))
+        }
+        (TermKind::Compound(args), read_term::TermKind::Compound(c)) => {
+            match get_builtin(&format!("{}/{}", c.functor, args.len())) {
+                Some(f) => {
+                    let mut values = Vec::new();
+                    for a in args.iter() {
+                        values.push(eval(frame, *a)?);
+                    }
+                    (f)(&values, &expr.source.location)
+                }
+                None => Err(throw_evaluable(&expr.source)),
+            }
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -168,7 +195,7 @@ pub fn solve_is(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Resp
     match eval(&frame, args[1]) {
         Err(r) => r,
         Ok(Value::Integer(i)) => frame.sub_frame(|mut frame| {
-            let expr = frame.new_term(read_term::Term::new_integer(i, None));
+            let expr = frame.new_term(&read_term::Term::new_integer(i, None));
             if frame.unify(args[0], expr) {
                 next.solve(frame)
             } else {
@@ -176,7 +203,7 @@ pub fn solve_is(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Resp
             }
         }),
         Ok(Value::Float(d)) => frame.sub_frame(|mut frame| {
-            let expr = frame.new_term(read_term::Term::new_float(d, None));
+            let expr = frame.new_term(&read_term::Term::new_float(d, None));
             if frame.unify(args[0], expr) {
                 next.solve(frame)
             } else {

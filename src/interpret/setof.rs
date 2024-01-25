@@ -1,16 +1,18 @@
 use std::collections::HashSet;
 
 use super::*;
-use solve::{Continuation, Frame, Solver};
-use term::*;
+use frame::Frame;
+use solve::{Continuation, Solver};
+use term::TermKind;
 
 fn add_vars(frame: &Frame, t: usize, vars: &mut HashSet<usize>) {
-    match frame.get_term(t) {
-        Term::Var(idx) => {
+    let (term, t) = frame.get_term(t);
+    match &term.kind {
+        TermKind::Var(idx) => {
             vars.insert(*idx);
         }
-        Term::Compound(c) => {
-            for a in c.args.iter() {
+        TermKind::Compound(args) => {
+            for a in args.iter() {
                 add_vars(frame, *a, vars);
             }
         }
@@ -24,14 +26,15 @@ fn find_free_vars(
     free_vars: &mut HashSet<usize>,
     other_vars: &HashSet<usize>,
 ) {
-    match frame.get_term(t) {
-        Term::Var(idx) => {
+    let (term, t) = frame.get_term(t);
+    match &term.kind {
+        TermKind::Var(idx) => {
             if other_vars.get(idx).is_none() {
                 free_vars.insert(*idx);
             }
         }
-        Term::Compound(c) => {
-            for a in c.args.iter() {
+        TermKind::Compound(args) => {
+            for a in args.iter() {
                 find_free_vars(frame, *a, free_vars, other_vars);
             }
         }
@@ -40,10 +43,13 @@ fn find_free_vars(
 }
 
 fn existential_split(frame: &Frame, t: usize, other_vars: &mut HashSet<usize>) -> usize {
-    match frame.get_term(t) {
-        Term::Compound(c) if c.functor() == "^" && c.args.len() == 2 => {
-            add_vars(frame, c.args[0], other_vars);
-            existential_split(frame, c.args[1], other_vars)
+    let (term, t) = frame.get_term(t);
+    match (&term.kind, &term.source.kind) {
+        (TermKind::Compound(args), read_term::TermKind::Compound(c))
+            if c.functor == "^" && args.len() == 2 =>
+        {
+            add_vars(frame, args[0], other_vars);
+            existential_split(frame, args[1], other_vars)
         }
         _ => t,
     }
@@ -71,8 +77,8 @@ fn solve_empty(
     next: &mut dyn Solver,
 ) -> Response {
     /* We cannot short-cut like we do with findall/3 as the
-     * standard specifies that findall(W,Goal,S) is run before unification with Instances
-     * This allows for Goal with side-effects
+     * standard specifies that findall(W,&mut dyn Solver,S) is run before unification with Instances
+     * This allows for &mut dyn Solver with side-effects
      */
     let mut solutions = Vec::new();
     frame

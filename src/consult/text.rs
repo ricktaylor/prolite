@@ -625,10 +625,10 @@ impl Text {
     ) -> Result<(), Box<Error>> {
         match &in_char.kind {
             TermKind::Atom(s) if s.len() == 1 => {
-                let in_char = s.chars().next().unwrap();
+                let in_char = s.chars().nth(0).unwrap();
                 match &out_char.kind {
                     TermKind::Atom(s) if s.len() == 1 => {
-                        let out_char = s.chars().next().unwrap();
+                        let out_char = s.chars().nth(0).unwrap();
                         if in_char == out_char {
                             self.char_conversion.remove(&in_char);
                         } else {

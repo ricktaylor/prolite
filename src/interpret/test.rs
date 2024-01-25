@@ -23,11 +23,11 @@ fn test_consult(s: &str, goal: &str) {
         operators: text.operators,
     };
     for (t, v) in text.initialization {
-        solve::eval(ctx, t.clone(), || print_result(&t, &v));
+        solve::eval(ctx, &t, || print_result(&t, &v));
     }
     solve::eval(
         ctx,
-        read_term::Term::new_atom(goal.to_string(), None),
+        &read_term::Term::new_atom(goal.to_string(), None),
         || true,
     );
 }
@@ -37,8 +37,8 @@ fn test() {
     let child = thread::Builder::new()
         .stack_size(16 * 1024 * 1024)
         .spawn(move || {
-            test_consult("./test/vanilla/vanilla.pl","validate");
-            test_consult("./test/inriasuite/inriasuite.pl","run_all_tests");
+            test_consult("./test/vanilla/vanilla.pl", "validate");
+            test_consult("./test/inriasuite/inriasuite.pl", "run_all_tests");
         })
         .unwrap();
 

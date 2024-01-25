@@ -1,114 +1,12 @@
 use phf::phf_map;
 
 use super::*;
-use solve::{solve, Continuation, Frame, Solver};
-use term::*;
+use frame::Frame;
+use solve::{Continuation, GenerateFn, SolveFn, Solver};
 
-fn solve_true(frame: Frame, _: &[usize], next: &mut dyn Solver) -> Response {
-    next.solve(frame)
-}
-
-fn solve_fail(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
-    Response::Fail
-}
-
-fn solve_call(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    solve::call(frame, args[0], next)
-}
-
-fn solve_cut(frame: Frame, _: &[usize], next: &mut dyn Solver) -> Response {
-    next.solve(frame).map_failed(|| Response::Cut)
-}
-
-fn solve_and(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    solve(
-        frame,
-        args[0],
-        &mut Continuation::new(|frame| solve(frame, args[1], next)),
-    )
-}
-
-fn solve_or(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    if let Term::Compound(c) = frame.get_term(args[0]) {
-        if c.functor() == "->" && c.args.len() == 2 {
-            let if_term = c.args[0];
-            let then_term = c.args[1];
-            return solve_if_then_else(frame, if_term, then_term, Some(args[1]), next);
-        }
-    }
-
-    frame
-        .sub_frame(|frame| solve(frame, args[0], next))
-        .map_failed(|| frame.sub_frame(|frame| solve(frame, args[1], next)))
-}
-
-fn solve_if(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    solve_if_then_else(frame, args[0], args[1], None, next)
-}
-
-fn solve_if_then_else(
-    mut frame: Frame,
-    if_term: usize,
-    then_term: usize,
-    else_term: Option<usize>,
-    next: &mut dyn Solver,
-) -> Response {
-    let mut if_true = false;
-    let mut then_cut = false;
-    frame
-        .sub_frame(|frame| {
-            solve(
-                frame,
-                if_term,
-                &mut Continuation::new(|frame| {
-                    if_true = true;
-                    solve(frame, then_term, next)
-                        .map_cut(|| {
-                            then_cut = true;
-                            Response::Cut
-                        })
-                        .map_failed(|| Response::Cut)
-                }),
-            )
-        })
-        .map_cut(|| {
-            if then_cut {
-                Response::Cut
-            } else {
-                Response::Fail
-            }
-        })
-        .map_failed(|| match else_term {
-            Some(else_term) if !if_true => solve(frame, else_term, next),
-            _ => Response::Fail,
-        })
-}
-
-fn solve_catch(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    let mut next_throw = false;
-    match frame.sub_frame(|frame| {
-        solve::call(
-            frame,
-            args[0],
-            &mut Continuation::new(|frame| match next.solve(frame) {
-                Response::Throw(t) => {
-                    next_throw = true;
-                    Response::Throw(t)
-                }
-                r => r,
-            }),
-        )
-    }) {
-        Response::Throw(ball) if !next_throw => frame.sub_frame(|mut frame| {
-            let a = frame.new_term(ball.clone());
-            if frame.unify(a, args[1]) {
-                solve::call(frame, args[2], next)
-            } else {
-                Response::Throw(ball)
-            }
-        }),
-        r => r,
-    }
+pub enum Builtin {
+    Control(GenerateFn),
+    Solve(SolveFn),
 }
 
 fn solve_not_provable(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
@@ -173,136 +71,128 @@ fn solve_current_char_conversion(frame: Frame, args: &[usize], next: &mut dyn So
     flags::solve_current_char_conversion(frame, args[0], args[1], next)
 }
 
-fn not_impl(frame: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
-    if let Some(location) = frame.get_location() {
-        eprintln!(
-            "unimplemented builtin at: {}:{}:{}",
-            location.start.source, location.start.line, location.start.column
-        );
-    }
+fn not_impl(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
     todo!()
 }
 
-type SolveFn = fn(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response;
-
-const BUILTINS: phf::Map<&'static str, SolveFn> = phf_map! {
-    "true/0" => solve_true,
-    "fail/0" => solve_fail,
-    "call/1" => solve_call,
-    "!/0" => solve_cut,
-    ",/2" => solve_and,
-    ";/2" => solve_or,
-    "->/2" => solve_if,
-    "catch/3" => solve_catch,
-    "throw/1" => throw::solve,
-    "=/2" => solve_unify,
-    "unify_with_occurs_check/2" => not_impl,
-    "\\=/2" => not_impl,
-    "var/1" => not_impl,
-    "atom/1" => not_impl,
-    "integer/1" => not_impl,
-    "float/1" => not_impl,
-    "atomic/1" => not_impl,
-    "compound/1" => not_impl,
-    "nonvar/1" => not_impl,
-    "number/1" => not_impl,
-    "@=</2" => not_impl,
-    "==/2" => not_impl,
-    "\\==/2" => not_impl,
-    "@</2" => not_impl,
-    "@>/2" => not_impl,
-    "@>=/2" => not_impl,
-    "functor/3" => not_impl,
-    "arg/3" => not_impl,
-    "=../2" => univ::solve,
-    "copy_term/2" => solve_copy_term,
-    "is/2" => arithmetic::solve_is,
-    "=:=/2" => arithmetic::solve_eq,
-    "=\\=/2" => arithmetic::solve_neq,
-    "</2" => arithmetic::solve_lss,
-    "=</2" => arithmetic::solve_leq,
-    ">/2" => arithmetic::solve_gtr,
-    ">=/2" => arithmetic::solve_geq,
-    "clause/2" => not_impl,
-    "current_predicate/1" => not_impl,
-    "asserta/1" => solve_asserta,
-    "assertz/1" => solve_assertz,
-    "retract/1" => not_impl,
-    "abolish/1" => not_impl,
-    "findall/3" => findall::solve,
-    "bagof/3" => not_impl,
-    "setof/3" => setof::solve,
-    "current_input/1" => not_impl,
-    "current_output/1" => not_impl,
-    "set_input/1" => not_impl,
-    "set_output/1" => not_impl,
-    "open/4" => not_impl,
-    "open/3" => not_impl,
-    "close/2" => not_impl,
-    "close/1" => not_impl,
-    "flush_output/1" => not_impl,
-    "flush_output/0" => not_impl,
-    "stream_property/2" => not_impl,
-    "at_end_of_stream/0" => not_impl,
-    "at_end_of_stream/1" => not_impl,
-    "set_stream_position/2" => not_impl,
-    "get_char/2" => not_impl,
-    "get_char/1" => not_impl,
-    "get_code/1" => not_impl,
-    "get_code/2" => not_impl,
-    "peek_char/2" => not_impl,
-    "peek_char/1" => not_impl,
-    "peek_code/1" => not_impl,
-    "peek_code/2" => not_impl,
-    "put_char/2" => not_impl,
-    "put_char/1" => not_impl,
-    "put_code/1" => not_impl,
-    "put_code/2" => not_impl,
-    "nl/0" => write::solve_nl,
-    "nl/1" => not_impl,
-    "get_byte/2" => not_impl,
-    "get_byte/1" => not_impl,
-    "peek_byte/2" => not_impl,
-    "peek_byte/1" => not_impl,
-    "put_byte/2" => not_impl,
-    "put_byte/1" => not_impl,
-    "read_term/3" => not_impl,
-    "read_term/2" => not_impl,
-    "read/1" => not_impl,
-    "read/2" => not_impl,
-    "write_term/3" => not_impl,
-    "write_term/2" => not_impl,
-    "write/1" => write::solve_write1,
-    "write/2" => not_impl,
-    "writeq/1" => not_impl,
-    "writeq/2" => not_impl,
-    "write_canonical/1" => not_impl,
-    "write_canonical/2" => not_impl,
-    "op/3" => not_impl,
-    "current_op/3" => not_impl,
-    "char_conversion/2" => not_impl,
-    "current_char_conversion/2" => solve_current_char_conversion,
-    "\\+/1" => solve_not_provable,
-    "once/1" => not_impl,
-    "repeat/0" => solve_repeat,
-    "atom_length/2" => not_impl,
-    "atom_concat/3" => not_impl,
-    "sub_atom/5" => not_impl,
-    "atom_chars/2" => not_impl,
-    "atom_codes/2" => not_impl,
-    "char_code/2" => not_impl,
-    "number_chars/2" => not_impl,
-    "number_codes/2" => not_impl,
-    "set_prolog_flag/2" => not_impl,
-    "current_prolog_flag/2" => not_impl,
-    "halt/0" => not_impl,
-    "halt/1" => not_impl,
+const BUILTINS: phf::Map<&'static str, Builtin> = phf_map! {
+    "true/0" => Builtin::Control(solve::generate_true),
+    "fail/0" => Builtin::Control(solve::generate_fail),
+    "!/0" => Builtin::Control(solve::generate_cut),
+    ",/2" => Builtin::Control(solve::generate_and),
+    ";/2" => Builtin::Control(solve::generate_or),
+    "->/2" => Builtin::Control(solve::generate_if_then),
+    "call/1" => Builtin::Control(solve::generate_call),
+    "catch/3" => Builtin::Solve(throw::solve_catch),
+    "throw/1" => Builtin::Solve(throw::solve_throw),
+    "=/2" => Builtin::Solve(solve_unify),
+    "unify_with_occurs_check/2" => Builtin::Solve(not_impl),
+    "\\=/2" => Builtin::Solve(not_impl),
+    "var/1" => Builtin::Solve(not_impl),
+    "atom/1" => Builtin::Solve(not_impl),
+    "integer/1" => Builtin::Solve(not_impl),
+    "float/1" => Builtin::Solve(not_impl),
+    "atomic/1" => Builtin::Solve(not_impl),
+    "compound/1" => Builtin::Solve(not_impl),
+    "nonvar/1" => Builtin::Solve(not_impl),
+    "number/1" => Builtin::Solve(not_impl),
+    "@=</2" => Builtin::Solve(not_impl),
+    "==/2" => Builtin::Solve(not_impl),
+    "\\==/2" => Builtin::Solve(not_impl),
+    "@</2" => Builtin::Solve(not_impl),
+    "@>/2" => Builtin::Solve(not_impl),
+    "@>=/2" => Builtin::Solve(not_impl),
+    "functor/3" => Builtin::Solve(not_impl),
+    "arg/3" => Builtin::Solve(not_impl),
+    "=../2" => Builtin::Solve(univ::solve),
+    "copy_term/2" => Builtin::Solve(solve_copy_term),
+    "is/2" => Builtin::Solve(arithmetic::solve_is),
+    "=:=/2" => Builtin::Solve(arithmetic::solve_eq),
+    "=\\=/2" => Builtin::Solve(arithmetic::solve_neq),
+    "</2" => Builtin::Solve(arithmetic::solve_lss),
+    "=</2" => Builtin::Solve(arithmetic::solve_leq),
+    ">/2" => Builtin::Solve(arithmetic::solve_gtr),
+    ">=/2" => Builtin::Solve(arithmetic::solve_geq),
+    "clause/2" => Builtin::Solve(not_impl),
+    "current_predicate/1" => Builtin::Solve(not_impl),
+    "asserta/1" => Builtin::Solve(solve_asserta),
+    "assertz/1" => Builtin::Solve(solve_assertz),
+    "retract/1" => Builtin::Solve(not_impl),
+    "abolish/1" => Builtin::Solve(not_impl),
+    "findall/3" => Builtin::Solve(findall::solve),
+    "bagof/3" => Builtin::Solve(not_impl),
+    "setof/3" => Builtin::Solve(setof::solve),
+    "current_input/1" => Builtin::Solve(not_impl),
+    "current_output/1" => Builtin::Solve(not_impl),
+    "set_input/1" => Builtin::Solve(not_impl),
+    "set_output/1" => Builtin::Solve(not_impl),
+    "open/4" => Builtin::Solve(not_impl),
+    "open/3" => Builtin::Solve(not_impl),
+    "close/2" => Builtin::Solve(not_impl),
+    "close/1" => Builtin::Solve(not_impl),
+    "flush_output/1" => Builtin::Solve(not_impl),
+    "flush_output/0" => Builtin::Solve(not_impl),
+    "stream_property/2" => Builtin::Solve(not_impl),
+    "at_end_of_stream/0" => Builtin::Solve(not_impl),
+    "at_end_of_stream/1" => Builtin::Solve(not_impl),
+    "set_stream_position/2" => Builtin::Solve(not_impl),
+    "get_char/2" => Builtin::Solve(not_impl),
+    "get_char/1" => Builtin::Solve(not_impl),
+    "get_code/1" => Builtin::Solve(not_impl),
+    "get_code/2" => Builtin::Solve(not_impl),
+    "peek_char/2" => Builtin::Solve(not_impl),
+    "peek_char/1" => Builtin::Solve(not_impl),
+    "peek_code/1" => Builtin::Solve(not_impl),
+    "peek_code/2" => Builtin::Solve(not_impl),
+    "put_char/2" => Builtin::Solve(not_impl),
+    "put_char/1" => Builtin::Solve(not_impl),
+    "put_code/1" => Builtin::Solve(not_impl),
+    "put_code/2" => Builtin::Solve(not_impl),
+    "nl/0" => Builtin::Solve(write::solve_nl0),
+    "nl/1" => Builtin::Solve(not_impl),
+    "get_byte/2" => Builtin::Solve(not_impl),
+    "get_byte/1" => Builtin::Solve(not_impl),
+    "peek_byte/2" => Builtin::Solve(not_impl),
+    "peek_byte/1" => Builtin::Solve(not_impl),
+    "put_byte/2" => Builtin::Solve(not_impl),
+    "put_byte/1" => Builtin::Solve(not_impl),
+    "read_term/3" => Builtin::Solve(not_impl),
+    "read_term/2" => Builtin::Solve(not_impl),
+    "read/1" => Builtin::Solve(not_impl),
+    "read/2" => Builtin::Solve(not_impl),
+    "write_term/3" => Builtin::Solve(not_impl),
+    "write_term/2" => Builtin::Solve(not_impl),
+    "write/1" => Builtin::Solve(write::solve_write1),
+    "write/2" => Builtin::Solve(not_impl),
+    "writeq/1" => Builtin::Solve(not_impl),
+    "writeq/2" => Builtin::Solve(not_impl),
+    "write_canonical/1" => Builtin::Solve(not_impl),
+    "write_canonical/2" => Builtin::Solve(not_impl),
+    "op/3" => Builtin::Solve(not_impl),
+    "current_op/3" => Builtin::Solve(not_impl),
+    "char_conversion/2" => Builtin::Solve(not_impl),
+    "current_char_conversion/2" => Builtin::Solve(solve_current_char_conversion),
+    "\\+/1" => Builtin::Solve(solve_not_provable),
+    "once/1" => Builtin::Solve(not_impl),
+    "repeat/0" => Builtin::Solve(solve_repeat),
+    "atom_length/2" => Builtin::Solve(not_impl),
+    "atom_concat/3" => Builtin::Solve(not_impl),
+    "sub_atom/5" => Builtin::Solve(not_impl),
+    "atom_chars/2" => Builtin::Solve(not_impl),
+    "atom_codes/2" => Builtin::Solve(not_impl),
+    "char_code/2" => Builtin::Solve(not_impl),
+    "number_chars/2" => Builtin::Solve(not_impl),
+    "number_codes/2" => Builtin::Solve(not_impl),
+    "set_prolog_flag/2" => Builtin::Solve(not_impl),
+    "current_prolog_flag/2" => Builtin::Solve(not_impl),
+    "halt/0" => Builtin::Solve(not_impl),
+    "halt/1" => Builtin::Solve(not_impl)
 };
 
-pub fn get_builtin(pi: &str) -> Option<&SolveFn> {
-    let mut r: Option<&SolveFn> = BUILTINS.get(pi);
+pub fn get_builtin(pi: &str) -> Option<&Builtin> {
+    let mut r = BUILTINS.get(pi);
     if r.is_none() && pi.starts_with("call/") {
-        r = Some(&(not_impl as SolveFn));
+        r = Some(&Builtin::Solve(not_impl));
     }
     r
 }

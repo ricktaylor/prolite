@@ -1,16 +1,23 @@
 use super::*;
-use solve::{Continuation, Frame, Solver};
-use term::*;
+use frame::Frame;
+use solve::{Continuation, Solver};
+use term::TermKind;
 
-fn solve_var(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+fn solve_var(
+    mut frame: Frame,
+    template: usize,
+    goal: usize,
+    instances: usize,
+    next: &mut dyn Solver,
+) -> Response {
     let mut solutions = Vec::new();
     frame
         .sub_frame(|frame| {
             solve::call(
                 frame,
-                args[1],
+                goal,
                 &mut Continuation::new(|mut frame| {
-                    solutions.push(frame.copy_term(args[0]));
+                    solutions.push(frame.copy_term(template));
                     Response::Fail
                 }),
             )
@@ -18,7 +25,7 @@ fn solve_var(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respons
         .map_failed(|| {
             frame.sub_frame(|mut frame| {
                 let list = frame.list_from_slice(&solutions);
-                if frame.unify(list, args[2]) {
+                if frame.unify(list, instances) {
                     next.solve(frame)
                 } else {
                     Response::Fail
@@ -29,7 +36,8 @@ fn solve_var(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respons
 
 fn solve_list(
     mut frame: Frame,
-    args: &[usize],
+    template: usize,
+    goal: usize,
     mut head: usize,
     mut tail: usize,
     next: &mut dyn Solver,
@@ -38,34 +46,39 @@ fn solve_list(
     match frame.sub_frame(|frame| {
         solve::call(
             frame,
-            args[1],
+            goal,
             &mut Continuation::new(|mut frame| {
-                match frame.get_term(head) {
-                    Term::Var(_) => {
-                        solutions.push(frame.copy_term(args[0]));
+                let (term, h2) = frame.get_term(head);
+                head = h2;
+
+                match (&term.kind, &term.source.kind) {
+                    (TermKind::Var(_), _) => {
+                        solutions.push(frame.copy_term(template));
                         return Response::Fail;
                     }
-                    Term::Atomic(t) => {
-                        if let read_term::TermKind::Atom(s) = &t.kind {
-                            if s == "[]" {
-                                // No more matches expected!
-                                return Response::Cut;
-                            }
-                        }
+                    (TermKind::Atomic, read_term::TermKind::Atom(s)) if s == "[]" => {
+                        // No more matches expected!
+                        return Response::Cut;
                     }
                     _ => {}
                 }
 
-                if !frame.unify_copy(args[0], head) {
+                if !frame.unify_copy(template, head) {
                     return Response::Cut;
                 }
 
-                match frame.get_term(tail) {
-                    Term::Compound(c) if c.functor() == "." && c.args.len() == 2 => {
-                        head = c.args[0];
-                        tail = c.args[1];
+                let (term, t2) = frame.get_term(tail);
+                match (&term.kind, &term.source.kind) {
+                    (TermKind::Compound(args), read_term::TermKind::Compound(c))
+                        if c.functor == "." && args.len() == 2 =>
+                    {
+                        head = args[0];
+                        tail = args[1];
                     }
-                    _ => head = tail,
+                    _ => {
+                        tail = t2;
+                        head = tail
+                    }
                 }
                 Response::Fail
             }),
@@ -84,11 +97,11 @@ fn solve_list(
     }
 }
 
-fn solve_none(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+fn solve_none(mut frame: Frame, goal: usize, next: &mut dyn Solver) -> Response {
     match frame.sub_frame(|frame| {
         solve::call(
             frame,
-            args[1],
+            goal,
             &mut Continuation::new(|_| {
                 // No solutions allowed
                 Response::Cut
@@ -102,23 +115,22 @@ fn solve_none(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respon
 }
 
 pub fn solve(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match frame.get_term(args[2]) {
-        Term::Var(_) => return solve_var(frame, args, next),
-        Term::Compound(c) if c.functor() == "." && c.args.len() == 2 => {
-            let head = c.args[0];
-            let tail = c.args[1];
-            return solve_list(frame, args, head, tail, next);
+    let (instances_term, instances) = frame.get_term(args[2]);
+    match (&instances_term.kind, &instances_term.source.kind) {
+        (TermKind::Var(_), _) => solve_var(frame, args[0], args[1], args[2], next),
+        (TermKind::Compound(c_args), read_term::TermKind::Compound(c))
+            if c.functor == "." && c_args.len() == 2 =>
+        {
+            let head = c_args[0];
+            let tail = c_args[1];
+            solve_list(frame, args[0], args[1], head, tail, next)
         }
-        Term::Atomic(t) => {
-            if let read_term::TermKind::Atom(s) = &t.kind {
-                if s == "[]" {
-                    return solve_none(frame, args, next);
-                }
-            }
+        (TermKind::Atomic, read_term::TermKind::Atom(s)) if s == "[]" => {
+            solve_none(frame, args[1], next)
         }
-        _ => {}
+        _ => {
+            // Error
+            todo!()
+        }
     }
-
-    // Error
-    todo!()
 }
