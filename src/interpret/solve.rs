@@ -301,7 +301,6 @@ impl Control for UserDefined {
                 }
             }) {
                 Response::Fail => {}
-                Response::Cut => break,
                 r => return r,
             }
         }

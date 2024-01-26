@@ -37,44 +37,41 @@ fn compare_with_overflow(location: &Option<stream::Span>, i: &i64) -> Result<f64
 
 fn compare(frame: &Frame, t1: usize, t2: usize) -> Result<Option<core::cmp::Ordering>, Response> {
     let (t1, _) = frame.get_term(t1);
-    let (t2, _) = frame.get_term(t2);
-    match (&t1.kind, &t1.source.kind, &t2.kind, &t2.source.kind) {
-        (
-            TermKind::Atomic,
-            read_term::TermKind::Integer(i1),
-            TermKind::Atomic,
-            read_term::TermKind::Integer(i2),
-        ) => Ok(core::cmp::PartialOrd::partial_cmp(i1, i2)),
-        (
-            TermKind::Atomic,
-            read_term::TermKind::Integer(i1),
-            TermKind::Atomic,
-            read_term::TermKind::Float(d2),
-        ) => Ok(core::cmp::PartialOrd::partial_cmp(
-            &compare_with_overflow(&t1.source.location, i1)?,
-            d2,
-        )),
-        (
-            TermKind::Atomic,
-            read_term::TermKind::Float(d1),
-            TermKind::Atomic,
-            read_term::TermKind::Integer(i2),
-        ) => Ok(core::cmp::PartialOrd::partial_cmp(
-            d1,
-            &compare_with_overflow(&t2.source.location, i2)?,
-        )),
-        (
-            TermKind::Atomic,
-            read_term::TermKind::Float(d1),
-            TermKind::Atomic,
-            read_term::TermKind::Float(d2),
-        ) => Ok(core::cmp::PartialOrd::partial_cmp(d1, d2)),
-        (TermKind::Atomic, _, _, _) => Err(throw_evaluable(&t1.source)),
-        (_, _, TermKind::Atomic, _) => Err(throw_evaluable(&t2.source)),
-        (TermKind::Var(_), _, _, _) => Err(throw::instantiation_error(&t1.source)),
-        (_, _, TermKind::Var(_), _) => Err(throw::instantiation_error(&t2.source)),
-        (TermKind::Compound(_), _, _, _) => Err(throw_evaluable(&t1.source)),
-        (_, _, TermKind::Compound(_), _) => Err(throw_evaluable(&t2.source)),
+    match (&t1.kind, &t1.source.kind) {
+        (TermKind::Atomic, read_term::TermKind::Integer(i1)) => {
+            let (t2, _) = frame.get_term(t2);
+            match (&t2.kind, &t2.source.kind) {
+                (TermKind::Atomic, read_term::TermKind::Integer(i2)) => {
+                    Ok(core::cmp::PartialOrd::partial_cmp(i1, i2))
+                }
+                (TermKind::Atomic, read_term::TermKind::Float(f2)) => {
+                    Ok(core::cmp::PartialOrd::partial_cmp(
+                        &compare_with_overflow(&t1.source.location, i1)?,
+                        f2,
+                    ))
+                }
+                (TermKind::Var(_), _) => Err(throw::instantiation_error(&t2.source)),
+                _ => Err(throw_evaluable(&t2.source)),
+            }
+        }
+        (TermKind::Atomic, read_term::TermKind::Float(f1)) => {
+            let (t2, _) = frame.get_term(t2);
+            match (&t2.kind, &t2.source.kind) {
+                (TermKind::Atomic, read_term::TermKind::Integer(i2)) => {
+                    Ok(core::cmp::PartialOrd::partial_cmp(
+                        f1,
+                        &compare_with_overflow(&t2.source.location, i2)?,
+                    ))
+                }
+                (TermKind::Atomic, read_term::TermKind::Float(f2)) => {
+                    Ok(core::cmp::PartialOrd::partial_cmp(f1, f2))
+                }
+                (TermKind::Var(_), _) => Err(throw::instantiation_error(&t2.source)),
+                _ => Err(throw_evaluable(&t2.source)),
+            }
+        }
+        (TermKind::Var(_), _) => Err(throw::instantiation_error(&t1.source)),
+        _ => Err(throw_evaluable(&t1.source)),
     }
 }
 
@@ -248,7 +245,7 @@ fn eval_mul(args: &[Value], location: &Option<stream::Span>) -> Result<Value, Re
     )
 }
 
-fn not_impl(args: &[Value], location: &Option<stream::Span>) -> Result<Value, Response> {
+fn not_impl(_args: &[Value], location: &Option<stream::Span>) -> Result<Value, Response> {
     if let Some(location) = location {
         eprintln!(
             "unimplemented evaluable function at: {}:{}:{}",

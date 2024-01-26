@@ -13,7 +13,7 @@ fn univ_nonvar(mut frame: Frame, terms: &[usize], list: usize, next: &mut dyn So
 }
 
 fn unpack_list(frame: &Frame, tail: usize, terms: &mut Vec<usize>) -> Result<bool, Response> {
-    let (term, tail) = frame.get_term(tail);
+    let (term, _) = frame.get_term(tail);
     match (&term.kind, &term.source.kind) {
         (TermKind::Atomic, read_term::TermKind::Atom(s)) if s == "[]" => Ok(true),
         (TermKind::Var(_), _) => Err(throw::instantiation_error(&term.source)),
@@ -28,7 +28,7 @@ fn unpack_list(frame: &Frame, tail: usize, terms: &mut Vec<usize>) -> Result<boo
 }
 
 fn univ_var(mut frame: Frame, term: usize, list: usize, next: &mut dyn Solver) -> Response {
-    let (list_term, list) = frame.get_term(list);
+    let (list_term, _) = frame.get_term(list);
     match (&list_term.kind, &list_term.source.kind) {
         (TermKind::Atomic, read_term::TermKind::Atom(s)) if s == "[]" => {
             todo!() // domain_error(non_empty_list,T)

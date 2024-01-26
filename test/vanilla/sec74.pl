@@ -78,7 +78,7 @@ test_multi :-
 %
 
 test_discontig :-
-	test_val(setof(X, d7_4(X), S), S , [dis1, dis2]),
+	test_val(setof(X, dis7_4(X), S), S , [dis1, dis2]),
         test_false( noclauses(X)).
 test_op :-
 	test_val((d7_4(X) and dis7_4(Y)), [X,Y], [d1, dis1]).

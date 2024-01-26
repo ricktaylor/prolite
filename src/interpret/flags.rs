@@ -48,9 +48,10 @@ pub fn solve_current_char_conversion(
                     } else {
                         Response::Fail
                     }
-                });
+                })
+            } else {
+                Response::Fail
             }
-            Response::Fail
         }
         (TermKind::Var(_), _, TermKind::Atomic, read_term::TermKind::Atom(s)) if s.len() == 1 => {
             // Invert the map lookup!

@@ -3,7 +3,6 @@ mod builtins;
 mod findall;
 mod flags;
 mod frame;
-mod setof;
 mod solve;
 mod term;
 mod throw;
