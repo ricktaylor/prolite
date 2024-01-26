@@ -17,12 +17,12 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-cut_b(X) :-
+call_b(X) :-
 	Y = (log( X),X),
 	call(Y).
 
-cut_a(1).
-cut_a(2).
+call_a(1).
+call_a(2).
 
 twice(!) :- log('C ').
 twice(true) :- log('Moss ').
@@ -39,18 +39,21 @@ test_call :-
 	defined(call/1),!,
 	test_true(call(!)),
 	test_false(call(fail)),
-	error_test(cut_b(_),instantiation_error),
-	error_test(cut_b(3),type_error(callable,(log(3),3))),
-	test_true((Z=!,call((Z=!,cut_a(X),Z)))),
-	test_true(call((Z=!,cut_a(X),Z))),
+        test_false(call((fail,X))),
+        test_false(call( (fail,call(1)) )),
+	error_test(call_b(_),instantiation_error),
+	error_test(call_b(3),type_error(callable,(log(3),3))),
+        test_true((Z=!,call((Z=!,call_a(X),Z)))),
+        test_true(call((Z=!,call_a(X),Z))),
         error_test(call((write(3), X)),instantiation_error),
-        error_test(call((write(3), 1)), type_error(callable, 1)), 
-	error_test(call(1),type_error(callable,1)),
+        error_test(call((write(3), call(1))), type_error(callable, 1)),
 	error_test(call(X),instantiation_error),
+        error_test(call(1),type_error(callable,1)),
 	error_test(call((fail,1)),type_error(callable,(fail,1))),
-	error_test((call((1,true))),type_error(callable,(1,true))).
+        error_test(call((write(3), 1)), type_error(callable,(write(3), 1))),
+	error_test((call((1;true))),type_error(callable,(1;true))).
 
-        
+
 
 test_call :-
 
@@ -68,23 +71,23 @@ test_cut :-
         log_nl,
         log('Goal: ((!; write(''No '')),write(''Cut Disjunction ''),fail)'),
         log_nl,
-        log( 'Should now write:  Cut Disjunction'), log_nl, 
+        log( 'Should now write:  Cut Disjunction'), log_nl,
 	test_false(
                    (
-                    (!; log('No ')), 
+                    (!; log('No ')),
                     log('Cut Disjunction '),
                    fail
                    )
                   ),log_nl,
-        log( 'Goal: (twice(_), (write(''No ''); !), write(''Cut ''),fail )'), 
+        log( 'Goal: (twice(_), (write(''No ''); !), write(''Cut ''),fail )'),
         log_nl, log( 'Should now write: C No Cut Cut '), log_nl,
         test_false((
                      twice(_),
-                     (log('No '); !), 
+                     (log('No '); !),
                      log('Cut '),
                      fail
                   )), log_nl,
-        log('Goal:(twice(_), (!, fail ; write(''No '')))'), log_nl, 
+        log('Goal:(twice(_), (!, fail ; write(''No '')))'), log_nl,
         log('Should now write: C ' ), log_nl,
         test_false((
                      twice(_),
@@ -93,7 +96,7 @@ test_cut :-
        log('Goal:(twice(X), call(X),write(''Forwards ''),fail )'), log_nl,
        log('Should now write:  C Forwards Moss Forwards'), log_nl,
        test_false((
-                   twice(X), call(X), 
+                   twice(X), call(X),
                    log('Forwards '),
                    fail
                   )), log_nl,
@@ -169,7 +172,7 @@ catch_tests :-
 
 %:- initialize(  test_78).
 
-test_78 :- 
+test_78 :-
 
 	log( 'Starting tests for Section 7.8'), log_nl,
 	log_nl, log( 'Beginning tests of common functions.'), log_nl, log_nl,
@@ -179,17 +182,17 @@ test_78 :-
 	log_nl, log('Beginning tests of call.'), log_nl,
 
 	test_call,
-	
+
 	log_nl, log( 'Tests of call are completed, beginning tests of cut.'), log_nl,
-	
+
 	test_cut,
 
 	log_nl, log( 'Tests of cut completed.'),
-        log_nl , 
+        log_nl ,
         log( 'Testing catch and throw'), log_nl, log_nl,
         catch_tests,
         log_nl,
-        log( 'Tests of catch and throw completed'),  log_nl, 
+        log( 'Tests of catch and throw completed'),  log_nl,
         log_nl,
         log_nl , log( 'All testing completed for Section 7.8.'),
         log_nl, ! .
