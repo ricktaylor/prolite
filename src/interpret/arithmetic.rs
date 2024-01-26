@@ -238,6 +238,16 @@ fn eval_sub(args: &[Value], location: &Option<stream::Span>) -> Result<Value, Re
     )
 }
 
+fn eval_mul(args: &[Value], location: &Option<stream::Span>) -> Result<Value, Response> {
+    promote2(
+        &args[0],
+        &args[1],
+        |a, b| Value::Integer(a * b),
+        |a, b| Value::Float(a * b),
+        location,
+    )
+}
+
 fn not_impl(args: &[Value], location: &Option<stream::Span>) -> Result<Value, Response> {
     if let Some(location) = location {
         eprintln!(
@@ -253,7 +263,7 @@ type EvalFn = fn(args: &[Value], location: &Option<stream::Span>) -> Result<Valu
 const BUILTINS: phf::Map<&'static str, EvalFn> = phf_map! {
     "+/2" => not_impl,
     "-/2" => eval_sub,
-    "*/2" => not_impl,
+    "*/2" => eval_mul,
     "///2" => not_impl,
     "//2" => not_impl,
     "rem/2" => not_impl,

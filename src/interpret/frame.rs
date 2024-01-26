@@ -37,32 +37,43 @@ impl<'a> Frame<'a> {
         term: &Rc<read_term::Term>,
         var_index: &mut HashMap<usize, usize>,
     ) -> usize {
-        let t = Term {
-            kind: match &term.kind {
-                read_term::TermKind::Var(idx) => {
-                    if let Some(i) = var_index.get(idx) {
-                        if let Some(i) = self.substs[*i] {
-                            return self.deref(i);
-                        }
-                        TermKind::Var(*i)
-                    } else {
-                        let i = self.substs.len();
-                        self.substs.push(None);
-                        var_index.insert(*idx, i);
-                        TermKind::Var(i)
-                    }
+        match &term.kind {
+            read_term::TermKind::Var(idx) => {
+                if let Some(i) = var_index.get(idx) {
+                    self.deref(*i)
+                } else {
+                    let i = self.substs.len();
+                    self.substs.push(None);
+
+                    let term = Term {
+                        kind: TermKind::Var(i),
+                        source: term.clone(),
+                    };
+                    let t = self.add_term(term);
+                    var_index.insert(*idx, t);
+                    t
                 }
-                read_term::TermKind::Compound(c) => TermKind::Compound(
-                    c.args
-                        .iter()
-                        .map(|arg| self.new_term_indexed(arg, var_index))
-                        .collect(),
-                ),
-                _ => TermKind::Atomic,
-            },
-            source: term.clone(),
-        };
-        self.add_term(t)
+            }
+            read_term::TermKind::Compound(c) => {
+                let term = Term {
+                    kind: TermKind::Compound(
+                        c.args
+                            .iter()
+                            .map(|arg| self.new_term_indexed(arg, var_index))
+                            .collect(),
+                    ),
+                    source: term.clone(),
+                };
+                self.add_term(term)
+            }
+            _ => {
+                let term = Term {
+                    kind: TermKind::Atomic,
+                    source: term.clone(),
+                };
+                self.add_term(term)
+            }
+        }
     }
 
     fn add_term(&mut self, t: Term) -> usize {
@@ -170,17 +181,8 @@ impl<'a> Frame<'a> {
                 .iter()
                 .zip(&args2.to_vec())
                 .try_fold((), |_, (t1, t2)| self.unify_fold(*t1, *t2)),
-            (TermKind::Var(idx), _, _, _) => {
-                //eprintln!("assign _{} -> {}", *idx, write::write_term(self, b));
-                let i = *idx;
-                if i < self.substs_base {
-                    self.undo.insert(i);
-                }
-                self.substs[i] = Some(t2);
-                Ok(())
-            }
             (_, _, TermKind::Var(idx), _) => {
-                //eprintln!("assign _{} -> {}", *idx, write::write_term(self, a));
+                //eprintln!("assign {} <- _{}", write::write_term(self, t1), *idx);
                 let i = *idx;
                 if i < self.substs_base {
                     self.undo.insert(i);
@@ -188,43 +190,16 @@ impl<'a> Frame<'a> {
                 self.substs[i] = Some(t1);
                 Ok(())
             }
-            _ => Err(Response::Fail),
-        }
-    }
-
-    pub fn unify_copy(&mut self, t1: usize, t2: usize) -> bool {
-        self.unify_copy_inner(t1, t2, &mut HashMap::new()).is_ok()
-    }
-
-    fn unify_copy_inner(
-        &mut self,
-        t1: usize,
-        t2: usize,
-        var_index: &mut HashMap<usize, usize>,
-    ) -> Result<(), Response> {
-        let (term1, t1) = self.get_term(t1);
-        let (term2, t2) = self.get_term(t2);
-        match (
-            &term1.kind,
-            &term1.source.kind,
-            &term2.kind,
-            &term2.source.kind,
-        ) {
-            (
-                TermKind::Compound(args1),
-                read_term::TermKind::Compound(c1),
-                TermKind::Compound(args2),
-                read_term::TermKind::Compound(c2),
-            ) if c1.functor == c2.functor && args1.len() == args2.len() => args1
-                .to_vec()
-                .iter()
-                .zip(&args2.to_vec())
-                .try_fold((), |_, (t1, t2)| self.unify_copy_inner(*t1, *t2, var_index)),
-            (TermKind::Var(_), _, _, _) => {
-                let t1 = self.copy_term_inner(t1, var_index);
-                self.unify_fold(t1, t2)
+            (TermKind::Var(idx), _, _, _) => {
+                //eprintln!("assign _{} -> {}", *idx, write::write_term(self, t2));
+                let i = *idx;
+                if i < self.substs_base {
+                    self.undo.insert(i);
+                }
+                self.substs[i] = Some(t2);
+                Ok(())
             }
-            _ => self.unify_fold(t1, t2),
+            _ => Err(Response::Fail),
         }
     }
 
@@ -234,8 +209,9 @@ impl<'a> Frame<'a> {
 
     fn copy_term_inner(&mut self, t: usize, var_index: &mut HashMap<usize, usize>) -> usize {
         let (term, t) = self.get_term(t);
-        match (&term.kind, &term.source.kind) {
-            (TermKind::Compound(args), read_term::TermKind::Compound(c)) => {
+        //eprintln!("copy_term_inner {}",write::write_term(self, t));
+        match &term.kind {
+            TermKind::Compound(args) => {
                 let args = args.to_vec();
                 let term = Term {
                     source: term.source.clone(),
@@ -247,22 +223,20 @@ impl<'a> Frame<'a> {
                 };
                 self.add_term(term)
             }
-            (TermKind::Var(idx), _) => {
-                let term = Term {
-                    source: term.source.clone(),
-                    kind: TermKind::Var(if let Some(i) = var_index.get(idx) {
-                        if let Some(i) = self.substs[*i] {
-                            return self.deref(i);
-                        }
-                        *i
-                    } else {
-                        let i = self.substs.len();
-                        var_index.insert(*idx, i);
-                        self.substs.push(None);
-                        i
-                    }),
-                };
-                self.add_term(term)
+            TermKind::Var(idx) => {
+                if let Some(i) = var_index.get(idx) {
+                    self.deref(*i)
+                } else {
+                    let idx = *idx;
+                    let term = Term {
+                        source: term.source.clone(),
+                        kind: TermKind::Var(self.substs.len()),
+                    };
+                    self.substs.push(None);
+                    let t = self.add_term(term);
+                    var_index.insert(idx, t);
+                    t
+                }
             }
             _ => t,
         }

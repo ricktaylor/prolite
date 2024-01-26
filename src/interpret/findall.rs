@@ -63,7 +63,8 @@ fn solve_list(
                     _ => {}
                 }
 
-                if !frame.unify_copy(template, head) {
+                let t = frame.copy_term(template);
+                if !frame.unify(t, head) {
                     return Response::Cut;
                 }
 

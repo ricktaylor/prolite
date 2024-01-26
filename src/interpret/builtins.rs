@@ -3,10 +3,15 @@ use phf::phf_map;
 use super::*;
 use frame::Frame;
 use solve::{Continuation, GenerateFn, SolveFn, Solver};
+use term::TermKind;
 
 pub enum Builtin {
     Control(GenerateFn),
     Solve(SolveFn),
+}
+
+fn solve_call(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    solve::call(frame, args[0], next)
 }
 
 fn solve_not_provable(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
@@ -50,8 +55,10 @@ fn solve_unify(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respo
 }
 
 fn solve_copy_term(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    //eprintln!("copy_term({},{})",write::write_term(&frame, args[0]),write::write_term(&frame, args[1]));
     frame.sub_frame(|mut frame| {
-        if frame.unify_copy(args[0], args[1]) {
+        let t = frame.copy_term(args[0]);
+        if frame.unify(t, args[1]) {
             next.solve(frame)
         } else {
             Response::Fail
@@ -71,7 +78,15 @@ fn solve_current_char_conversion(frame: Frame, args: &[usize], next: &mut dyn So
     flags::solve_current_char_conversion(frame, args[0], args[1], next)
 }
 
-fn not_impl(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
+fn solve_var(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    let (term, _) = frame.get_term(args[0]);
+    match &term.kind {
+        TermKind::Var(_) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+pub fn not_impl(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
     todo!()
 }
 
@@ -82,13 +97,13 @@ const BUILTINS: phf::Map<&'static str, Builtin> = phf_map! {
     ",/2" => Builtin::Control(solve::generate_and),
     ";/2" => Builtin::Control(solve::generate_or),
     "->/2" => Builtin::Control(solve::generate_if_then),
-    "call/1" => Builtin::Control(solve::generate_call),
+    "call/1" => Builtin::Solve(solve_call),
     "catch/3" => Builtin::Solve(throw::solve_catch),
     "throw/1" => Builtin::Solve(throw::solve_throw),
     "=/2" => Builtin::Solve(solve_unify),
     "unify_with_occurs_check/2" => Builtin::Solve(not_impl),
     "\\=/2" => Builtin::Solve(not_impl),
-    "var/1" => Builtin::Solve(not_impl),
+    "var/1" => Builtin::Solve(solve_var),
     "atom/1" => Builtin::Solve(not_impl),
     "integer/1" => Builtin::Solve(not_impl),
     "float/1" => Builtin::Solve(not_impl),

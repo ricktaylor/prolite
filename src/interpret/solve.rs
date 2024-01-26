@@ -301,6 +301,7 @@ impl Control for UserDefined {
                 }
             }) {
                 Response::Fail => {}
+                Response::Cut => break,
                 r => return r,
             }
         }
@@ -314,10 +315,15 @@ fn generate(frame: &Frame, term: usize) -> Option<Goal> {
         (TermKind::Atomic, read_term::TermKind::Atom(s)) => {
             let pi = format!("{}/0", s);
             match builtins::get_builtin(&pi) {
-                Some(builtins::Builtin::Solve(f)) => Some(Box::new(Builtin {
-                    f: *f,
-                    args: Vec::new(),
-                })),
+                Some(builtins::Builtin::Solve(f)) => {
+                    if *f == builtins::not_impl {
+                        panic!("{} unimplemented", &pi)
+                    }
+                    Some(Box::new(Builtin {
+                        f: *f,
+                        args: Vec::new(),
+                    }))
+                }
                 Some(builtins::Builtin::Control(f)) => (f)(frame, &[]),
                 None => Some(Box::new(UserDefined { pi, term: t })),
             }
@@ -326,10 +332,15 @@ fn generate(frame: &Frame, term: usize) -> Option<Goal> {
         (TermKind::Compound(args), read_term::TermKind::Compound(c)) => {
             let pi = format!("{}/{}", c.functor, args.len());
             match builtins::get_builtin(&pi) {
-                Some(builtins::Builtin::Solve(f)) => Some(Box::new(Builtin {
-                    f: *f,
-                    args: args.to_vec(),
-                })),
+                Some(builtins::Builtin::Solve(f)) => {
+                    if *f == builtins::not_impl {
+                        panic!("{} unimplemented", &pi)
+                    }
+                    Some(Box::new(Builtin {
+                        f: *f,
+                        args: args.to_vec(),
+                    }))
+                }
                 Some(builtins::Builtin::Control(f)) => (f)(frame, args),
                 None => Some(Box::new(UserDefined { pi, term: t })),
             }
