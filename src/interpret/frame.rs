@@ -113,6 +113,9 @@ impl<'a> Frame<'a> {
     pub fn unify_fold(&mut self, t1: usize, t2: usize) -> Result<(), Response> {
         let (term1, t1) = self.get_term(t1);
         let (term2, t2) = self.get_term(t2);
+        if t1 == t2 {
+            return Ok(());
+        }
         match (
             &term1.kind,
             &term1.source.kind,

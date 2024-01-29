@@ -54,6 +54,56 @@ fn solve_unify(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respo
     })
 }
 
+fn occurs_check(frame: &Frame, t1: usize, t2: usize) -> bool {
+    let (term1, t1) = frame.get_term(t1);
+    let (term2, t2) = frame.get_term(t2);
+    match (
+        &term1.kind,
+        &term1.source.kind,
+        &term2.kind,
+        &term2.source.kind,
+    ) {
+        (TermKind::Var(idx1), _, TermKind::Var(idx2), _) => idx1 == idx2,
+        (_, _, TermKind::Var(_), _) => occurs_check(frame, t2, t1),
+        (TermKind::Var(_), _, TermKind::Compound(args), _) => {
+            for a in args {
+                if occurs_check(frame, t1, *a) {
+                    return true;
+                }
+            }
+            false
+        }
+        (
+            TermKind::Compound(args1),
+            read_term::TermKind::Compound(c1),
+            TermKind::Compound(args2),
+            read_term::TermKind::Compound(c2),
+        ) if c1.functor == c2.functor && args1.len() == args2.len() => {
+            if t1 != t2 {
+                for (t1, t2) in args1.iter().zip(args2) {
+                    if occurs_check(frame, *t1, *t2) {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+fn solve_unify_with_occurs_check(
+    mut frame: Frame,
+    args: &[usize],
+    next: &mut dyn Solver,
+) -> Response {
+    if occurs_check(&frame, args[0], args[1]) {
+        Response::Fail
+    } else {
+        solve_unify(frame, args, next)
+    }
+}
+
 fn solve_copy_term(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     //eprintln!("copy_term({},{})",write::write_term(&frame, args[0]),write::write_term(&frame, args[1]));
     frame.sub_frame(|mut frame| {
@@ -97,7 +147,7 @@ const BUILTINS: phf::Map<&'static str, Builtin> = phf_map! {
     "catch/3" => Builtin::Solve(throw::solve_catch),
     "throw/1" => Builtin::Solve(throw::solve_throw),
     "=/2" => Builtin::Solve(solve_unify),
-    "unify_with_occurs_check/2" => Builtin::Solve(not_impl),
+    "unify_with_occurs_check/2" => Builtin::Solve(solve_unify_with_occurs_check),
     "\\=/2" => Builtin::Solve(not_impl),
     "var/1" => Builtin::Solve(solve_var),
     "atom/1" => Builtin::Solve(not_impl),
