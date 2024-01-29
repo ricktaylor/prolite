@@ -1,5 +1,6 @@
 mod arithmetic;
 mod builtins;
+mod char_codes;
 mod findall;
 mod flags;
 mod frame;

@@ -74,10 +74,6 @@ fn solve_assertz(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Respons
     user_defined::assert(frame, args[0], true, next)
 }
 
-fn solve_current_char_conversion(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    flags::solve_current_char_conversion(frame, args[0], args[1], next)
-}
-
 fn solve_var(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     let (term, _) = frame.get_term(args[0]);
     match &term.kind {
@@ -196,7 +192,7 @@ const BUILTINS: phf::Map<&'static str, Builtin> = phf_map! {
     "atom_chars/2" => Builtin::Solve(not_impl),
     "atom_codes/2" => Builtin::Solve(not_impl),
     "char_code/2" => Builtin::Solve(not_impl),
-    "number_chars/2" => Builtin::Solve(not_impl),
+    "number_chars/2" => Builtin::Solve(char_codes::solve_number_chars),
     "number_codes/2" => Builtin::Solve(not_impl),
     "set_prolog_flag/2" => Builtin::Solve(not_impl),
     "current_prolog_flag/2" => Builtin::Solve(not_impl),
