@@ -3,7 +3,7 @@ use phf::phf_map;
 use super::*;
 use frame::Frame;
 use solve::{Continuation, GenerateFn, SolveFn, Solver};
-use term::TermKind;
+use term::{Term, TermKind};
 
 pub enum Builtin {
     Control(GenerateFn),
@@ -155,6 +155,48 @@ fn solve_number(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response
     }
 }
 
+pub fn solve_eq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match Term::compare(&frame, args[0], args[1]) {
+        Some(core::cmp::Ordering::Equal) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+pub fn solve_neq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match Term::compare(&frame, args[0], args[1]) {
+        Some(core::cmp::Ordering::Equal) => Response::Fail,
+        _ => next.solve(frame),
+    }
+}
+
+pub fn solve_lss(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match Term::compare(&frame, args[0], args[1]) {
+        Some(core::cmp::Ordering::Less) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+pub fn solve_leq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match Term::compare(&frame, args[0], args[1]) {
+        Some(core::cmp::Ordering::Less) | Some(core::cmp::Ordering::Equal) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+pub fn solve_gtr(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match Term::compare(&frame, args[0], args[1]) {
+        Some(core::cmp::Ordering::Greater) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+pub fn solve_geq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    match Term::compare(&frame, args[0], args[1]) {
+        Some(core::cmp::Ordering::Greater) | Some(core::cmp::Ordering::Equal) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
 pub fn not_impl(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
     todo!()
 }
@@ -180,12 +222,12 @@ const BUILTINS: phf::Map<&'static str, Builtin> = phf_map! {
     "compound/1" => Builtin::Solve(solve_compound),
     "nonvar/1" => Builtin::Solve(solve_non_var),
     "number/1" => Builtin::Solve(solve_number),
-    "@=</2" => Builtin::Solve(not_impl),
-    "==/2" => Builtin::Solve(not_impl),
-    "\\==/2" => Builtin::Solve(not_impl),
-    "@</2" => Builtin::Solve(not_impl),
-    "@>/2" => Builtin::Solve(not_impl),
-    "@>=/2" => Builtin::Solve(not_impl),
+    "@=</2" => Builtin::Solve(solve_leq),
+    "==/2" => Builtin::Solve(solve_eq),
+    "\\==/2" => Builtin::Solve(solve_neq),
+    "@</2" => Builtin::Solve(solve_lss),
+    "@>/2" => Builtin::Solve(solve_gtr),
+    "@>=/2" => Builtin::Solve(solve_geq),
     "functor/3" => Builtin::Solve(not_impl),
     "arg/3" => Builtin::Solve(not_impl),
     "=../2" => Builtin::Solve(univ::solve),
