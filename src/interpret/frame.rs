@@ -172,6 +172,42 @@ impl<'a> Frame<'a> {
         }
     }
 
+    pub fn occurs_check(&self, t1: usize, t2: usize) -> bool {
+        let (term1, t1) = self.get_term(t1);
+        let (term2, t2) = self.get_term(t2);
+        match (
+            &term1.kind,
+            &term1.source.kind,
+            &term2.kind,
+            &term2.source.kind,
+        ) {
+            (TermKind::Var(idx1), _, TermKind::Var(idx2), _) => idx1 == idx2,
+            (_, _, TermKind::Var(_), _) => self.occurs_check(t2, t1),
+            (TermKind::Var(_), _, TermKind::Compound(args), _) => {
+                for a in args {
+                    if self.occurs_check(t1, *a) {
+                        return true;
+                    }
+                }
+                false
+            }
+            (
+                TermKind::Compound(args1),
+                read_term::TermKind::Compound(c1),
+                TermKind::Compound(args2),
+                read_term::TermKind::Compound(c2),
+            ) if t1 != t2 && c1.functor == c2.functor && args1.len() == args2.len() => {
+                for (t1, t2) in args1.iter().zip(args2) {
+                    if self.occurs_check(*t1, *t2) {
+                        return true;
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
     pub fn copy_term(&mut self, t: usize) -> usize {
         self.copy_term_inner(t, &mut HashMap::new())
     }
