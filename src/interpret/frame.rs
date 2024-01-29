@@ -107,14 +107,10 @@ impl<'a> Frame<'a> {
     }
 
     pub fn unify(&mut self, t1: usize, t2: usize) -> bool {
-        self.unify_fold(t1, t2).is_ok()
-    }
-
-    pub fn unify_fold(&mut self, t1: usize, t2: usize) -> Result<(), Response> {
         let (term1, t1) = self.get_term(t1);
         let (term2, t2) = self.get_term(t2);
         if t1 == t2 {
-            return Ok(());
+            return true;
         }
         match (
             &term1.kind,
@@ -127,29 +123,32 @@ impl<'a> Frame<'a> {
                 read_term::TermKind::Integer(i1),
                 TermKind::Atomic,
                 read_term::TermKind::Integer(i2),
-            ) if *i1 == *i2 => Ok(()),
+            ) if *i1 == *i2 => true,
             (
                 TermKind::Atomic,
                 read_term::TermKind::Float(f1),
                 TermKind::Atomic,
                 read_term::TermKind::Float(f2),
-            ) if *f1 == *f2 => Ok(()),
+            ) if *f1 == *f2 => true,
             (
                 TermKind::Atomic,
                 read_term::TermKind::Atom(s1),
                 TermKind::Atomic,
                 read_term::TermKind::Atom(s2),
-            ) if *s1 == *s2 => Ok(()),
+            ) if *s1 == *s2 => true,
             (
                 TermKind::Compound(args1),
                 read_term::TermKind::Compound(c1),
                 TermKind::Compound(args2),
                 read_term::TermKind::Compound(c2),
-            ) if c1.functor == c2.functor && args1.len() == args2.len() => args1
-                .to_vec()
-                .iter()
-                .zip(&args2.to_vec())
-                .try_fold((), |_, (t1, t2)| self.unify_fold(*t1, *t2)),
+            ) if c1.functor == c2.functor && args1.len() == args2.len() => {
+                for (t1, t2) in args1.to_vec().iter().zip(&args2.to_vec()) {
+                    if !self.unify(*t1, *t2) {
+                        return false;
+                    }
+                }
+                true
+            }
             (_, _, TermKind::Var(idx), _) => {
                 //eprintln!("assign {} <- _{}", write::write_term(self, t1), *idx);
                 let i = *idx;
@@ -157,7 +156,7 @@ impl<'a> Frame<'a> {
                     self.undo.insert(i);
                 }
                 self.substs[i] = Some(t1);
-                Ok(())
+                true
             }
             (TermKind::Var(idx), _, _, _) => {
                 //eprintln!("assign _{} -> {}", *idx, write::write_term(self, t2));
@@ -166,9 +165,9 @@ impl<'a> Frame<'a> {
                     self.undo.insert(i);
                 }
                 self.substs[i] = Some(t2);
-                Ok(())
+                true
             }
-            _ => Err(Response::Fail),
+            _ => false,
         }
     }
 
@@ -205,6 +204,54 @@ impl<'a> Frame<'a> {
                 false
             }
             _ => false,
+        }
+    }
+
+    pub fn not_unifiable(&self, t1: usize, t2: usize) -> bool {
+        let (term1, t1) = self.get_term(t1);
+        let (term2, t2) = self.get_term(t2);
+        if t1 == t2 {
+            return false;
+        }
+        match (
+            &term1.kind,
+            &term1.source.kind,
+            &term2.kind,
+            &term2.source.kind,
+        ) {
+            (
+                TermKind::Atomic,
+                read_term::TermKind::Integer(i1),
+                TermKind::Atomic,
+                read_term::TermKind::Integer(i2),
+            ) if *i1 == *i2 => false,
+            (
+                TermKind::Atomic,
+                read_term::TermKind::Float(f1),
+                TermKind::Atomic,
+                read_term::TermKind::Float(f2),
+            ) if *f1 == *f2 => false,
+            (
+                TermKind::Atomic,
+                read_term::TermKind::Atom(s1),
+                TermKind::Atomic,
+                read_term::TermKind::Atom(s2),
+            ) if *s1 == *s2 => false,
+            (
+                TermKind::Compound(args1),
+                read_term::TermKind::Compound(c1),
+                TermKind::Compound(args2),
+                read_term::TermKind::Compound(c2),
+            ) if c1.functor == c2.functor && args1.len() == args2.len() => {
+                for (t1, t2) in args1.iter().zip(args2) {
+                    if !self.not_unifiable(*t1, *t2) {
+                        return false;
+                    }
+                }
+                true
+            }
+            (_, _, TermKind::Var(_), _) | (TermKind::Var(_), _, _, _) => false,
+            _ => true,
         }
     }
 

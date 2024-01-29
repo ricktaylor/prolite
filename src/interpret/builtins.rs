@@ -62,6 +62,14 @@ fn solve_unify_with_occurs_check(frame: Frame, args: &[usize], next: &mut dyn So
     }
 }
 
+fn solve_not_unifiable(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    if frame.not_unifiable(args[0], args[1]) {
+        next.solve(frame)
+    } else {
+        Response::Fail
+    }
+}
+
 fn solve_copy_term(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     //eprintln!("copy_term({},{})",write::write_term(&frame, args[0]),write::write_term(&frame, args[1]));
     frame.sub_frame(|mut frame| {
@@ -90,6 +98,63 @@ fn solve_var(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     }
 }
 
+fn solve_atom(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    let (term, _) = frame.get_term(args[0]);
+    match (&term.kind, &term.source.kind) {
+        (TermKind::Atomic, read_term::TermKind::Atom(_)) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+fn solve_integer(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    let (term, _) = frame.get_term(args[0]);
+    match (&term.kind, &term.source.kind) {
+        (TermKind::Atomic, read_term::TermKind::Integer(_)) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+fn solve_float(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    let (term, _) = frame.get_term(args[0]);
+    match (&term.kind, &term.source.kind) {
+        (TermKind::Atomic, read_term::TermKind::Float(_)) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+fn solve_atomic(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    let (term, _) = frame.get_term(args[0]);
+    match &term.kind {
+        TermKind::Atomic => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+fn solve_compound(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    let (term, _) = frame.get_term(args[0]);
+    match &term.kind {
+        TermKind::Compound(_) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
+fn solve_non_var(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    let (term, _) = frame.get_term(args[0]);
+    match &term.kind {
+        TermKind::Var(_) => Response::Fail,
+        _ => next.solve(frame),
+    }
+}
+
+fn solve_number(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    let (term, _) = frame.get_term(args[0]);
+    match (&term.kind, &term.source.kind) {
+        (TermKind::Atomic, read_term::TermKind::Integer(_))
+        | (TermKind::Atomic, read_term::TermKind::Float(_)) => next.solve(frame),
+        _ => Response::Fail,
+    }
+}
+
 pub fn not_impl(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
     todo!()
 }
@@ -106,15 +171,15 @@ const BUILTINS: phf::Map<&'static str, Builtin> = phf_map! {
     "throw/1" => Builtin::Solve(throw::solve_throw),
     "=/2" => Builtin::Solve(solve_unify),
     "unify_with_occurs_check/2" => Builtin::Solve(solve_unify_with_occurs_check),
-    "\\=/2" => Builtin::Solve(not_impl),
+    "\\=/2" => Builtin::Solve(solve_not_unifiable),
     "var/1" => Builtin::Solve(solve_var),
-    "atom/1" => Builtin::Solve(not_impl),
-    "integer/1" => Builtin::Solve(not_impl),
-    "float/1" => Builtin::Solve(not_impl),
-    "atomic/1" => Builtin::Solve(not_impl),
-    "compound/1" => Builtin::Solve(not_impl),
-    "nonvar/1" => Builtin::Solve(not_impl),
-    "number/1" => Builtin::Solve(not_impl),
+    "atom/1" => Builtin::Solve(solve_atom),
+    "integer/1" => Builtin::Solve(solve_integer),
+    "float/1" => Builtin::Solve(solve_float),
+    "atomic/1" => Builtin::Solve(solve_atomic),
+    "compound/1" => Builtin::Solve(solve_compound),
+    "nonvar/1" => Builtin::Solve(solve_non_var),
+    "number/1" => Builtin::Solve(solve_number),
     "@=</2" => Builtin::Solve(not_impl),
     "==/2" => Builtin::Solve(not_impl),
     "\\==/2" => Builtin::Solve(not_impl),
