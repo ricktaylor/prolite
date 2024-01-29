@@ -270,9 +270,9 @@ struct UserDefined {
 
 impl Control for UserDefined {
     fn exec(&mut self, mut frame: Frame, next: &mut dyn Solver) -> Response {
-        let predicates = match frame.get_context().procedures.get(&self.pi) {
+        let predicates = match frame.context.procedures.get(&self.pi) {
             None => {
-                return match frame.get_context().flags.unknown {
+                return match frame.context.flags.unknown {
                     crate::flags::UnknownFlag::Error => {
                         let (term, _) = frame.get_term(self.term);
                         throw::callable(&term.source)

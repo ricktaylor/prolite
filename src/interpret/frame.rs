@@ -4,7 +4,7 @@ use super::*;
 use term::*;
 
 pub struct Frame<'a> {
-    ctx: &'a mut Context,
+    pub context: &'a mut Context,
     cache: &'a mut Vec<Term>,
     cache_base: usize,
     substs: &'a mut Vec<Option<usize>>,
@@ -14,12 +14,12 @@ pub struct Frame<'a> {
 
 impl<'a> Frame<'a> {
     pub fn new(
-        ctx: &'a mut Context,
+        context: &'a mut Context,
         cache: &'a mut Vec<Term>,
         substs: &'a mut Vec<Option<usize>>,
     ) -> Self {
         Self {
-            ctx,
+            context,
             cache_base: cache.len(),
             cache,
             substs_base: substs.len(),
@@ -103,15 +103,7 @@ impl<'a> Frame<'a> {
     where
         F: FnOnce(Frame) -> R,
     {
-        f(Frame::new(self.ctx, self.cache, self.substs))
-    }
-
-    pub fn get_context(&self) -> &Context {
-        self.ctx
-    }
-
-    pub fn get_context_mut(&mut self) -> &mut Context {
-        self.ctx
+        f(Frame::new(self.context, self.cache, self.substs))
     }
 
     pub fn unify(&mut self, t1: usize, t2: usize) -> bool {
@@ -133,32 +125,6 @@ impl<'a> Frame<'a> {
                 TermKind::Atomic,
                 read_term::TermKind::Integer(i2),
             ) if *i1 == *i2 => Ok(()),
-            (
-                TermKind::Atomic,
-                read_term::TermKind::Integer(i),
-                TermKind::Atomic,
-                read_term::TermKind::Float(f),
-            ) => {
-                let f1 = *i as f64;
-                if f1 == *f && *i == f1 as i64 {
-                    Ok(())
-                } else {
-                    Err(Response::Fail)
-                }
-            }
-            (
-                TermKind::Atomic,
-                read_term::TermKind::Float(f),
-                TermKind::Atomic,
-                read_term::TermKind::Integer(i),
-            ) => {
-                let f1 = *i as f64;
-                if f1 == *f && *i == f1 as i64 {
-                    Ok(())
-                } else {
-                    Err(Response::Fail)
-                }
-            }
             (
                 TermKind::Atomic,
                 read_term::TermKind::Float(f1),

@@ -5,12 +5,11 @@ use term::TermKind;
 
 pub fn solve_current_char_conversion(
     mut frame: Frame,
-    t1: usize,
-    t2: usize,
+    args: &[usize],
     next: &mut dyn Solver,
 ) -> Response {
-    let (term1, t1) = frame.get_term(t1);
-    let (term2, t2) = frame.get_term(t2);
+    let (term1, t1) = frame.get_term(args[0]);
+    let (term2, t2) = frame.get_term(args[1]);
     match (
         &term1.kind,
         &term1.source.kind,
@@ -24,7 +23,7 @@ pub fn solve_current_char_conversion(
             read_term::TermKind::Atom(s2),
         ) if s1.len() == 1 && s2.len() == 1 => {
             if let Some(c) = frame
-                .get_context()
+                .context
                 .char_conversion
                 .get(&s1.chars().next().unwrap())
             {
@@ -36,7 +35,7 @@ pub fn solve_current_char_conversion(
         }
         (TermKind::Atomic, read_term::TermKind::Atom(s), TermKind::Var(_), _) if s.len() == 1 => {
             if let Some(c) = frame
-                .get_context()
+                .context
                 .char_conversion
                 .get(&s.chars().next().unwrap())
             {
@@ -57,7 +56,7 @@ pub fn solve_current_char_conversion(
             // Invert the map lookup!
             let c = s.chars().next().unwrap();
             let mut m = Vec::new();
-            for (k, v) in &frame.get_context().char_conversion {
+            for (k, v) in &frame.context.char_conversion {
                 if *v == c {
                     m.push(*k);
                 }
@@ -79,7 +78,7 @@ pub fn solve_current_char_conversion(
         }
         (TermKind::Var(_), _, TermKind::Var(_), _) => {
             // Clone the map
-            let m = frame.get_context().char_conversion.clone();
+            let m = frame.context.char_conversion.clone();
             for (k, v) in m {
                 match frame.sub_frame(|mut frame| {
                     let k = frame.new_term(&read_term::Term::new_atom(k.to_string(), None));

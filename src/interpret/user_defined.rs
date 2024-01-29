@@ -71,7 +71,7 @@ pub fn assert(mut frame: Frame, goal: usize, is_z: bool, next: &mut dyn Solver) 
                 return permission_error(&clause.head);
             }
 
-            let procedures = &mut frame.get_context_mut().procedures;
+            let procedures = &mut frame.context.procedures;
             if let Some(p) = procedures.get_mut(&pi) {
                 if !p.flags.dynamic {
                     return permission_error(&clause.head);

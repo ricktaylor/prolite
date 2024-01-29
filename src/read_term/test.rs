@@ -7,9 +7,9 @@ pub(crate) fn read_term(s: &str) -> (Rc<Term>, Vec<VarInfo>) {
     (
         parser::next(
             Context {
-                flags: &mut flags::Flags::default(),
-                operators: &mut &operators::Operator::default_table(),
-                char_conversion: &mut HashMap::new(),
+                flags: &flags::Flags::default(),
+                operators: &operators::Operator::default_table(),
+                char_conversion: &HashMap::new(),
                 greedy: false,
             },
             &mut var_info,
