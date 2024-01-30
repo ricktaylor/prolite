@@ -14,6 +14,7 @@ use read_term::term::{Compound, Term, TermKind, VarInfo};
 #[derive(Default, Debug)]
 pub(crate) struct Flags {
     pub dynamic: bool,
+    pub public: bool,
     multifile: bool,
     discontiguous: bool,
 }
@@ -341,7 +342,10 @@ impl Text {
                 self.directive_expand(ctx, c, Self::discontiguous)
             }
             TermKind::Compound(c) if !self.flags.strict_iso => {
-                if c.functor == "directive" {
+                if c.functor == "public" {
+                    self.directive_expand(ctx, c, Self::public)
+                }
+                else if c.functor == "directive" {
                     self.directive_expand(ctx, c, Self::declare_directive)
                 } else if ctx
                     .directives
@@ -686,8 +690,15 @@ impl Text {
             ))
         } else {
             p.flags.dynamic = true;
+            p.flags.public = true;
             Ok(())
         }
+    }
+
+    fn public(&mut self, ctx: &mut Context, term: &Rc<Term>) -> Result<(), Box<Error>> {
+        let (p, _) = self.lookup_procedure(ctx, term)?;
+        p.flags.public = true;
+        Ok(())
     }
 
     fn multifile(&mut self, ctx: &mut Context, term: &Rc<Term>) -> Result<(), Box<Error>> {
@@ -736,6 +747,7 @@ impl Text {
             || pi.starts_with("multifile/")
             || pi.starts_with("discontiguous/")
             || pi.starts_with("directive/")
+            || (!self.flags.strict_iso && pi.starts_with("public/"))
         {
             return Error::new(Error::AlterBuiltin(term.clone()));
         }
@@ -745,6 +757,7 @@ impl Text {
             ..Procedure::default()
         });
         p.flags.dynamic = true;
+        p.flags.public = true;
         Ok(())
     }
 }
