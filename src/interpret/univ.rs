@@ -30,9 +30,17 @@ fn unpack_list(frame: &Frame, tail: usize, terms: &mut Vec<usize>) -> Result<boo
 fn univ_var(mut frame: Frame, term: usize, list: usize, next: &mut dyn Solver) -> Response {
     let (list_term, _) = frame.get_term(list);
     match (&list_term.kind, &list_term.source.kind) {
-        (TermKind::Atomic, read_term::TermKind::Atom(s)) if s == "[]" => {
-            todo!() // domain_error(non_empty_list,T)
-        }
+        (TermKind::Atomic, read_term::TermKind::Atom(s)) if s == "[]" => throw::error(
+            read_term::Term::new_compound(
+                "domain_error".to_string(),
+                None,
+                vec![
+                    read_term::Term::new_atom("non_empty_list".to_string(), None),
+                    list_term.source.clone(),
+                ],
+            ),
+            list_term.source.location.clone(),
+        ),
         (TermKind::Var(_), _) => throw::instantiation_error(&list_term.source),
         (TermKind::Compound(c_args), read_term::TermKind::Compound(c))
             if c.functor == "." && c_args.len() == 2 =>
@@ -41,24 +49,18 @@ fn univ_var(mut frame: Frame, term: usize, list: usize, next: &mut dyn Solver) -
             match (&head.kind, &head.source.kind) {
                 (TermKind::Atomic, read_term::TermKind::Atom(_)) => {
                     let mut args = vec![h];
-                    unpack_list(&frame, c_args[1], &mut args).map_or_else(
-                        |r| r,
-                        |is_list| {
-                            if !is_list {
-                                //throw::type_error("list", &list_term.source)
-                                todo!() // type_error(list,List)
+                    match unpack_list(&frame, c_args[1], &mut args) {
+                        Err(r) => r,
+                        Ok(false) => throw::type_error("list", &list_term.source),
+                        Ok(true) => frame.sub_frame(|mut frame| {
+                            let list = frame.term_from_slice(&args).unwrap();
+                            if frame.unify(term, list) {
+                                next.solve(frame)
                             } else {
-                                frame.sub_frame(|mut frame| {
-                                    let list = frame.term_from_slice(&args).unwrap();
-                                    if frame.unify(term, list) {
-                                        next.solve(frame)
-                                    } else {
-                                        Response::Fail
-                                    }
-                                })
+                                Response::Fail
                             }
-                        },
-                    )
+                        }),
+                    }
                 }
                 (TermKind::Var(_), _) => throw::instantiation_error(&head.source),
                 (TermKind::Compound(_), _) => {
