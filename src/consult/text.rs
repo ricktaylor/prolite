@@ -344,8 +344,7 @@ impl Text {
             TermKind::Compound(c) if !self.flags.strict_iso => {
                 if c.functor == "public" {
                     self.directive_expand(ctx, c, Self::public)
-                }
-                else if c.functor == "directive" {
+                } else if c.functor == "directive" {
                     self.directive_expand(ctx, c, Self::declare_directive)
                 } else if ctx
                     .directives

@@ -62,7 +62,7 @@ fn solve_unify_with_occurs_check(frame: Frame, args: &[usize], next: &mut dyn So
     }
 }
 
-fn solve_not_unifiable(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+fn solve_not_unifiable(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
     if frame.not_unifiable(args[0], args[1]) {
         next.solve(frame)
     } else {

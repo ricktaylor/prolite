@@ -48,7 +48,6 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
 }
 
 fn permission_error(culprit: &Rc<read_term::Term>) -> Response {
-    // permission_error(modify,static_procedure,pi)
     throw::error(
         read_term::Term::new_compound(
             "permission_error".to_string(),
@@ -63,7 +62,7 @@ fn permission_error(culprit: &Rc<read_term::Term>) -> Response {
     )
 }
 
-pub fn assert(mut frame: Frame, goal: usize, is_z: bool, next: &mut dyn Solver) -> Response {
+pub fn assert(frame: Frame, goal: usize, is_z: bool, next: &mut dyn Solver) -> Response {
     unpack_pi(&frame, goal).map_or_else(
         |r| r,
         |(pi, clause)| {
