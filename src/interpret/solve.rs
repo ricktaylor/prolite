@@ -352,17 +352,7 @@ fn solve(frame: Frame, term: usize, goal: Option<Goal>, next: &mut dyn Solver) -
     match goal {
         None => {
             let (term, _) = frame.get_term(term);
-            return throw::error(
-                read_term::Term::new_compound(
-                    "type_error".to_string(),
-                    None,
-                    vec![
-                        read_term::Term::new_atom("callable".to_string(), None),
-                        term.source.clone(),
-                    ],
-                ),
-                term.source.location.clone(),
-            );
+            return throw::type_error("callable", &term.source);
         }
         Some(g) => g,
     }

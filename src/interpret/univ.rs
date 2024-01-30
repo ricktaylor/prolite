@@ -45,6 +45,7 @@ fn univ_var(mut frame: Frame, term: usize, list: usize, next: &mut dyn Solver) -
                         |r| r,
                         |is_list| {
                             if !is_list {
+                                //throw::type_error("list", &list_term.source)
                                 todo!() // type_error(list,List)
                             } else {
                                 frame.sub_frame(|mut frame| {
@@ -64,17 +65,15 @@ fn univ_var(mut frame: Frame, term: usize, list: usize, next: &mut dyn Solver) -
                     let (tail, _) = frame.get_term(c_args[1]);
                     match (&tail.kind, &tail.source.kind) {
                         (TermKind::Atomic, read_term::TermKind::Atom(s)) if s == "[]" => {
-                            todo!() // type_error(atomic,h)
+                            throw::type_error("atomic", &head.source)
                         }
-                        _ => todo!(), // type_error(atom,h),
+                        _ => throw::type_error("atom", &head.source),
                     }
                 }
-                _ => todo!(), // type_error(atom,h),
+                _ => throw::type_error("atom", &head.source),
             }
         }
-        _ => {
-            todo!() // type_error(list,List)
-        }
+        _ => throw::type_error("list", &list_term.source),
     }
 }
 

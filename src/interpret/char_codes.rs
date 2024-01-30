@@ -36,33 +36,13 @@ fn chars_to_string(frame: &Frame, mut list: usize) -> Result<String, Response> {
                     }
                     (TermKind::Var(_), _) => return Err(throw::instantiation_error(&head.source)),
                     _ => {
-                        return Err(throw::error(
-                            read_term::Term::new_compound(
-                                "type_error".to_string(),
-                                None,
-                                vec![
-                                    read_term::Term::new_atom("character".to_string(), None),
-                                    head.source.clone(),
-                                ],
-                            ),
-                            head.source.location.clone(),
-                        ))
+                        return Err(throw::type_error("character", &head.source));
                     }
                 }
             }
             (TermKind::Var(_), _) => return Err(throw::instantiation_error(&term.source)),
             _ => {
-                return Err(throw::error(
-                    read_term::Term::new_compound(
-                        "type_error".to_string(),
-                        None,
-                        vec![
-                            read_term::Term::new_atom("list".to_string(), None),
-                            term.source.clone(),
-                        ],
-                    ),
-                    term.source.location.clone(),
-                ))
+                return Err(throw::type_error("list", &term.source));
             }
         }
     }
@@ -114,16 +94,6 @@ pub fn solve_number_chars(mut frame: Frame, args: &[usize], next: &mut dyn Solve
                 Err(r) => r,
             }
         }
-        _ => throw::error(
-            read_term::Term::new_compound(
-                "type_error".to_string(),
-                None,
-                vec![
-                    read_term::Term::new_atom("number".to_string(), None),
-                    term1.source.clone(),
-                ],
-            ),
-            term1.source.location.clone(),
-        ),
+        _ => throw::type_error("number", &term1.source),
     }
 }

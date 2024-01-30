@@ -10,6 +10,20 @@ pub fn instantiation_error(culprit: &Rc<read_term::Term>) -> Response {
     )
 }
 
+pub fn type_error(expected: &str, culprit: &Rc<read_term::Term>) -> Response {
+    error(
+        read_term::Term::new_compound(
+            "type_error".to_string(),
+            None,
+            vec![
+                read_term::Term::new_atom(expected.to_string(), None),
+                culprit.clone(),
+            ],
+        ),
+        culprit.location.clone(),
+    )
+}
+
 pub fn callable(culprit: &Rc<read_term::Term>) -> Response {
     error(
         read_term::Term::new_compound(
