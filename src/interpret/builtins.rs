@@ -229,7 +229,7 @@ const BUILTINS: phf::Map<&'static str, Builtin> = phf_map! {
     "@>/2" => Builtin::Solve(solve_gtr),
     "@>=/2" => Builtin::Solve(solve_geq),
     "functor/3" => Builtin::Solve(functor::solve_functor),
-    "arg/3" => Builtin::Solve(not_impl),
+    "arg/3" => Builtin::Solve(functor::solve_arg),
     "=../2" => Builtin::Solve(univ::solve),
     "copy_term/2" => Builtin::Solve(solve_copy_term),
     "is/2" => Builtin::Solve(arithmetic::solve_is),

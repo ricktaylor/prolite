@@ -23,6 +23,8 @@ pub fn solve_functor(mut frame: Frame, args: &[usize], next: &mut dyn Solver) ->
             &arity.kind,
             &arity.source.kind,
         ) {
+            (TermKind::Var(_), _, _, _) => throw::instantiation_error(&name.source),
+            (_, _, TermKind::Var(_), _) => throw::instantiation_error(&arity.source),
             (TermKind::Atomic, _, TermKind::Atomic, read_term::TermKind::Integer(0)) => frame
                 .sub_frame(|mut frame| {
                     if frame.unify(t, n) {
@@ -37,7 +39,7 @@ pub fn solve_functor(mut frame: Frame, args: &[usize], next: &mut dyn Solver) ->
                 TermKind::Atomic,
                 read_term::TermKind::Integer(i),
             ) if *i > 0 => {
-                if *i as u64 > usize::MAX as u64 {
+                if (*i as u64) > (usize::MAX as u64) {
                     throw::error(
                         read_term::Term::new_compound(
                             "representation_error".to_string(),
@@ -85,8 +87,6 @@ pub fn solve_functor(mut frame: Frame, args: &[usize], next: &mut dyn Solver) ->
                 throw::type_error("atom", &name.source)
             }
             (TermKind::Atomic, _, _, _) => throw::type_error("integer", &arity.source),
-            (TermKind::Var(_), _, _, _) => throw::instantiation_error(&name.source),
-            (_, _, TermKind::Var(_), _) => throw::instantiation_error(&arity.source),
             _ => throw::type_error("atomic", &name.source),
         },
         (TermKind::Compound(args), read_term::TermKind::Compound(c)) => {
@@ -103,5 +103,44 @@ pub fn solve_functor(mut frame: Frame, args: &[usize], next: &mut dyn Solver) ->
             })
         }
         _ => unreachable!(),
+    }
+}
+
+pub fn solve_arg(mut frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
+    let (n, _) = frame.get_term(args[0]);
+    let (term, _) = frame.get_term(args[1]);
+    match (&n.kind, &n.source.kind, &term.kind) {
+        (TermKind::Var(_), _, _) => throw::instantiation_error(&n.source),
+        (_, _, TermKind::Var(_)) => throw::instantiation_error(&term.source),
+        (TermKind::Atomic, read_term::TermKind::Integer(i), TermKind::Compound(c_args)) => {
+            if *i < 0 {
+                throw::error(
+                    read_term::Term::new_compound(
+                        "domain_error".to_string(),
+                        None,
+                        vec![
+                            read_term::Term::new_atom("not_less_than_zero".to_string(), None),
+                            n.source.clone(),
+                        ],
+                    ),
+                    n.source.location.clone(),
+                )
+            } else if *i > 0 && (*i as u64) <= (c_args.len() as u64) {
+                let t1 = c_args[(*i - 1) as usize];
+                frame.sub_frame(|mut frame| {
+                    if frame.unify(t1, args[2]) {
+                        next.solve(frame)
+                    } else {
+                        Response::Fail
+                    }
+                })
+            } else {
+                Response::Fail
+            }
+        }
+        (TermKind::Atomic, read_term::TermKind::Integer(_), _) => {
+            throw::type_error("compound", &term.source)
+        }
+        _ => throw::type_error("integer", &n.source),
     }
 }
