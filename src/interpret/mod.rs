@@ -4,6 +4,7 @@ mod char_codes;
 mod findall;
 mod flags;
 mod frame;
+mod functor;
 mod solve;
 mod term;
 mod throw;
