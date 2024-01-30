@@ -23,27 +23,29 @@ pub fn solve_functor(mut frame: Frame, args: &[usize], next: &mut dyn Solver) ->
             &arity.kind,
             &arity.source.kind,
         ) {
-            (
-                TermKind::Atomic,
-                _,
-                TermKind::Atomic,
-                read_term::TermKind::Integer(0),
-            ) => frame.sub_frame(|mut frame| {
-                if frame.unify(t, n) {
-                    next.solve(frame)
-                } else {
-                    Response::Fail
-                }
-            }),
+            (TermKind::Atomic, _, TermKind::Atomic, read_term::TermKind::Integer(0)) => frame
+                .sub_frame(|mut frame| {
+                    if frame.unify(t, n) {
+                        next.solve(frame)
+                    } else {
+                        Response::Fail
+                    }
+                }),
             (
                 TermKind::Atomic,
                 read_term::TermKind::Atom(s),
                 TermKind::Atomic,
                 read_term::TermKind::Integer(i),
             ) if *i > 0 => {
-                if *i as u64 > core::usize::MAX as u64 {
-                    // representation_error
-                    todo!()
+                if *i as u64 > usize::MAX as u64 {
+                    throw::error(
+                        read_term::Term::new_compound(
+                            "representation_error".to_string(),
+                            None,
+                            vec![read_term::Term::new_atom("max_arity".to_string(), None)],
+                        ),
+                        arity.source.location.clone(),
+                    )
                 } else {
                     let mut args = Vec::new();
                     for i in 0..*i {
@@ -68,10 +70,17 @@ pub fn solve_functor(mut frame: Frame, args: &[usize], next: &mut dyn Solver) ->
                 read_term::TermKind::Atom(_),
                 TermKind::Atomic,
                 read_term::TermKind::Integer(_),
-            ) => {
-                // domain_error
-                todo!()
-            }
+            ) => throw::error(
+                read_term::Term::new_compound(
+                    "domain_error".to_string(),
+                    None,
+                    vec![
+                        read_term::Term::new_atom("not_less_than_zero".to_string(), None),
+                        arity.source.clone(),
+                    ],
+                ),
+                arity.source.location.clone(),
+            ),
             (TermKind::Atomic, _, TermKind::Atomic, read_term::TermKind::Integer(_)) => {
                 throw::type_error("atom", &name.source)
             }
