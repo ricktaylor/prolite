@@ -3,7 +3,7 @@ use lexer::*;
 use stream::Span;
 
 #[derive(Debug)]
-pub(crate) enum ErrorKind {
+pub enum ErrorKind {
     Missing(char),
     BadEscape(String),
     BadFloat(String),
@@ -17,7 +17,7 @@ pub(crate) enum ErrorKind {
 }
 
 #[derive(Debug)]
-pub(crate) struct Error {
+pub struct Error {
     pub kind: ErrorKind,
     pub location: Option<Span>,
 }

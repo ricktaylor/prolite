@@ -1,8 +1,8 @@
-pub(super) mod error;
-pub(super) mod parser;
-pub(super) mod stream;
-pub(super) mod term;
-pub(super) mod utf8reader;
+pub mod error;
+pub mod parser;
+pub mod stream;
+pub mod term;
+pub mod utf8reader;
 
 mod lexer;
 

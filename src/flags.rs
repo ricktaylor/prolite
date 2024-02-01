@@ -1,19 +1,19 @@
 #[derive(Debug)]
-pub(crate) enum QuoteFlag {
+pub enum QuoteFlag {
     Chars,
     Codes,
     Atom,
 }
 
 #[derive(Debug)]
-pub(crate) enum UnknownFlag {
+pub enum UnknownFlag {
     Error,
     Fail,
     Warning,
 }
 
 #[derive(Debug)]
-pub(crate) struct Flags {
+pub struct Flags {
     pub char_conversion: bool,
     pub double_quotes: QuoteFlag,
     pub back_quotes: QuoteFlag,

@@ -4,7 +4,7 @@ use read_term::term::Term;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub(crate) enum Error {
+pub enum Error {
     ReadTerm(read_term::error::Error),
     StreamResolver(Rc<Term>, std::io::Error),
     InvalidHead(Rc<Term>),

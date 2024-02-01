@@ -1,10 +1,9 @@
-pub(super) mod error;
-pub(super) mod text;
+pub mod error;
+pub mod text;
 
-mod builtins;
 mod multireader;
 
-use super::{flags, operators, read_term};
+use super::*;
 use read_term::stream;
 
 pub trait StreamResolver {
@@ -15,4 +14,4 @@ pub trait StreamResolver {
 type ErrorSinkFn = fn(e: &error::Error) -> bool;
 
 #[cfg(test)]
-pub(super) mod test;
+pub mod test;
