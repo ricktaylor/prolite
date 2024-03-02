@@ -3,20 +3,14 @@ use super::*;
 use frame::Frame;
 use solve::Solver;
 
-fn parse_term(
-    frame: &Frame,
-    s: &str,
-) -> Result<Option<Rc<read_term::Term>>, Box<crate::read_term::error::Error>> {
-    crate::read_term::parser::next(
-        crate::read_term::Context {
-            flags: &frame.context.flags,
-            operators: &frame.context.operators,
-            char_conversion: &frame.context.char_conversion,
-            greedy: false,
-        },
-        &mut Vec::new(),
-        &mut crate::read_term::utf8reader::Utf8Reader::new(s.as_bytes(), "{{inline}}"),
-    )
+fn parse_term(frame: &Frame, s: &str) -> super::super::read_term::Response {
+    super::super::read_term::Context {
+        flags: &frame.context.flags,
+        operators: &frame.context.operators,
+        char_conversion: &frame.context.char_conversion,
+        greedy: false,
+    }
+    .read_term(s)
 }
 
 fn chars_to_string(frame: &Frame, mut list: usize) -> Result<String, Response> {
@@ -71,7 +65,7 @@ pub fn solve_number_chars(mut frame: Frame, args: &[usize], next: &mut dyn Solve
                         ),
                         term2.source.location.clone(),
                     ),
-                    Ok(Some(term2)) => match &term2.kind {
+                    Ok(Some((term2, _))) => match &term2.kind {
                         read_term::TermKind::Integer(_) | read_term::TermKind::Float(_) => frame
                             .sub_frame(|mut frame| {
                                 let t2 = frame.new_term(&term2);

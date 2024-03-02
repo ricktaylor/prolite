@@ -8,12 +8,12 @@ use std::{
 use super::*;
 use text::*;
 
-struct FSResolver {
+pub struct FSResolver {
     root: PathBuf,
 }
 
 impl FSResolver {
-    fn new(root: &str) -> io::Result<FSResolver> {
+    pub fn new(root: &str) -> io::Result<FSResolver> {
         Ok(Self {
             root: env::current_dir()?.join(root).canonicalize()?,
         })
@@ -48,7 +48,7 @@ impl StreamResolver for FSResolver {
                     .unwrap();
                 eprintln!("Consulting {}", n);
 
-                let r = Box::new(read_term::utf8reader::Utf8Reader::new(f, &n));
+                let r = Box::new(read_term::utf8reader::Utf8Reader::new(f, Some(&n)));
                 Ok((n, r))
             }
         }
@@ -63,16 +63,11 @@ fn error(e: &error::Error) -> bool {
 pub fn consult(source: &str) -> Option<Text> {
     let p = Path::new(source);
     let mut res = FSResolver::new(p.parent().unwrap().to_str().unwrap()).unwrap();
-    text::consult(
-        &mut res,
-        p.file_name().unwrap().to_str().unwrap(),
-        Some(error),
-    )
-    .unwrap()
+    text::consult(&mut res, p.file_name().unwrap().to_str().unwrap(), error).unwrap()
 }
 
 #[test]
 fn test() {
-    consult("./test/vanilla/vanilla.pl");
-    consult("./test/inriasuite/inriasuite.pl");
+    //consult("./test/vanilla/vanilla.pl");
+    //consult("./test/inriasuite/inriasuite.pl");
 }

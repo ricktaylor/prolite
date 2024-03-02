@@ -31,15 +31,15 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-test_clause  :- 
-	
+test_clause  :-
+
 	test_true((clause(cat, true))),
 	test_true((clause(dog, true))),
 	test_val(clause(legs(I,6), Body), Body, insect(I)),
 	test_val(clause(legs(C,7), Body1), Body1, (call(C), call(C))),
 	test_true(clause(insect(J), T)),
 	test_false(clause(x, Body2)).
-	
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -47,9 +47,9 @@ test_clause_errors :-
 	defined(clause/2),
 	error_test(clause(_,B), instantiation_error),
 	error_test(clause(4,X), type_error(callable, 4)),
-	error_test(clause(elk(N), Body), 
+	error_test(clause(elk(N), Body),
 		   permission_error(access, private_procedure, elk/1)),
-	error_test(clause(atom(_), Body), 
+	error_test(clause(atom(_), Body),
 		   permission_error(access, private_procedure, atom/1)).
 test_clause_errors :-
          log_nl, log( 'clause/2 not supported.'),
@@ -74,23 +74,23 @@ test_current_predicate :-
 test_88 :-
 
 	log('Starting tests for Section 8.8.'), log_nl,
-	log_nl, log( 'Testing clause/1.'), log_nl,
+	log_nl, log( 'Testing clause/2.'), log_nl,
 
 	test_clause,
 
-	log_nl, log( 'Testing of clause finished, checking error values.'), 
+	log_nl, log( 'Testing of clause finished, checking error values.'),
         log_nl,
 
 	test_clause_errors,
 
-	log_nl, 
+	log_nl,
         log( 'Testing of error values finished, starting current_predicate tests.'),
         log_nl,
-	
+
 	test_current_predicate,
 
 	log( 'Testing completed of current_predicate.'), log_nl,
-	log_nl, log( 'All testing completed for Section 8.8.'), 
+	log_nl, log( 'All testing completed for Section 8.8.'),
         log_nl, log_nl, !.
-		
+
 

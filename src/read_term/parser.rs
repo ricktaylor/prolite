@@ -459,26 +459,26 @@ fn parse_term(
     }
 }
 
-pub(crate) fn next(
-    ctx: Context,
+pub fn next(
+    ctx: &Context,
     var_info: &mut Vec<VarInfo>,
     stream: &mut dyn ReadStream,
 ) -> Result<Option<Rc<Term>>, Box<Error>> {
-    let t = lexer::next(&ctx, stream, false)?;
+    let t = lexer::next(ctx, stream, false)?;
     if let TokenKind::Eof = t.kind {
         return Ok(None);
     }
 
-    let (term, next, _) = parse_term(&ctx, var_info, stream, t, 1201)?;
+    let (term, next, _) = parse_term(ctx, var_info, stream, t, 1201)?;
     match next.kind {
         TokenKind::End => Ok(Some(term)),
         _ => Error::new(ErrorKind::ExpectedChar('.'), next.location),
     }
 }
 
-pub(crate) fn skip_to_end(ctx: Context, stream: &mut dyn ReadStream) -> Result<(), Box<Error>> {
+pub fn skip_to_end(ctx: &Context, stream: &mut dyn ReadStream) -> Result<(), Box<Error>> {
     loop {
-        match lexer::next(&ctx, stream, false)?.kind {
+        match lexer::next(ctx, stream, false)?.kind {
             TokenKind::Eof | TokenKind::End => break Ok(()),
             _ => {}
         }

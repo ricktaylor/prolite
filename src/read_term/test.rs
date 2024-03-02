@@ -1,24 +1,15 @@
 use super::*;
-use std::rc::Rc;
-use term::*;
 
-pub(crate) fn read_term(s: &str) -> (Rc<Term>, Vec<VarInfo>) {
-    let mut var_info = Vec::new();
-    (
-        parser::next(
-            Context {
-                flags: &flags::Flags::default(),
-                operators: &operators::Operator::default_table(),
-                char_conversion: &HashMap::new(),
-                greedy: false,
-            },
-            &mut var_info,
-            &mut utf8reader::Utf8Reader::new(s.as_bytes(), format!("{{{}}}", s).as_str()),
-        )
-        .unwrap()
-        .unwrap(),
-        var_info,
-    )
+pub fn read_term(s: &str) {
+    Context {
+        flags: &flags::Flags::default(),
+        operators: &operators::Operator::default_table(),
+        char_conversion: &HashMap::new(),
+        greedy: false,
+    }
+    .read_term(s)
+    .unwrap()
+    .unwrap();
 }
 
 #[test]

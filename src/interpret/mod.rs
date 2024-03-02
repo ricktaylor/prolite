@@ -1,5 +1,13 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use super::read_term::stream;
+use super::*;
+use read_term::term as read_term;
+
+pub mod builtins;
+
 mod arithmetic;
-mod builtins;
 mod char_codes;
 mod findall;
 mod flags;
@@ -12,16 +20,11 @@ mod univ;
 mod user_defined;
 mod write;
 
-use std::collections::HashMap;
-use std::rc::Rc;
-
-use super::consult::text::*;
-use super::read_term::stream;
-use super::read_term::term as read_term;
-use super::*;
+#[cfg(test)]
+mod test;
 
 #[derive(Debug)]
-pub(crate) enum Response {
+pub enum Response {
     Fail,
     Cut,
     Throw(Rc<read_term::Term>),
@@ -45,14 +48,59 @@ impl Response {
 }
 
 pub struct Context {
-    pub procedures: HashMap<String, Procedure>,
-    pub flags: crate::flags::Flags,
-    pub operators: operators::OperatorTable,
-    pub char_conversion: HashMap<char, char>,
+    procedures: HashMap<String, user_defined::Procedure>,
+    flags: crate::flags::Flags,
+    operators: operators::OperatorTable,
+    char_conversion: HashMap<char, char>,
 }
 
-#[cfg(test)]
-use super::consult;
+impl Context {
+    pub fn consult(
+        resolver: &mut dyn consult::StreamResolver,
+        source: &str,
+    ) -> Result<Self, Response> {
+        match consult::text::consult(resolver, source, |_| false) {
+            Err(_e) => todo!(),
+            Ok(None) => todo!(),
+            Ok(Some(text)) => {
+                let mut ctx = Self {
+                    procedures: HashMap::new(),
+                    char_conversion: text.char_conversion,
+                    flags: text.flags,
+                    operators: text.operators,
+                };
+                for (pi, p) in text.procedures {
+                    user_defined::import(&mut ctx, pi, p)?;
+                }
+                for (t, _) in text.initialization {
+                    let mut success = false;
+                    match solve::eval(&mut ctx, &t, || {
+                        match &t.kind {
+                            read_term::TermKind::Atom(s) => {
+                                eprintln!("initialization {} ... ok", s)
+                            }
+                            read_term::TermKind::Compound(c) => {
+                                eprintln!("initialization {}/{} ... ok", c.functor, c.args.len())
+                            }
+                            _ => unreachable!(),
+                        };
+                        success = true;
+                        false
+                    }) {
+                        Response::Fail | Response::Cut => {
+                            if !success {
+                                return Err(Response::Fail);
+                            }
+                        }
+                        r => return Err(r),
+                    }
+                }
+                Ok(ctx)
+            }
+        }
+    }
 
-#[cfg(test)]
-mod test;
+    pub fn eval<F: FnMut() -> bool>(&mut self, goal: &str, callback: F) -> Response {
+        todo!()
+    }
+}

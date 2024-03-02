@@ -17,9 +17,21 @@ pub struct Term {
 }
 
 impl Term {
-    pub fn compare(frame: &Frame, t1: usize, t2: usize) -> Option<core::cmp::Ordering> {
-        let (term1, _) = frame.get_term(t1);
-        let (term2, _) = frame.get_term(t2);
+    pub fn compare_index(frame: &Frame, t1: usize, t2: usize) -> Option<core::cmp::Ordering> {
+        if t1 == t2 {
+            Some(core::cmp::Ordering::Equal)
+        } else {
+            let (term1, t1) = frame.get_term(t1);
+            let (term2, t2) = frame.get_term(t2);
+            if t1 == t2 {
+                Some(core::cmp::Ordering::Equal)
+            } else {
+                Term::compare(frame, term1, term2)
+            }
+        }
+    }
+
+    pub fn compare(frame: &Frame, term1: &Term, term2: &Term) -> Option<core::cmp::Ordering> {
         match (
             &term1.kind,
             &term1.source.kind,
@@ -66,7 +78,7 @@ impl Term {
                     r = core::cmp::PartialOrd::partial_cmp(&c1.functor, &c2.functor);
                     if let Some(core::cmp::Ordering::Equal) = r {
                         for (a1, a2) in args1.iter().zip(args2) {
-                            match Term::compare(frame, *a1, *a2) {
+                            match Term::compare_index(frame, *a1, *a2) {
                                 Some(core::cmp::Ordering::Equal) => {}
                                 r => return r,
                             }

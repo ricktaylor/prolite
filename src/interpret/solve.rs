@@ -40,6 +40,7 @@ pub trait Control {
 pub type Goal = Box<dyn Control>;
 
 pub type GenerateFn = fn(frame: &Frame, args: &[usize]) -> Option<Goal>;
+pub type CompileFn = fn(args: &[Rc<read_term::Term>]) -> Option<Goal>;
 
 struct True {}
 
@@ -50,6 +51,10 @@ impl Control for True {
 }
 
 pub fn generate_true(_: &Frame, _: &[usize]) -> Option<Goal> {
+    Some(Box::new(True {}))
+}
+
+pub fn compile_true(_: &[Rc<read_term::Term>]) -> Option<Goal> {
     Some(Box::new(True {}))
 }
 
@@ -65,6 +70,10 @@ pub fn generate_fail(_: &Frame, _: &[usize]) -> Option<Goal> {
     Some(Box::new(Fail {}))
 }
 
+pub fn compile_fail(_: &[Rc<read_term::Term>]) -> Option<Goal> {
+    Some(Box::new(Fail {}))
+}
+
 struct Cut {}
 
 impl Control for Cut {
@@ -75,6 +84,30 @@ impl Control for Cut {
 
 pub fn generate_cut(_: &Frame, _: &[usize]) -> Option<Goal> {
     Some(Box::new(Cut {}))
+}
+
+pub fn compile_cut(_: &[Rc<read_term::Term>]) -> Option<Goal> {
+    Some(Box::new(Cut {}))
+}
+
+struct GoalSet {
+    goals: Vec<Goal>,
+}
+
+impl Control for GoalSet {
+    fn exec(&mut self, frame: Frame, mut next: &mut dyn Solver) -> Response {
+        self.goals
+            .iter()
+            .rev()
+            .fold(next, |next, g| {
+                &mut Continuation::new(|frame| g.exec(frame, next))
+            })
+            .solve(frame)
+    }
+}
+
+fn new_head_goal(args: Vec<Goal>) -> Option<Goal> {
+    Some(Box::new(GoalSet { goals: args }))
 }
 
 struct And {
@@ -98,6 +131,19 @@ pub fn generate_and(frame: &Frame, args: &[usize]) -> Option<Goal> {
             Some(g) => g,
         },
         second: match generate(frame, args[1]) {
+            None => return None,
+            Some(g) => g,
+        },
+    }))
+}
+
+pub fn compile_and(args: &[Rc<read_term::Term>]) -> Option<Goal> {
+    Some(Box::new(And {
+        first: match compile(&args[0]) {
+            None => return None,
+            Some(g) => g,
+        },
+        second: match compile(&args[1]) {
             None => return None,
             Some(g) => g,
         },
@@ -131,6 +177,24 @@ pub fn generate_or(frame: &Frame, args: &[usize]) -> Option<Goal> {
                 Some(g) => g,
             },
             or: match generate(frame, args[1]) {
+                None => return None,
+                Some(g) => g,
+            },
+        })),
+    }
+}
+
+pub fn compile_or(args: &[Rc<read_term::Term>]) -> Option<Goal> {
+    match &args[0].kind {
+        read_term::TermKind::Compound(c) if c.functor == "->" && c.args.len() == 2 => {
+            compile_if_then_else(&c.args[0], &c.args[1], Some(&args[1]))
+        }
+        _ => Some(Box::new(Or {
+            either: match compile(&args[0]) {
+                None => return None,
+                Some(g) => g,
+            },
+            or: match compile(&args[1]) {
                 None => return None,
                 Some(g) => g,
             },
@@ -175,6 +239,10 @@ pub fn generate_if_then(frame: &Frame, args: &[usize]) -> Option<Goal> {
     generate_if_then_else(frame, args[0], args[1], None)
 }
 
+pub fn compile_if_then(args: &[Rc<read_term::Term>]) -> Option<Goal> {
+    compile_if_then_else(&args[0], &args[1], None)
+}
+
 fn generate_if_then_else(
     frame: &Frame,
     if_term: usize,
@@ -193,6 +261,30 @@ fn generate_if_then_else(
         else_goal: match else_term {
             None => None,
             Some(else_term) => match generate(frame, else_term) {
+                None => return None,
+                g => g,
+            },
+        },
+    }))
+}
+
+fn compile_if_then_else(
+    if_term: &Rc<read_term::Term>,
+    then_term: &Rc<read_term::Term>,
+    else_term: Option<&Rc<read_term::Term>>,
+) -> Option<Goal> {
+    Some(Box::new(IfThenElse {
+        if_goal: match compile(if_term) {
+            None => return None,
+            Some(g) => g,
+        },
+        then_goal: match compile(then_term) {
+            None => return None,
+            Some(g) => g,
+        },
+        else_goal: match else_term {
+            None => None,
+            Some(else_term) => match compile(else_term) {
                 None => return None,
                 g => g,
             },
@@ -228,7 +320,7 @@ impl Control for Call {
     }
 }
 
-pub fn generate_call(frame: &Frame, args: &[usize]) -> Option<Goal> {
+fn generate_call(frame: &Frame, args: &[usize]) -> Option<Goal> {
     Some(Box::new(Call {
         next: match generate(frame, args[0]) {
             None => return None,
@@ -237,15 +329,15 @@ pub fn generate_call(frame: &Frame, args: &[usize]) -> Option<Goal> {
     }))
 }
 
-struct Builtin {
-    f: SolveFn,
-    args: Vec<usize>,
-}
-
-impl Control for Builtin {
-    fn exec(&mut self, frame: Frame, next: &mut dyn Solver) -> Response {
-        (self.f)(frame, &self.args, next)
+pub fn call(frame: Frame, term: usize, next: &mut dyn Solver) -> Response {
+    match generate_call(&frame, &[term]) {
+        None => {
+            let (term, _) = frame.get_term(term);
+            return throw::type_error("callable", &term.source);
+        }
+        Some(g) => g,
     }
+    .exec(frame, next)
 }
 
 struct Var {
@@ -263,109 +355,55 @@ impl Control for Var {
     }
 }
 
-struct UserDefined {
-    pi: String,
-    term: usize,
-}
-
-impl Control for UserDefined {
-    fn exec(&mut self, mut frame: Frame, next: &mut dyn Solver) -> Response {
-        let predicates = match frame.context.procedures.get(&self.pi) {
-            None => {
-                return match frame.context.flags.unknown {
-                    crate::flags::UnknownFlag::Error => {
-                        let (term, _) = frame.get_term(self.term);
-                        throw::callable(&term.source)
-                    }
-                    //crate::flags::UnknownFlag::Warning => todo!(), // Some kind of warning?
-                    _ => Response::Fail,
-                };
-            }
-            Some(p) => p.predicates.to_vec(),
-        };
-        for clause in predicates {
-            match frame.sub_frame(|mut frame| {
-                // TODO:  We could merge new_term_indexed and unify here to one walk of the term tree
-                let mut index = HashMap::new();
-                let head = frame.new_term_indexed(&clause.head, &mut index);
-                if frame.unify(self.term, head) {
-                    if let Some(body) = &clause.body {
-                        let b = frame.new_term_indexed(body, &mut index);
-                        let goal = generate(&frame, b);
-                        solve(frame, b, goal, next)
-                    } else {
-                        next.solve(frame)
-                    }
-                } else {
-                    Response::Fail
-                }
-            }) {
-                Response::Fail => {}
-                r => return r,
-            }
-        }
-        Response::Fail
-    }
-}
-
-fn generate(frame: &Frame, term: usize) -> Option<Goal> {
+pub fn generate(frame: &Frame, term: usize) -> Option<Goal> {
     let (term, t) = frame.get_term(term);
     match (&term.kind, &term.source.kind) {
         (TermKind::Atomic, read_term::TermKind::Atom(s)) => {
             let pi = format!("{}/0", s);
             match builtins::get_builtin(&pi) {
-                Some(builtins::Builtin::Solve(f)) => {
-                    if *f == builtins::not_impl {
-                        panic!("{} unimplemented", &pi)
-                    }
-                    Some(Box::new(Builtin {
-                        f: *f,
-                        args: Vec::new(),
-                    }))
-                }
-                Some(builtins::Builtin::Control(f)) => (f)(frame, &[]),
-                None => Some(Box::new(UserDefined { pi, term: t })),
+                Some(builtins::Builtin::Solve(f)) => builtins::generate(&pi, *f, &[]),
+                Some(builtins::Builtin::Control(_, generate)) => (generate)(frame, &[]),
+                None => user_defined::generate(pi, t),
             }
         }
         (TermKind::Var(_), _) => Some(Box::new(Var { term: t })),
         (TermKind::Compound(args), read_term::TermKind::Compound(c)) => {
             let pi = format!("{}/{}", c.functor, args.len());
             match builtins::get_builtin(&pi) {
-                Some(builtins::Builtin::Solve(f)) => {
-                    if *f == builtins::not_impl {
-                        panic!("{} unimplemented", &pi)
-                    }
-                    Some(Box::new(Builtin {
-                        f: *f,
-                        args: args.to_vec(),
-                    }))
-                }
-                Some(builtins::Builtin::Control(f)) => (f)(frame, args),
-                None => Some(Box::new(UserDefined { pi, term: t })),
+                Some(builtins::Builtin::Solve(f)) => builtins::generate(&pi, *f, args),
+                Some(builtins::Builtin::Control(_, generate)) => (generate)(frame, args),
+                None => user_defined::generate(pi, t),
             }
         }
         _ => None,
     }
 }
 
-fn solve(frame: Frame, term: usize, goal: Option<Goal>, next: &mut dyn Solver) -> Response {
-    match goal {
-        None => {
-            let (term, _) = frame.get_term(term);
-            return throw::type_error("callable", &term.source);
+pub fn compile(term: &Rc<read_term::Term>) -> Option<Goal> {
+    match &term.kind {
+        read_term::TermKind::Atom(s) => {
+            let pi = format!("{}/0", s);
+            match builtins::get_builtin(&pi) {
+                Some(builtins::Builtin::Solve(f)) => builtins::compile(&pi, *f, &[]),
+                Some(builtins::Builtin::Control(compile, _)) => (compile)(&[]),
+                None => user_defined::compile(pi, &[]),
+            }
         }
-        Some(g) => g,
+        read_term::TermKind::Var(idx) => Some(Box::new(Var { term: t })),
+        read_term::TermKind::Compound(c) => {
+            let pi = format!("{}/{}", c.functor, c.args.len());
+            match builtins::get_builtin(&pi) {
+                Some(builtins::Builtin::Solve(f)) => builtins::compile(&pi, *f, &c.args),
+                Some(builtins::Builtin::Control(compile, _)) => (compile)(&c.args),
+                None => user_defined::compile(pi, &c.args),
+            }
+        }
+        _ => None,
     }
-    .exec(frame, next)
-}
-
-pub fn call(frame: Frame, term: usize, next: &mut dyn Solver) -> Response {
-    let goal = generate_call(&frame, &[term]);
-    solve(frame, term, goal, next)
 }
 
 // Possibly test only!
-pub(crate) fn eval<F: FnMut() -> bool>(
+pub fn eval<F: FnMut() -> bool>(
     ctx: &mut Context,
     goal: &Rc<read_term::Term>,
     mut callback: F,

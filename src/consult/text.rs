@@ -11,29 +11,24 @@ use operators::Operator;
 use read_term::parser;
 use read_term::term::{Compound, Term, TermKind, VarInfo};
 
-#[derive(Default, Debug)]
-pub(crate) struct Flags {
-    pub dynamic: bool,
-    pub public: bool,
-    multifile: bool,
-    discontiguous: bool,
-}
+use interpret::builtins;
 
 #[derive(Debug)]
-pub(crate) struct Clause {
+pub struct Clause {
     pub head: Rc<Term>,
     pub body: Option<Rc<Term>>,
 }
 
 #[derive(Default, Debug)]
-pub(crate) struct Procedure {
-    pub flags: Flags,
-    pub predicates: Vec<Rc<Clause>>,
-    pub source_text: Option<String>,
+pub struct Procedure {
+    pub dynamic: bool,
+    multifile: bool,
+    discontiguous: bool,
+    pub predicates: Vec<Clause>,
+    source_text: String,
 }
 
-#[derive(Default)]
-pub(crate) struct Text {
+pub struct Text {
     pub procedures: HashMap<String, Procedure>,
     pub initialization: Vec<(Rc<Term>, Vec<VarInfo>)>,
     pub flags: flags::Flags,
@@ -107,7 +102,7 @@ impl Text {
         &mut self,
         resolver: &mut dyn StreamResolver,
         source: &str,
-        sink: Option<ErrorSinkFn>,
+        sink: ErrorSinkFn,
     ) -> Result<bool, Box<Error>> {
         resolver
             .open(source)
@@ -123,7 +118,7 @@ impl Text {
 
                 self.load_text(Context {
                     stream: MultiReader::new(stream),
-                    sink: sink.unwrap_or(|_| false),
+                    sink,
                     directives,
                     resolver,
                     loaded_set,
@@ -138,7 +133,7 @@ impl Text {
         loop {
             let mut var_info = Vec::new();
             match parser::next(
-                read_term::Context {
+                &read_term::Context {
                     flags: &self.flags,
                     operators: &self.operators,
                     char_conversion: &self.char_conversion,
@@ -156,9 +151,9 @@ impl Text {
                             self.directive(&mut ctx, var_info, &c.args[0])
                         }
                         TermKind::Compound(c) if c.functor == ":-" && c.args.len() == 2 => {
-                            self.assert(&mut ctx, &c.args[0], Some(&c.args[1]))
+                            self.assert(&mut ctx, &c.args[0], Some(&c.args[1]), var_info)
                         }
-                        _ => self.assert(&mut ctx, &t, None),
+                        _ => self.assert(&mut ctx, &t, None, var_info),
                     };
 
                     if let Err(e) = r {
@@ -168,27 +163,31 @@ impl Text {
                         }
                     }
                 }
-                Err(e) => {
+                Err(mut e) => {
                     ctx.failed = true;
-                    if (ctx.sink)(&e) {
-                        if let Err(e) = parser::skip_to_end(
-                            read_term::Context {
+                    while (ctx.sink)(&e) {
+                        match parser::skip_to_end(
+                            &read_term::Context {
                                 flags: &self.flags,
                                 operators: &self.operators,
                                 char_conversion: &self.char_conversion,
                                 greedy: true,
                             },
                             &mut ctx.stream,
-                        )
-                        .map_err(|e| Error::ReadTerm(*e))
-                        {
-                            if !(ctx.sink)(&e) {
-                                break Err(Box::new(e));
-                            }
+                        ) {
+                            Err(e2) => match e2.kind {
+                                read_term::error::ErrorKind::StreamError(_) => {
+                                    (ctx.sink)(&Error::ReadTerm(*e2));
+                                    break;
+                                }
+                                _ => {
+                                    e = Error::ReadTerm(*e2);
+                                }
+                            },
+                            _ => break,
                         }
-                    } else {
-                        break Err(Box::new(e));
                     }
+                    break Err(Box::new(e));
                 }
             }
         }
@@ -199,6 +198,7 @@ impl Text {
         ctx: &mut Context,
         head: &Rc<Term>,
         body: Option<&Rc<Term>>,
+        var_info: Vec<VarInfo>,
     ) -> Result<(), Box<Error>> {
         let pi = match &head.kind {
             TermKind::Atom(s) => format!("{}/0", s),
@@ -219,19 +219,15 @@ impl Text {
 
         if let Some(p) = p {
             if let Some(first) = p.predicates.first() {
-                if !p.flags.multifile {
-                    if let Some(s) = &p.source_text {
-                        if ctx.current_text != *s {
-                            return Error::new(Error::NotMultifile(
-                                head.clone(),
-                                first.head.location.clone(),
-                                s.clone(),
-                            ));
-                        }
-                    }
+                if !p.multifile && ctx.current_text != p.source_text {
+                    return Error::new(Error::NotMultifile(
+                        head.clone(),
+                        first.head.location.clone(),
+                        ctx.current_text.clone(),
+                    ));
                 }
 
-                if !p.flags.discontiguous
+                if !p.discontiguous
                     && ctx
                         .current_procedure
                         .as_ref()
@@ -244,19 +240,19 @@ impl Text {
                     ));
                 }
             }
-            p.predicates.push(Rc::new(Clause {
+            p.predicates.push(Clause {
                 head: head.clone(),
                 body: body.cloned(),
-            }));
+            });
         } else {
             self.procedures.insert(
                 pi.clone(),
                 Procedure {
-                    source_text: Some(ctx.current_text.clone()),
-                    predicates: vec![Rc::new(Clause {
+                    source_text: ctx.current_text.clone(),
+                    predicates: vec![Clause {
                         head: head.clone(),
                         body: body.cloned(),
-                    })],
+                    }],
                     ..Procedure::default()
                 },
             );
@@ -315,16 +311,16 @@ impl Text {
 
         match &term.kind {
             TermKind::Compound(c) if c.functor == "op" && c.args.len() == 3 => {
-                self.op(ctx, &c.args[0], &c.args[1], &c.args[2])
+                self.op(&c.args[0], &c.args[1], &c.args[2])
             }
             TermKind::Compound(c) if c.functor == "initialization" && c.args.len() == 1 => {
                 self.initialization(var_info, &c.args[0])
             }
             TermKind::Compound(c) if c.functor == "set_prolog_flag" && c.args.len() == 2 => {
-                self.prolog_flag(ctx, &c.args[0], &c.args[1])
+                self.prolog_flag(&c.args[0], &c.args[1])
             }
             TermKind::Compound(c) if c.functor == "char_conversion" && c.args.len() == 2 => {
-                self.char_conversion(ctx, &c.args[0], &c.args[1])
+                self.char_conversion(&c.args[0], &c.args[1])
             }
             TermKind::Compound(c) if c.functor == "include" => {
                 self.directive_expand(ctx, c, Self::include)
@@ -342,9 +338,7 @@ impl Text {
                 self.directive_expand(ctx, c, Self::discontiguous)
             }
             TermKind::Compound(c) if !self.flags.strict_iso => {
-                if c.functor == "public" {
-                    self.directive_expand(ctx, c, Self::public)
-                } else if c.functor == "directive" {
+                if c.functor == "directive" {
                     self.directive_expand(ctx, c, Self::declare_directive)
                 } else if ctx
                     .directives
@@ -405,7 +399,6 @@ impl Text {
 
     fn update_op(
         &mut self,
-        ctx: &mut Context,
         specifier: &Operator,
         operator: &Rc<Term>,
         remove: bool,
@@ -527,25 +520,23 @@ impl Text {
 
     fn op_list_expand(
         &mut self,
-        ctx: &mut Context,
         specifier: &Operator,
         c: &Compound,
         remove: bool,
     ) -> Result<(), Box<Error>> {
-        self.update_op(ctx, specifier, &c.args[0], remove)?;
+        self.update_op(specifier, &c.args[0], remove)?;
 
         match &c.args[1].kind {
             TermKind::Compound(c) if c.functor == "." && c.args.len() == 2 => {
-                self.op_list_expand(ctx, specifier, c, remove)
+                self.op_list_expand(specifier, c, remove)
             }
             TermKind::Atom(s) if s == "[]" => Ok(()),
-            _ => self.update_op(ctx, specifier, &c.args[1], remove),
+            _ => self.update_op(specifier, &c.args[1], remove),
         }
     }
 
     fn op(
         &mut self,
-        ctx: &mut Context,
         priority: &Rc<Term>,
         specifier: &Rc<Term>,
         operator: &Rc<Term>,
@@ -579,18 +570,13 @@ impl Text {
         // Iterate atom_or_atom_list
         match &operator.kind {
             TermKind::Compound(c) if c.functor == "." && c.args.len() == 2 => {
-                self.op_list_expand(ctx, &op_spec, c, remove)
+                self.op_list_expand(&op_spec, c, remove)
             }
-            _ => self.update_op(ctx, &op_spec, operator, remove),
+            _ => self.update_op(&op_spec, operator, remove),
         }
     }
 
-    fn prolog_flag(
-        &mut self,
-        ctx: &mut Context,
-        flag: &Rc<Term>,
-        value: &Rc<Term>,
-    ) -> Result<(), Box<Error>> {
+    fn prolog_flag(&mut self, flag: &Rc<Term>, value: &Rc<Term>) -> Result<(), Box<Error>> {
         match &flag.kind {
             TermKind::Atom(s) => match s.as_str() {
                 "char_conversion" => self.flags.char_conversion = bool_flag(flag, value)?,
@@ -622,7 +608,6 @@ impl Text {
 
     fn char_conversion(
         &mut self,
-        ctx: &mut Context,
         in_char: &Rc<Term>,
         out_char: &Rc<Term>,
     ) -> Result<(), Box<Error>> {
@@ -673,8 +658,8 @@ impl Text {
 
         Ok((
             self.procedures.entry(pi).or_insert_with(|| Procedure {
-                source_text: Some(ctx.current_text.clone()),
-                ..Default::default()
+                source_text: ctx.current_text.clone(),
+                ..Procedure::default()
             }),
             false,
         ))
@@ -682,46 +667,39 @@ impl Text {
 
     fn dynamic(&mut self, ctx: &mut Context, term: &Rc<Term>) -> Result<(), Box<Error>> {
         let (p, _) = self.lookup_procedure(ctx, term)?;
-        if !p.flags.dynamic && !p.predicates.is_empty() {
+        if !p.dynamic && !p.predicates.is_empty() {
             Error::new(Error::AlreadyNotDynamic(
                 term.clone(),
                 p.predicates.first().unwrap().head.location.clone(),
             ))
         } else {
-            p.flags.dynamic = true;
-            p.flags.public = true;
+            p.dynamic = true;
             Ok(())
         }
     }
 
-    fn public(&mut self, ctx: &mut Context, term: &Rc<Term>) -> Result<(), Box<Error>> {
-        let (p, _) = self.lookup_procedure(ctx, term)?;
-        p.flags.public = true;
-        Ok(())
-    }
-
     fn multifile(&mut self, ctx: &mut Context, term: &Rc<Term>) -> Result<(), Box<Error>> {
         let (p, directive) = self.lookup_procedure(ctx, term)?;
-        if (!p.flags.multifile && !p.predicates.is_empty()) || directive {
+        if (!p.multifile && !p.predicates.is_empty()) || directive {
             Error::new(Error::AlreadyNotMultifile(
                 term.clone(),
                 p.predicates.first().unwrap().head.location.clone(),
             ))
         } else {
-            p.flags.multifile = true;
+            p.multifile = true;
             Ok(())
         }
     }
 
     fn discontiguous(&mut self, ctx: &mut Context, term: &Rc<Term>) -> Result<(), Box<Error>> {
         let (p, directive) = self.lookup_procedure(ctx, term)?;
-        if (!p.flags.discontiguous && !p.predicates.is_empty()) || directive {
+        if (!p.discontiguous && !p.predicates.is_empty()) || directive {
             Error::new(Error::AlreadyNotDiscontiguous(
                 term.clone(),
                 p.predicates.first().unwrap().head.location.clone(),
             ))
         } else {
-            p.flags.discontiguous = true;
+            p.discontiguous = true;
             Ok(())
         }
     }
@@ -746,17 +724,15 @@ impl Text {
             || pi.starts_with("multifile/")
             || pi.starts_with("discontiguous/")
             || pi.starts_with("directive/")
-            || (!self.flags.strict_iso && pi.starts_with("public/"))
         {
             return Error::new(Error::AlterBuiltin(term.clone()));
         }
 
         let p = ctx.directives.entry(pi).or_insert_with(|| Procedure {
-            source_text: Some(ctx.current_text.clone()),
+            source_text: ctx.current_text.clone(),
             ..Procedure::default()
         });
-        p.flags.dynamic = true;
-        p.flags.public = true;
+        p.dynamic = true;
         Ok(())
     }
 }
@@ -764,7 +740,7 @@ impl Text {
 pub fn consult(
     resolver: &mut dyn StreamResolver,
     source: &str,
-    sink: Option<ErrorSinkFn>,
+    sink: ErrorSinkFn,
 ) -> Result<Option<Text>, Box<Error>> {
     let mut text = Text::new();
     if text.load(resolver, source, sink)? {

@@ -10,12 +10,12 @@ pub struct Utf8Reader<R: std::io::Read> {
 impl<R: std::io::Read> Utf8Reader<R> {
     const REPLACEMENT_CHAR: char = '\u{FFFD}';
 
-    pub fn new(reader: R, source: &str) -> Self {
+    pub fn new(reader: R, source: Option<&str>) -> Self {
         Self {
             reader,
             next_char: None,
             next_byte: None,
-            position: Some(stream::Position {
+            position: source.map(|source| stream::Position {
                 source: source.to_string(),
                 line: 1,
                 column: 1,

@@ -2,11 +2,11 @@ use phf::phf_map;
 
 use super::*;
 use frame::Frame;
-use solve::{Continuation, GenerateFn, SolveFn, Solver};
+use solve::{CompileFn, Continuation, GenerateFn, Goal, SolveFn, Solver};
 use term::{Term, TermKind};
 
 pub enum Builtin {
-    Control(GenerateFn),
+    Control(CompileFn, GenerateFn),
     Solve(SolveFn),
 }
 
@@ -156,42 +156,42 @@ fn solve_number(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response
 }
 
 pub fn solve_eq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match Term::compare(&frame, args[0], args[1]) {
+    match Term::compare_index(&frame, args[0], args[1]) {
         Some(core::cmp::Ordering::Equal) => next.solve(frame),
         _ => Response::Fail,
     }
 }
 
 pub fn solve_neq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match Term::compare(&frame, args[0], args[1]) {
+    match Term::compare_index(&frame, args[0], args[1]) {
         Some(core::cmp::Ordering::Equal) => Response::Fail,
         _ => next.solve(frame),
     }
 }
 
 pub fn solve_lss(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match Term::compare(&frame, args[0], args[1]) {
+    match Term::compare_index(&frame, args[0], args[1]) {
         Some(core::cmp::Ordering::Less) => next.solve(frame),
         _ => Response::Fail,
     }
 }
 
 pub fn solve_leq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match Term::compare(&frame, args[0], args[1]) {
+    match Term::compare_index(&frame, args[0], args[1]) {
         Some(core::cmp::Ordering::Less) | Some(core::cmp::Ordering::Equal) => next.solve(frame),
         _ => Response::Fail,
     }
 }
 
 pub fn solve_gtr(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match Term::compare(&frame, args[0], args[1]) {
+    match Term::compare_index(&frame, args[0], args[1]) {
         Some(core::cmp::Ordering::Greater) => next.solve(frame),
         _ => Response::Fail,
     }
 }
 
 pub fn solve_geq(frame: Frame, args: &[usize], next: &mut dyn Solver) -> Response {
-    match Term::compare(&frame, args[0], args[1]) {
+    match Term::compare_index(&frame, args[0], args[1]) {
         Some(core::cmp::Ordering::Greater) | Some(core::cmp::Ordering::Equal) => next.solve(frame),
         _ => Response::Fail,
     }
@@ -202,12 +202,12 @@ pub fn not_impl(_: Frame, _: &[usize], _: &mut dyn Solver) -> Response {
 }
 
 const BUILTINS: phf::Map<&'static str, Builtin> = phf_map! {
-    "true/0" => Builtin::Control(solve::generate_true),
-    "fail/0" => Builtin::Control(solve::generate_fail),
-    "!/0" => Builtin::Control(solve::generate_cut),
-    ",/2" => Builtin::Control(solve::generate_and),
-    ";/2" => Builtin::Control(solve::generate_or),
-    "->/2" => Builtin::Control(solve::generate_if_then),
+    "true/0" => Builtin::Control(solve::compile_true,solve::generate_true),
+    "fail/0" => Builtin::Control(solve::compile_fail,solve::generate_fail),
+    "!/0" => Builtin::Control(solve::compile_cut,solve::generate_cut),
+    ",/2" => Builtin::Control(solve::compile_and,solve::generate_and),
+    ";/2" => Builtin::Control(solve::compile_or,solve::generate_or),
+    "->/2" => Builtin::Control(solve::compile_if_then,solve::generate_if_then),
     "call/1" => Builtin::Solve(solve_call),
     "catch/3" => Builtin::Solve(throw::solve_catch),
     "throw/1" => Builtin::Solve(throw::solve_throw),
@@ -321,4 +321,38 @@ pub fn get_builtin(pi: &str) -> Option<&Builtin> {
         r = Some(&Builtin::Solve(not_impl));
     }
     r
+}
+
+pub fn is_builtin(pi: &str) -> bool {
+    get_builtin(pi).is_some()
+}
+
+struct BuiltinJit {
+    f: SolveFn,
+    args: Vec<usize>,
+}
+
+impl solve::Control for BuiltinJit {
+    fn exec(&mut self, frame: Frame, next: &mut dyn Solver) -> Response {
+        (self.f)(frame, &self.args, next)
+    }
+}
+
+pub fn generate(pi: &String, f: SolveFn, args: &[usize]) -> Option<Goal> {
+    if f == not_impl {
+        panic!("{} unimplemented", pi)
+    }
+
+    Some(Box::new(BuiltinJit {
+        f,
+        args: args.to_vec(),
+    }))
+}
+
+pub fn compile(pi: &String, f: SolveFn, args: &[Rc<read_term::Term>]) -> Option<Goal> {
+    if f == not_impl {
+        panic!("{} unimplemented", pi)
+    }
+
+    todo!()
 }

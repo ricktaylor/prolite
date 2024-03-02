@@ -1,14 +1,27 @@
 use super::*;
 use frame::Frame;
-use solve::Solver;
+use solve::{Continuation, Control, Goal, Solver};
 use term::TermKind;
 
-fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
+#[derive(Debug)]
+pub struct Clause {
+    //head: Rc<read_term::Term>,
+    //body: Option<Rc<Term>>,
+    source: Option<consult::text::Clause>,
+}
+
+#[derive(Debug)]
+pub struct Procedure {
+    pub dynamic: bool,
+    pub predicates: Vec<Rc<Clause>>,
+}
+
+fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, consult::text::Clause), Response> {
     let (term, _) = frame.get_term(term);
     match (&term.kind, &term.source.kind) {
         (TermKind::Atomic, read_term::TermKind::Atom(s)) => Ok((
             format!("{}/0", s),
-            Clause {
+            consult::text::Clause {
                 head: term.source.clone(),
                 body: None,
             },
@@ -27,7 +40,7 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
                 let (body, _) = frame.get_term(args[1]);
                 Ok((
                     functor,
-                    Clause {
+                    consult::text::Clause {
                         head: head.source.clone(),
                         body: Some(body.source.clone()),
                     },
@@ -35,7 +48,7 @@ fn unpack_pi(frame: &Frame, term: usize) -> Result<(String, Clause), Response> {
             } else {
                 Ok((
                     format!("{}/{}", c.functor, args.len()),
-                    Clause {
+                    consult::text::Clause {
                         head: term.source.clone(),
                         body: None,
                     },
@@ -66,31 +79,128 @@ pub fn assert(frame: Frame, goal: usize, is_z: bool, next: &mut dyn Solver) -> R
     unpack_pi(&frame, goal).map_or_else(
         |r| r,
         |(pi, clause)| {
-            if builtins::get_builtin(&pi).is_some() {
+            if builtins::is_builtin(&pi) {
                 return permission_error(&clause.head);
             }
 
+            //let body = body.map_or(None, |body| generate(&frame, body));
+
             let procedures = &mut frame.context.procedures;
             if let Some(p) = procedures.get_mut(&pi) {
-                if !p.flags.dynamic {
+                if !p.dynamic {
                     return permission_error(&clause.head);
                 }
 
+                let clause = Rc::new(Clause {
+                    source: Some(clause),
+                });
+
                 if is_z {
-                    p.predicates.push(Rc::new(clause));
+                    p.predicates.push(clause);
                 } else {
-                    p.predicates.insert(0, Rc::new(clause));
+                    p.predicates.insert(0, clause);
                 }
             } else {
                 procedures.insert(
                     pi.clone(),
                     Procedure {
-                        predicates: vec![Rc::new(clause)],
-                        ..Procedure::default()
+                        predicates: vec![Rc::new(Clause {
+                            source: Some(clause),
+                        })],
+                        dynamic: true,
                     },
                 );
             }
             next.solve(frame)
         },
     )
+}
+
+pub fn import(
+    ctx: &mut Context,
+    pi: String,
+    procedure: consult::text::Procedure,
+) -> Result<(), Response> {
+    ctx.procedures.insert(
+        pi,
+        Procedure {
+            dynamic: procedure.dynamic,
+            predicates: procedure
+                .predicates
+                .into_iter()
+                .map(|clause| {
+                    Rc::new(Clause {
+                        source: procedure.dynamic.then_some(clause),
+                    })
+                })
+                .collect(),
+        },
+    );
+    Ok(())
+}
+
+struct GoalJit {
+    pi: String,
+    term: usize,
+}
+
+impl Control for GoalJit {
+    fn exec(&mut self, mut frame: Frame, next: &mut dyn Solver) -> Response {
+        let predicates = match frame.context.procedures.get(&self.pi) {
+            None => {
+                return match frame.context.flags.unknown {
+                    crate::flags::UnknownFlag::Error => {
+                        let (term, _) = frame.get_term(self.term);
+                        throw::callable(&term.source)
+                    }
+                    //crate::flags::UnknownFlag::Warning => todo!(), // Some kind of warning?
+                    _ => Response::Fail,
+                };
+            }
+            Some(p) => p.predicates.to_vec(),
+        };
+        for clause in predicates {
+            match frame.sub_frame(|mut frame| {
+                let mut index = HashMap::new();
+                let head = frame.new_term_indexed(&clause.head, &mut index);
+                if frame.unify(self.term, head) {
+                    if let Some(body) = &clause.body {
+                        let b = frame.new_term_indexed(body, &mut index);
+                        match solve::generate(&frame, b) {
+                            None => {
+                                let (term, _) = frame.get_term(b);
+                                return throw::type_error("callable", &term.source);
+                            }
+                            Some(g) => g,
+                        }
+                        .exec(frame, next)
+                    } else {
+                        next.solve(frame)
+                    }
+                } else {
+                    Response::Fail
+                }
+            }) {
+                Response::Fail => {}
+                r => return r,
+            }
+        }
+        Response::Fail
+    }
+}
+
+pub fn generate(pi: String, term: usize) -> Option<Goal> {
+    Some(Box::new(GoalJit { pi, term }))
+}
+
+struct GoalCompiled {}
+
+impl Control for GoalCompiled {
+    fn exec(&mut self, mut frame: Frame, next: &mut dyn Solver) -> Response {
+        todo!()
+    }
+}
+
+pub fn compile(pi: String, args: &[Rc<read_term::Term>]) -> Option<Goal> {
+    Some(Box::new(GoalCompiled {}))
 }
